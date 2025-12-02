@@ -4,7 +4,7 @@
 # Run this script ONCE for first time deployment
 # Server: srv906504.hstgr.cloud
 
-set -e
+set -e  # Exit on any error
 
 echo "🚀 Starting CAMOCA Initial Deployment..."
 echo "=========================================="
@@ -16,7 +16,7 @@ WAR_NAME="camoca.war"
 UPLOADS_DIR="/opt/camoca/uploads"
 LOGS_DIR="/opt/camoca/logs"
 FRONTEND_DIR="/opt/camoca/app/frontend"
-# Clone from public repo or use SSH
+SERVICE_NAME="camoca-frontend"
 GITHUB_REPO="https://github.com/MuhammadDarmawanFadilah/cemoca.git"
 
 # Step 1: Create directories
@@ -55,7 +55,7 @@ sudo chown root:root $TOMCAT_DIR/webapps/$WAR_NAME
 sudo systemctl restart tomcat
 echo "✅ Backend deployed"
 
-# Step 5: Build and deploy frontend
+# Step 5: Build frontend
 echo "🔨 Building frontend..."
 cd $FRONTEND_DIR
 sudo cp .env.prod .env.local
@@ -64,42 +64,34 @@ sudo pnpm install
 sudo pnpm build
 echo "✅ Frontend built"
 
-# Step 6: Create PM2 config
-echo "⚙️  Creating PM2 config..."
+# Step 6: Create systemd service for frontend
+echo "⚙️  Creating systemd service for frontend..."
+sudo tee /etc/systemd/system/$SERVICE_NAME.service > /dev/null << EOF
+[Unit]
+Description=CAMOCA Frontend Next.js Application
+After=network.target
 
-# Find PM2 path
-PM2_PATH=$(which pm2 2>/dev/null || echo "/root/.nvm/versions/node/$(ls /root/.nvm/versions/node 2>/dev/null | head -1)/bin/pm2" 2>/dev/null || echo "/usr/local/bin/pm2")
-if [ ! -f "$PM2_PATH" ]; then
-    PM2_PATH="/root/.local/share/pnpm/pm2"
-fi
-if [ ! -f "$PM2_PATH" ]; then
-    PM2_PATH=$(find /root -name "pm2" -type f 2>/dev/null | head -1)
-fi
-echo "📍 Using PM2 at: $PM2_PATH"
+[Service]
+Type=simple
+User=root
+WorkingDirectory=$FRONTEND_DIR
+ExecStart=/usr/bin/pnpm start
+Restart=on-failure
+RestartSec=10
+StandardOutput=syslog
+StandardError=syslog
+SyslogIdentifier=$SERVICE_NAME
+Environment=NODE_ENV=production
+Environment=PORT=3003
 
-cat > $FRONTEND_DIR/ecosystem.config.js << 'EOF'
-module.exports = {
-  apps: [{
-    name: 'camoca-frontend',
-    script: 'npm',
-    args: 'start',
-    cwd: '/opt/camoca/app/frontend',
-    env: {
-      NODE_ENV: 'production',
-      PORT: 3003
-    },
-    instances: 1,
-    autorestart: true,
-    watch: false,
-    max_memory_restart: '1G'
-  }]
-}
+[Install]
+WantedBy=multi-user.target
 EOF
 
-$PM2_PATH start $FRONTEND_DIR/ecosystem.config.js
-$PM2_PATH save
-$PM2_PATH startup
-echo "✅ Frontend started with PM2"
+sudo systemctl daemon-reload
+sudo systemctl enable $SERVICE_NAME
+sudo systemctl start $SERVICE_NAME
+echo "✅ Frontend service created and started"
 
 # Step 7: Create Nginx config
 echo "🌐 Creating Nginx config..."
@@ -145,20 +137,27 @@ sudo ln -sf /etc/nginx/sites-available/camoca /etc/nginx/sites-enabled/
 sudo nginx -t && sudo systemctl reload nginx
 echo "✅ Nginx configured"
 
-# Step 8: Verify
-echo "🔍 Verifying deployment..."
+# Step 8: Wait and verify
+echo "⏳ Waiting for services to start..."
 sleep 10
 
+echo "🔍 Verifying deployment..."
 if curl -s http://localhost:8080/camoca/api > /dev/null; then
     echo "✅ Backend API OK"
 else
     echo "⚠️  Backend API not responding yet"
 fi
 
-if curl -s http://localhost:3003 > /dev/null; then
-    echo "✅ Frontend OK"
+if sudo systemctl is-active --quiet $SERVICE_NAME; then
+    echo "✅ Frontend service is running"
+    if curl -s http://localhost:3003 > /dev/null; then
+        echo "✅ Frontend OK"
+    else
+        echo "⚠️  Frontend not responding yet"
+    fi
 else
-    echo "⚠️  Frontend not responding yet"
+    echo "❌ Frontend service failed to start"
+    sudo systemctl status $SERVICE_NAME --no-pager
 fi
 
 echo ""
@@ -166,9 +165,14 @@ echo "🎉 CAMOCA INITIAL DEPLOYMENT COMPLETED!"
 echo "========================================"
 echo "✅ Database: camoca_db"
 echo "✅ Backend: http://srv906504.hstgr.cloud/camoca/api"
-echo "✅ Frontend: http://srv906504.hstgr.cloud:3003"
+echo "✅ Frontend: http://srv906504.hstgr.cloud"
 echo "✅ Uploads: /opt/camoca/uploads"
+echo "✅ Service: $SERVICE_NAME"
 echo ""
 echo "📝 Logs:"
 echo "   Backend: sudo tail -f /opt/tomcat/logs/catalina.out"
-echo "   Frontend: pm2 logs camoca-frontend"
+echo "   Frontend: sudo journalctl -u $SERVICE_NAME -f"
+echo ""
+echo "🔄 Commands:"
+echo "   Restart backend: sudo systemctl restart tomcat"
+echo "   Restart frontend: sudo systemctl restart $SERVICE_NAME"
