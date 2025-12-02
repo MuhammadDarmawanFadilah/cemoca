@@ -1,0 +1,6 @@
+<!-- Default avatar placeholder - you can replace this with actual image -->
+<svg width="200" height="200" viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <circle cx="100" cy="100" r="100" fill="#f3f4f6"/>
+  <circle cx="100" cy="75" r="30" fill="#9ca3af"/>
+  <path d="M50 165 Q100 140 150 165 L150 200 L50 200 Z" fill="#9ca3af"/>
+</svg>

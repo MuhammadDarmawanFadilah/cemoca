@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Offline - Sistem Cemoca</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+            color: #333;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        
+        .offline-container {
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            text-align: center;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.1);
+            max-width: 500px;
+            width: 100%;
+        }
+        
+        .offline-icon {
+            width: 80px;
+            height: 80px;
+            background: #f0f0f0;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 30px;
+            font-size: 40px;
+        }
+        
+        h1 {
+            color: #2563eb;
+            margin-bottom: 15px;
+            font-size: 2em;
+            font-weight: 600;
+        }
+        
+        p {
+            color: #666;
+            line-height: 1.6;
+            margin-bottom: 30px;
+            font-size: 1.1em;
+        }
+        
+        .retry-button {
+            background: #2563eb;
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            border-radius: 10px;
+            font-size: 1em;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.3s ease;
+        }
+        
+        .retry-button:hover {
+            background: #1d4ed8;
+        }
+        
+        .features {
+            margin-top: 30px;
+            text-align: left;
+        }
+        
+        .feature {
+            display: flex;
+            align-items: center;
+            margin-bottom: 15px;
+            padding: 10px;
+            background: #f8f9fa;
+            border-radius: 8px;
+        }
+        
+        .feature-icon {
+            width: 30px;
+            height: 30px;
+            background: #2563eb;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-right: 15px;
+            color: white;
+            font-size: 14px;
+        }
+        
+        @media (max-width: 600px) {
+            .offline-container {
+                padding: 30px 20px;
+            }
+            
+            h1 {
+                font-size: 1.5em;
+            }
+            
+            p {
+                font-size: 1em;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="offline-container">
+        <div class="offline-icon">🌐</div>
+        <h1>📚 Sistem Cemoca</h1>
+        <p>Silahkan nyalakan internet Anda untuk mengakses sistem Cemoca. Beberapa fitur memerlukan koneksi internet untuk berfungsi dengan baik.</p>
+        
+        <button class="retry-button" onclick="window.location.reload()">
+            Coba Lagi
+        </button>
+        
+        <div class="features">
+            <div class="feature">
+                <div class="feature-icon">👥</div>
+                <div>
+                    <div style="font-weight: 600; margin-bottom: 5px;">Profil Member</div>
+                    <div style="font-size: 0.9em; color: #666;">Kelola profil dan biodata member</div>
+                </div>
+            </div>
+            <div class="feature">
+                <div class="feature-icon">📰</div>
+                <div>
+                    <div style="font-weight: 600; margin-bottom: 5px;">Berita & Informasi</div>
+                    <div style="font-size: 0.9em; color: #666;">Update terbaru dari komunitas member</div>
+                </div>
+            </div>
+            <div class="feature">
+                <div class="feature-icon">📄</div>
+                <div>
+                    <div style="font-weight: 600; margin-bottom: 5px;">Dokumen Digital</div>
+                    <div style="font-size: 0.9em; color: #666;">Upload dan share dokumen dengan member</div>
+                </div>
+            </div>
+            <div class="feature">
+                <div class="feature-icon">💰</div>
+                <div>
+                    <div style="font-weight: 600; margin-bottom: 5px;">Donasi Online</div>
+                    <div style="font-size: 0.9em; color: #666;">Kontribusi untuk pengembangan Cemoca</div>
+                </div>
+            </div>
+            <div class="feature">
+                <div class="feature-icon">🗺️</div>
+                <div>
+                    <div style="font-weight: 600; margin-bottom: 5px;">Lokasi Member</div>
+                    <div style="font-size: 0.9em; color: #666;">Peta sebaran member di seluruh Indonesia</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Auto-refresh when online
+        window.addEventListener('online', function() {
+            window.location.reload();
+        });
+        
+        // Check connection status
+        function checkConnection() {
+            if (navigator.onLine) {
+                window.location.reload();
+            }
+        }
+        
+        // Check every 5 seconds
+        setInterval(checkConnection, 5000);
+    </script>
+</body>
+</html>

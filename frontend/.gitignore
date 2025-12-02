@@ -1,0 +1,10 @@
+# This frontend .gitignore is mostly covered by the root .gitignore
+# Only frontend-specific overrides or additions should be here
+
+# Frontend-specific temporary files
+.next/
+out/
+
+# Frontend-specific env files
+.env.local
+node_modules

@@ -1,0 +1,125 @@
+package com.shadcn.backend.util;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import javax.crypto.Cipher;
+import javax.crypto.spec.GCMParameterSpec;
+import javax.crypto.spec.SecretKeySpec;
+import java.nio.charset.StandardCharsets;
+import java.security.SecureRandom;
+import java.util.Base64;
+import java.util.Map;
+
+/**
+ * Utility class for encrypting and decrypting PDF link tokens
+ * Uses AES-GCM encryption for secure link generation
+ */
+public class PdfLinkEncryptor {
+    private static final Logger logger = LoggerFactory.getLogger(PdfLinkEncryptor.class);
+    
+    private static final String ALGORITHM = "AES/GCM/NoPadding";
+    private static final int GCM_IV_LENGTH = 12;
+    private static final int GCM_TAG_LENGTH = 128;
+    
+    // Secret key - should be stored in environment variable in production
+    private static final String SECRET_KEY = "CEMOCAPPS_PDFSS_SECRET_KEY_2025!";
+    
+    /**
+     * Encrypt PDF item ID and report ID to create a shareable token
+     * Format: reportId:itemId:timestamp
+     */
+    public static String encryptPdfLink(Long reportId, Long itemId) {
+        try {
+            String payload = reportId + ":" + itemId + ":" + System.currentTimeMillis();
+            
+            // Generate random IV
+            byte[] iv = new byte[GCM_IV_LENGTH];
+            SecureRandom random = new SecureRandom();
+            random.nextBytes(iv);
+            
+            // Create cipher
+            Cipher cipher = Cipher.getInstance(ALGORITHM);
+            SecretKeySpec keySpec = new SecretKeySpec(
+                SECRET_KEY.substring(0, 32).getBytes(StandardCharsets.UTF_8), 
+                "AES"
+            );
+            GCMParameterSpec gcmSpec = new GCMParameterSpec(GCM_TAG_LENGTH, iv);
+            cipher.init(Cipher.ENCRYPT_MODE, keySpec, gcmSpec);
+            
+            // Encrypt
+            byte[] encrypted = cipher.doFinal(payload.getBytes(StandardCharsets.UTF_8));
+            
+            // Combine IV + encrypted data
+            byte[] combined = new byte[iv.length + encrypted.length];
+            System.arraycopy(iv, 0, combined, 0, iv.length);
+            System.arraycopy(encrypted, 0, combined, iv.length, encrypted.length);
+            
+            // Encode to URL-safe Base64
+            return Base64.getUrlEncoder().withoutPadding().encodeToString(combined);
+            
+        } catch (Exception e) {
+            logger.error("Error encrypting PDF link: {}", e.getMessage());
+            return null;
+        }
+    }
+    
+    /**
+     * Decrypt token to get report ID and item ID
+     * Returns Map with reportId and itemId, or null if invalid
+     */
+    public static Map<String, Object> decryptPdfLink(String token) {
+        try {
+            // Decode from URL-safe Base64
+            byte[] combined = Base64.getUrlDecoder().decode(token);
+            
+            // Extract IV and encrypted data
+            byte[] iv = new byte[GCM_IV_LENGTH];
+            byte[] encrypted = new byte[combined.length - GCM_IV_LENGTH];
+            System.arraycopy(combined, 0, iv, 0, GCM_IV_LENGTH);
+            System.arraycopy(combined, GCM_IV_LENGTH, encrypted, 0, encrypted.length);
+            
+            // Create cipher
+            Cipher cipher = Cipher.getInstance(ALGORITHM);
+            SecretKeySpec keySpec = new SecretKeySpec(
+                SECRET_KEY.substring(0, 32).getBytes(StandardCharsets.UTF_8), 
+                "AES"
+            );
+            GCMParameterSpec gcmSpec = new GCMParameterSpec(GCM_TAG_LENGTH, iv);
+            cipher.init(Cipher.DECRYPT_MODE, keySpec, gcmSpec);
+            
+            // Decrypt
+            byte[] decrypted = cipher.doFinal(encrypted);
+            String payload = new String(decrypted, StandardCharsets.UTF_8);
+            
+            // Parse payload: reportId:itemId:timestamp
+            String[] parts = payload.split(":");
+            if (parts.length >= 2) {
+                Long reportId = Long.parseLong(parts[0]);
+                Long itemId = Long.parseLong(parts[1]);
+                
+                // Optional: Check timestamp for expiry (e.g., 30 days)
+                if (parts.length >= 3) {
+                    long timestamp = Long.parseLong(parts[2]);
+                    long now = System.currentTimeMillis();
+                    long thirtyDaysMs = 30L * 24 * 60 * 60 * 1000;
+                    if (now - timestamp > thirtyDaysMs) {
+                        logger.warn("PDF link token expired");
+                        return null;
+                    }
+                }
+                
+                Map<String, Object> result = new java.util.HashMap<>();
+                result.put("reportId", reportId);
+                result.put("itemId", itemId);
+                return result;
+            }
+            
+            return null;
+            
+        } catch (Exception e) {
+            logger.error("Error decrypting PDF link: {}", e.getMessage());
+            return null;
+        }
+    }
+}

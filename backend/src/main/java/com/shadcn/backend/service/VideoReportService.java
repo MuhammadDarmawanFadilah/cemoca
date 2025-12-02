@@ -1,0 +1,1223 @@
+package com.shadcn.backend.service;
+
+import com.shadcn.backend.dto.ExcelValidationResult;
+import com.shadcn.backend.dto.VideoReportRequest;
+import com.shadcn.backend.dto.VideoReportResponse;
+import com.shadcn.backend.dto.VideoReportResponse.VideoReportItemResponse;
+import com.shadcn.backend.model.User;
+import com.shadcn.backend.entity.VideoReport;
+import com.shadcn.backend.entity.VideoReportItem;
+import com.shadcn.backend.repository.VideoReportItemRepository;
+import com.shadcn.backend.repository.VideoReportRepository;
+import com.shadcn.backend.util.VideoLinkEncryptor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.io.ClassPathResource;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.scheduling.annotation.Async;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
+
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
+import java.time.LocalDateTime;
+import java.util.*;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
+
+@Service
+public class VideoReportService {
+    private static final Logger logger = LoggerFactory.getLogger(VideoReportService.class);
+    
+    // D-ID API can handle "tens of thousands of requests in parallel"
+    // Using 10 concurrent requests for safety (avoid overwhelming API)
+    private static final int VIDEO_GENERATION_PARALLELISM = 10;
+    
+    // Batch size for processing - process in batches to save progress
+    private static final int VIDEO_GENERATION_BATCH_SIZE = 50;
+
+    private final VideoReportRepository videoReportRepository;
+    private final VideoReportItemRepository videoReportItemRepository;
+    private final DIDService didService;
+    private final ExcelService excelService;
+    private final WhatsAppService whatsAppService;
+    
+    @PersistenceContext
+    private EntityManager entityManager;
+    
+    @Value("${app.frontend.url:http://localhost:3000}")
+    private String frontendUrl;
+
+    public VideoReportService(VideoReportRepository videoReportRepository,
+                             VideoReportItemRepository videoReportItemRepository,
+                             DIDService didService,
+                             ExcelService excelService,
+                             WhatsAppService whatsAppService) {
+        this.videoReportRepository = videoReportRepository;
+        this.videoReportItemRepository = videoReportItemRepository;
+        this.didService = didService;
+        this.excelService = excelService;
+        this.whatsAppService = whatsAppService;
+    }
+
+    /**
+     * Get default message template from resources
+     */
+    public String getDefaultMessageTemplate() {
+        try {
+            ClassPathResource resource = new ClassPathResource("video/personalsales.txt");
+            try (BufferedReader reader = new BufferedReader(
+                    new InputStreamReader(resource.getInputStream(), StandardCharsets.UTF_8))) {
+                return reader.lines().collect(Collectors.joining("\n"));
+            }
+        } catch (Exception e) {
+            logger.error("Error reading default message template: {}", e.getMessage());
+            return "Selamat ulang tahun, :name! Semoga sukses selalu.";
+        }
+    }
+    
+    /**
+     * Get default WA message template
+     */
+    public String getDefaultWaMessageTemplate() {
+        return "Halo :name!\n\nKami punya video spesial untuk Anda.\n\nKlik link berikut untuk melihat:\n:linkvideo\n\nTerima kasih!";
+    }
+
+    /**
+     * Validate uploaded Excel file
+     */
+    public ExcelValidationResult validateExcel(MultipartFile file) {
+        return excelService.parseAndValidateExcel(file);
+    }
+
+    /**
+     * Get all items by report ID (for export)
+     */
+    public List<VideoReportItem> getAllItemsByReportId(Long reportId) {
+        return videoReportItemRepository.findByVideoReportIdOrderByRowNumberAsc(reportId);
+    }
+
+    /**
+     * Create video report from request
+     */
+    @Transactional
+    public VideoReport createVideoReport(VideoReportRequest request, User user) {
+        VideoReport report = new VideoReport();
+        report.setReportName(request.getReportName());
+        report.setMessageTemplate(request.getMessageTemplate());
+        report.setWaMessageTemplate(request.getWaMessageTemplate());
+        report.setStatus("PENDING");
+        report.setTotalRecords(request.getItems().size());
+        report.setCreatedBy(user);
+        
+        report = videoReportRepository.save(report);
+
+        // Create items
+        for (VideoReportRequest.VideoReportItemRequest itemRequest : request.getItems()) {
+            VideoReportItem item = new VideoReportItem();
+            item.setVideoReport(report);
+            item.setRowNumber(itemRequest.getRowNumber());
+            item.setName(itemRequest.getName());
+            item.setPhone(itemRequest.getPhone());
+            item.setAvatar(itemRequest.getAvatar());
+            
+            // Generate personalized message
+            String personalizedMessage = request.getMessageTemplate()
+                    .replace(":name", itemRequest.getName());
+            item.setPersonalizedMessage(personalizedMessage);
+            item.setStatus("PENDING");
+            item.setWaStatus("PENDING");
+            item.setExcluded(false);
+            
+            videoReportItemRepository.save(item);
+        }
+
+        return report;
+    }
+
+    /**
+     * Start video generation process with parallel processing
+     * Uses configurable parallelism to handle 1000+ videos efficiently
+     * D-ID API supports "tens of thousands of requests in parallel" (100 FPS rendering)
+     */
+    @Async
+    @Transactional
+    public void startVideoGeneration(Long reportId) {
+        VideoReport report = videoReportRepository.findById(reportId).orElse(null);
+        if (report == null) {
+            logger.error("Video report not found: {}", reportId);
+            return;
+        }
+
+        report.setStatus("PROCESSING");
+        videoReportRepository.save(report);
+
+        List<VideoReportItem> items = videoReportItemRepository
+                .findByVideoReportIdOrderByRowNumberAsc(reportId);
+        
+        // Filter out excluded and already processed items
+        List<VideoReportItem> pendingItems = items.stream()
+                .filter(item -> !Boolean.TRUE.equals(item.getExcluded()))
+                .filter(item -> "PENDING".equals(item.getStatus()) || "FAILED".equals(item.getStatus()))
+                .collect(Collectors.toList());
+        
+        logger.info("[VIDEO GEN] ========================================");
+        logger.info("[VIDEO GEN] Starting video generation for report {}", reportId);
+        logger.info("[VIDEO GEN] Total items: {}, Pending items: {}", items.size(), pendingItems.size());
+        logger.info("[VIDEO GEN] Parallelism: {}, Batch size: {}", VIDEO_GENERATION_PARALLELISM, VIDEO_GENERATION_BATCH_SIZE);
+        logger.info("[VIDEO GEN] ========================================");
+        
+        if (pendingItems.isEmpty()) {
+            logger.info("[VIDEO GEN] No pending items to process");
+            checkAndUpdateReportStatus(reportId);
+            return;
+        }
+        
+        // Create thread pool for parallel processing
+        ExecutorService executor = Executors.newFixedThreadPool(VIDEO_GENERATION_PARALLELISM);
+        
+        try {
+            // Process in batches to save progress periodically
+            List<List<VideoReportItem>> batches = splitIntoBatches(pendingItems, VIDEO_GENERATION_BATCH_SIZE);
+            int batchNumber = 0;
+            
+            for (List<VideoReportItem> batch : batches) {
+                batchNumber++;
+                logger.info("[VIDEO GEN] Processing batch {}/{} ({} items)", batchNumber, batches.size(), batch.size());
+                
+                // Submit all items in batch for parallel processing
+                List<CompletableFuture<VideoReportItem>> futures = batch.stream()
+                        .map(item -> CompletableFuture.supplyAsync(() -> processVideoItem(item), executor))
+                        .collect(Collectors.toList());
+                
+                // Wait for all items in batch to complete
+                CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+                
+                // Update report progress
+                VideoReport currentReport = videoReportRepository.findById(reportId).orElse(null);
+                if (currentReport != null) {
+                    int processed = (int) items.stream()
+                            .filter(i -> !"PENDING".equals(i.getStatus()))
+                            .count();
+                    int failed = (int) items.stream()
+                            .filter(i -> "FAILED".equals(i.getStatus()))
+                            .count();
+                    
+                    currentReport.setProcessedRecords(processed);
+                    currentReport.setFailedCount(failed);
+                    videoReportRepository.save(currentReport);
+                    
+                    logger.info("[VIDEO GEN] Batch {}/{} complete - Processed: {}, Failed: {}", 
+                            batchNumber, batches.size(), processed, failed);
+                }
+                
+                // Small delay between batches
+                if (batchNumber < batches.size()) {
+                    Thread.sleep(500);
+                }
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            logger.error("[VIDEO GEN] Interrupted during video generation: {}", e.getMessage());
+        } finally {
+            executor.shutdown();
+            try {
+                if (!executor.awaitTermination(60, TimeUnit.SECONDS)) {
+                    executor.shutdownNow();
+                }
+            } catch (InterruptedException e) {
+                executor.shutdownNow();
+            }
+        }
+
+        // Update report status
+        checkAndUpdateReportStatus(reportId);
+        
+        // Get final status
+        VideoReport finalReport = videoReportRepository.findById(reportId).orElse(null);
+        
+        logger.info("[VIDEO GEN] ========================================");
+        logger.info("[VIDEO GEN] Completed video generation for report {}", reportId);
+        logger.info("[VIDEO GEN] Status: {}", finalReport != null ? finalReport.getStatus() : "UNKNOWN");
+        logger.info("[VIDEO GEN] WA blast will be sent by scheduler automatically");
+        logger.info("[VIDEO GEN] ========================================");
+    }
+    
+    /**
+     * Process a single video item (called in parallel)
+     */
+    private VideoReportItem processVideoItem(VideoReportItem item) {
+        try {
+            // Convert avatar name to presenter ID
+            String presenterId = null;
+            Optional<com.shadcn.backend.model.DIDAvatar> dbAvatar = didService.getAvatarByName(item.getAvatar());
+            if (dbAvatar.isPresent()) {
+                presenterId = dbAvatar.get().getPresenterId();
+                logger.debug("[VIDEO GEN] Item {} - Avatar '{}' found in DB, presenter_id: '{}'", 
+                    item.getId(), item.getAvatar(), presenterId);
+            } else {
+                presenterId = didService.getPresenterIdByName(item.getAvatar());
+            }
+            
+            if (presenterId == null) {
+                presenterId = item.getAvatar();
+                logger.warn("[VIDEO GEN] Item {} - Avatar '{}' not found, using as direct ID", 
+                    item.getId(), item.getAvatar());
+            }
+            
+            // Create clip via D-ID
+            Map<String, Object> result = didService.createClip(
+                    presenterId,
+                    item.getPersonalizedMessage()
+            );
+
+            if ((Boolean) result.get("success")) {
+                item.setDidClipId((String) result.get("id"));
+                item.setStatus("PROCESSING");
+                logger.info("[VIDEO GEN] Item {} - D-ID clip created: {}", item.getId(), result.get("id"));
+            } else {
+                item.setStatus("FAILED");
+                item.setErrorMessage((String) result.get("error"));
+                logger.error("[VIDEO GEN] Item {} - D-ID failed: {}", item.getId(), result.get("error"));
+            }
+        } catch (Exception e) {
+            logger.error("[VIDEO GEN] Item {} - Exception: {}", item.getId(), e.getMessage());
+            item.setStatus("FAILED");
+            item.setErrorMessage(e.getMessage());
+        }
+
+        videoReportItemRepository.save(item);
+        return item;
+    }
+    
+    /**
+     * Split list into batches
+     */
+    private <T> List<List<T>> splitIntoBatches(List<T> items, int batchSize) {
+        List<List<T>> batches = new ArrayList<>();
+        for (int i = 0; i < items.size(); i += batchSize) {
+            int end = Math.min(i + batchSize, items.size());
+            batches.add(new ArrayList<>(items.subList(i, end)));
+        }
+        return batches;
+    }
+    
+    /**
+     * Generate video for a single item
+     */
+    @Transactional
+    public VideoReportItem generateSingleVideo(Long reportId, Long itemId) {
+        VideoReportItem item = videoReportItemRepository.findByIdAndVideoReportId(itemId, reportId);
+        if (item == null) {
+            throw new RuntimeException("Item not found");
+        }
+        
+        VideoReport report = videoReportRepository.findById(reportId).orElse(null);
+        if (report == null) {
+            throw new RuntimeException("Report not found");
+        }
+        
+        try {
+            // Reset item status
+            item.setStatus("PENDING");
+            item.setVideoUrl(null);
+            item.setErrorMessage(null);
+            item.setDidClipId(null);
+            videoReportItemRepository.save(item);
+            
+            // Convert avatar name to presenter ID
+            String presenterId = null;
+            Optional<com.shadcn.backend.model.DIDAvatar> dbAvatar = didService.getAvatarByName(item.getAvatar());
+            if (dbAvatar.isPresent()) {
+                presenterId = dbAvatar.get().getPresenterId();
+            } else {
+                presenterId = didService.getPresenterIdByName(item.getAvatar());
+            }
+            
+            if (presenterId == null) {
+                presenterId = item.getAvatar();
+            }
+            
+            // Create clip via D-ID
+            Map<String, Object> result = didService.createClip(
+                    presenterId,
+                    item.getPersonalizedMessage()
+            );
+
+            if ((Boolean) result.get("success")) {
+                item.setDidClipId((String) result.get("id"));
+                item.setStatus("PROCESSING");
+            } else {
+                item.setStatus("FAILED");
+                item.setErrorMessage((String) result.get("error"));
+            }
+            
+            videoReportItemRepository.save(item);
+            checkAndUpdateReportStatus(reportId);
+            
+            return item;
+        } catch (Exception e) {
+            logger.error("Error generating single video for item {}: {}", itemId, e.getMessage());
+            item.setStatus("FAILED");
+            item.setErrorMessage(e.getMessage());
+            videoReportItemRepository.save(item);
+            throw new RuntimeException("Failed to generate video: " + e.getMessage());
+        }
+    }
+    
+    /**
+     * Exclude/include item from video generation
+     */
+    @Transactional
+    public VideoReportItem toggleExcludeItem(Long reportId, Long itemId) {
+        VideoReportItem item = videoReportItemRepository.findByIdAndVideoReportId(itemId, reportId);
+        if (item == null) {
+            throw new RuntimeException("Item not found");
+        }
+        
+        item.setExcluded(!Boolean.TRUE.equals(item.getExcluded()));
+        videoReportItemRepository.save(item);
+        
+        return item;
+    }
+    
+    /**
+     * Delete video for a single item
+     */
+    @Transactional
+    public VideoReportItem deleteItemVideo(Long reportId, Long itemId) {
+        VideoReportItem item = videoReportItemRepository.findByIdAndVideoReportId(itemId, reportId);
+        if (item == null) {
+            throw new RuntimeException("Item not found");
+        }
+        
+        item.setStatus("PENDING");
+        item.setVideoUrl(null);
+        item.setDidClipId(null);
+        item.setErrorMessage(null);
+        videoReportItemRepository.save(item);
+        
+        checkAndUpdateReportStatus(reportId);
+        
+        return item;
+    }
+    
+    /**
+     * Delete all videos in a report and reset
+     */
+    @Transactional
+    public void deleteAllVideos(Long reportId) {
+        List<VideoReportItem> items = videoReportItemRepository.findByVideoReportIdOrderByRowNumberAsc(reportId);
+        
+        for (VideoReportItem item : items) {
+            item.setStatus("PENDING");
+            item.setVideoUrl(null);
+            item.setDidClipId(null);
+            item.setErrorMessage(null);
+            videoReportItemRepository.save(item);
+        }
+        
+        VideoReport report = videoReportRepository.findById(reportId).orElse(null);
+        if (report != null) {
+            report.setStatus("PENDING");
+            report.setProcessedRecords(0);
+            report.setSuccessCount(0);
+            report.setFailedCount(0);
+            report.setCompletedAt(null);
+            videoReportRepository.save(report);
+        }
+    }
+    
+    // Lock per report untuk mencegah concurrent WA blast
+    private static final java.util.concurrent.ConcurrentHashMap<Long, java.util.concurrent.locks.ReentrantLock> waBlastLocks = new java.util.concurrent.ConcurrentHashMap<>();
+    
+    private java.util.concurrent.locks.ReentrantLock getWaBlastLock(Long reportId) {
+        return waBlastLocks.computeIfAbsent(reportId, k -> new java.util.concurrent.locks.ReentrantLock());
+    }
+    
+    /**
+     * Start WhatsApp blast for completed videos
+     * BACKGROUND method with proper locking per report
+     * 1. Lock report to prevent concurrent processing
+     * 2. Mark items as PROCESSING immediately
+     * 3. Send WA messages
+     * 4. Update status to SENT/FAILED
+     */
+    @Async
+    @Transactional
+    public void startWaBlast(Long reportId) {
+        java.util.concurrent.locks.ReentrantLock lock = getWaBlastLock(reportId);
+        
+        // Try to acquire lock - if already locked, skip (another process is handling this report)
+        if (!lock.tryLock()) {
+            logger.info("[WA BLAST VIDEO] Report {} is already being processed, skipping", reportId);
+            return;
+        }
+        
+        try {
+            processWaBlastForReport(reportId);
+        } finally {
+            lock.unlock();
+        }
+    }
+    
+    /**
+     * Internal method to process WA blast for a report
+     * Must be called while holding the lock
+     */
+    private void processWaBlastForReport(Long reportId) {
+        logger.info("[WA BLAST VIDEO] ========================================");
+        logger.info("[WA BLAST VIDEO] STARTING WA BLAST FOR REPORT {}", reportId);
+        logger.info("[WA BLAST VIDEO] ========================================");
+        
+        VideoReport report = videoReportRepository.findById(reportId).orElse(null);
+        if (report == null) {
+            logger.error("[WA BLAST VIDEO] Video report not found: {}", reportId);
+            return;
+        }
+        
+        // STEP 1: Find items ready for WA blast (status=DONE, waStatus=PENDING only)
+        List<VideoReportItem> readyItems = videoReportItemRepository.findReadyForWaBlast(reportId);
+        
+        if (readyItems.isEmpty()) {
+            logger.info("[WA BLAST VIDEO] No items ready for WA blast (PENDING)");
+            return;
+        }
+        
+        logger.info("[WA BLAST VIDEO] Found {} items ready for WA blast", readyItems.size());
+        
+        // STEP 2: Mark ALL items as PROCESSING immediately to prevent re-pickup by scheduler
+        for (VideoReportItem item : readyItems) {
+            item.setWaStatus("PROCESSING");
+            videoReportItemRepository.save(item);
+        }
+        videoReportItemRepository.flush(); // Force flush to DB immediately
+        
+        logger.info("[WA BLAST VIDEO] Marked {} items as PROCESSING", readyItems.size());
+        
+        // STEP 3: Build bulk message items
+        List<WhatsAppService.BulkMessageItem> bulkItems = new ArrayList<>();
+        Map<Long, VideoReportItem> itemMap = new HashMap<>();
+        
+        for (VideoReportItem item : readyItems) {
+            // Generate video share link
+            String token = VideoLinkEncryptor.encryptVideoLink(reportId, item.getId());
+            String videoLink = frontendUrl + "/v/" + token;
+            
+            // Build WA message
+            String waTemplate = report.getWaMessageTemplate();
+            if (waTemplate == null || waTemplate.isEmpty()) {
+                waTemplate = getDefaultWaMessageTemplate();
+            }
+            
+            String waMessage = waTemplate
+                    .replace(":name", item.getName())
+                    .replace(":linkvideo", videoLink);
+            
+            bulkItems.add(new WhatsAppService.BulkMessageItem(item.getPhone(), waMessage, String.valueOf(item.getId())));
+            itemMap.put(item.getId(), item);
+        }
+        
+        logger.info("[WA BLAST VIDEO] Sending {} messages via Wablas bulk API...", bulkItems.size());
+        
+        // STEP 4: Send bulk messages
+        List<WhatsAppService.BulkMessageResult> results = whatsAppService.sendBulkMessages(bulkItems);
+        
+        // STEP 5: Process results and update status to SENT/FAILED
+        int successCount = 0;
+        int failCount = 0;
+        
+        for (WhatsAppService.BulkMessageResult result : results) {
+            VideoReportItem item = null;
+            
+            // Try to find item by originalId first
+            if (result.getOriginalId() != null) {
+                try {
+                    Long itemId = Long.parseLong(result.getOriginalId());
+                    item = itemMap.get(itemId);
+                } catch (NumberFormatException e) {
+                    logger.warn("[WA BLAST VIDEO] Invalid originalId: {}", result.getOriginalId());
+                }
+            }
+            
+            if (item == null) continue;
+            
+            if (result.isSuccess()) {
+                item.setWaStatus("SENT");
+                item.setWaMessageId(result.getMessageId());
+                item.setWaSentAt(LocalDateTime.now());
+                item.setWaErrorMessage(null);
+                successCount++;
+                logger.debug("[WA BLAST VIDEO] Item {} SENT successfully", item.getId());
+            } else {
+                item.setWaStatus("FAILED");
+                item.setWaMessageId(result.getMessageId());
+                item.setWaErrorMessage(result.getError());
+                failCount++;
+                logger.warn("[WA BLAST VIDEO] Item {} FAILED: {}", item.getId(), result.getError());
+            }
+            
+            videoReportItemRepository.save(item);
+        }
+        
+        // STEP 6: Update report counters
+        report.setWaSentCount((report.getWaSentCount() == null ? 0 : report.getWaSentCount()) + successCount);
+        report.setWaFailedCount((report.getWaFailedCount() == null ? 0 : report.getWaFailedCount()) + failCount);
+        videoReportRepository.save(report);
+        
+        logger.info("[WA BLAST VIDEO] ========================================");
+        logger.info("[WA BLAST VIDEO] COMPLETED: {} sent, {} failed", successCount, failCount);
+        logger.info("[WA BLAST VIDEO] ========================================");
+    }
+    
+    /**
+     * Resend WhatsApp to a single item with retry
+     */
+    @Transactional
+    public VideoReportItem resendWa(Long reportId, Long itemId) {
+        return resendWaWithRetry(reportId, itemId, 3);
+    }
+    
+    /**
+     * Resend WhatsApp to a single item with configurable retry attempts
+     */
+    @Transactional
+    public VideoReportItem resendWaWithRetry(Long reportId, Long itemId, int maxRetries) {
+        VideoReportItem item = videoReportItemRepository.findByIdAndVideoReportId(itemId, reportId);
+        if (item == null) {
+            throw new RuntimeException("Item not found");
+        }
+        
+        if (!"DONE".equals(item.getStatus())) {
+            throw new RuntimeException("Video not ready yet");
+        }
+        
+        VideoReport report = videoReportRepository.findById(reportId).orElse(null);
+        if (report == null) {
+            throw new RuntimeException("Report not found");
+        }
+        
+        // Generate video share link
+        String token = VideoLinkEncryptor.encryptVideoLink(reportId, item.getId());
+        String videoLink = frontendUrl + "/v/" + token;
+        
+        // Build WA message
+        String waTemplate = report.getWaMessageTemplate();
+        if (waTemplate == null || waTemplate.isEmpty()) {
+            waTemplate = getDefaultWaMessageTemplate();
+        }
+        
+        String waMessage = waTemplate
+                .replace(":name", item.getName())
+                .replace(":linkvideo", videoLink);
+        
+        String previousStatus = item.getWaStatus();
+        Map<String, Object> waResult = null;
+        boolean success = false;
+        String lastError = null;
+        
+        // Retry loop
+        for (int attempt = 1; attempt <= maxRetries; attempt++) {
+            logger.info("[WA RESEND] Item {} - Attempt {}/{} to {}", itemId, attempt, maxRetries, item.getPhone());
+            
+            // Send WhatsApp message with detailed response
+            waResult = whatsAppService.sendMessageWithDetails(item.getPhone(), waMessage);
+            
+            success = (Boolean) waResult.getOrDefault("success", false);
+            
+            if (success) {
+                break;
+            }
+            
+            lastError = (String) waResult.get("error");
+            
+            // Check if error is retryable
+            if (lastError != null && (
+                lastError.toLowerCase().contains("not registered") ||
+                lastError.toLowerCase().contains("invalid") ||
+                lastError.toLowerCase().contains("blocked"))) {
+                logger.warn("[WA RESEND] Item {} - Non-retryable error: {}", itemId, lastError);
+                break;
+            }
+            
+            if (attempt < maxRetries) {
+                try {
+                    Thread.sleep(2000); // 2 second delay between retries
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    break;
+                }
+            }
+        }
+        
+        String messageId = (String) waResult.get("messageId");
+        String error = lastError;
+        
+        if (success) {
+            // Update stats based on previous status
+            if ("FAILED".equals(previousStatus)) {
+                report.setWaFailedCount(Math.max(0, (report.getWaFailedCount() == null ? 0 : report.getWaFailedCount()) - 1));
+                report.setWaSentCount((report.getWaSentCount() == null ? 0 : report.getWaSentCount()) + 1);
+            } else if ("PENDING".equals(previousStatus)) {
+                report.setWaSentCount((report.getWaSentCount() == null ? 0 : report.getWaSentCount()) + 1);
+            }
+            
+            item.setWaStatus("SENT");
+            item.setWaMessageId(messageId);
+            item.setWaSentAt(LocalDateTime.now());
+            item.setWaErrorMessage(null);
+            
+            logger.info("[WA RESEND] SUCCESS - Item {} sent to {}, messageId: {}", itemId, item.getPhone(), messageId);
+        } else {
+            // Build detailed error message
+            StringBuilder errorDetail = new StringBuilder();
+            if (error != null) {
+                errorDetail.append(error);
+            }
+            if (waResult.get("messageDetail") != null) {
+                if (errorDetail.length() > 0) errorDetail.append(" | ");
+                errorDetail.append("Detail: ").append(waResult.get("messageDetail"));
+            }
+            
+            String finalError = errorDetail.length() > 0 ? errorDetail.toString() : "Unknown error after " + maxRetries + " attempts";
+            
+            // Update stats if was previously sent (unlikely but handle it)
+            if ("SENT".equals(previousStatus)) {
+                report.setWaSentCount(Math.max(0, (report.getWaSentCount() == null ? 0 : report.getWaSentCount()) - 1));
+                report.setWaFailedCount((report.getWaFailedCount() == null ? 0 : report.getWaFailedCount()) + 1);
+            } else if ("PENDING".equals(previousStatus)) {
+                report.setWaFailedCount((report.getWaFailedCount() == null ? 0 : report.getWaFailedCount()) + 1);
+            }
+            
+            item.setWaStatus("FAILED");
+            item.setWaMessageId(messageId); // Still save if available
+            item.setWaErrorMessage(finalError);
+            
+            logger.error("[WA RESEND] FAILED - Item {} to {}: {}", itemId, item.getPhone(), finalError);
+        }
+        
+        videoReportItemRepository.save(item);
+        videoReportRepository.save(report);
+        
+        if (!success) {
+            throw new RuntimeException("Failed to send WhatsApp: " + item.getWaErrorMessage());
+        }
+        
+        return item;
+    }
+    
+    /**
+     * Sync/update WA message status from Wablas API for pending items
+     */
+    @Transactional
+    public Map<String, Object> syncWaStatus(Long reportId) {
+        Map<String, Object> result = new java.util.HashMap<>();
+        
+        VideoReport report = videoReportRepository.findById(reportId).orElse(null);
+        if (report == null) {
+            result.put("success", false);
+            result.put("error", "Report not found");
+            return result;
+        }
+        
+        // Get items with waStatus = SENT or PENDING that have messageId
+        List<VideoReportItem> pendingItems = videoReportItemRepository.findByVideoReportIdOrderByRowNumberAsc(reportId).stream()
+                .filter(item -> item.getWaMessageId() != null && !item.getWaMessageId().isEmpty())
+                .filter(item -> "SENT".equals(item.getWaStatus()) || "PENDING".equals(item.getWaStatus()))
+                .collect(java.util.stream.Collectors.toList());
+        
+        logger.info("[WA SYNC] Checking {} items with messageId for report {}", pendingItems.size(), reportId);
+        
+        int updated = 0;
+        int failed = 0;
+        int delivered = 0;
+        int read = 0;
+        java.util.List<Map<String, Object>> statusUpdates = new java.util.ArrayList<>();
+        
+        for (VideoReportItem item : pendingItems) {
+            try {
+                Map<String, Object> waResult = whatsAppService.getMessageStatus(item.getWaMessageId());
+                
+                Map<String, Object> itemUpdate = new java.util.HashMap<>();
+                itemUpdate.put("itemId", item.getId());
+                itemUpdate.put("phone", item.getPhone());
+                itemUpdate.put("oldStatus", item.getWaStatus());
+                itemUpdate.put("messageId", item.getWaMessageId());
+                
+                if ((Boolean) waResult.getOrDefault("success", false)) {
+                    String wablasStatus = (String) waResult.get("status");
+                    itemUpdate.put("wablasStatus", wablasStatus);
+                    itemUpdate.put("rawResponse", waResult.get("rawResponse"));
+                    
+                    // Update status based on Wablas response
+                    // Wablas statuses: pending, sent, delivered, read, cancel, rejected, failed
+                    if ("delivered".equalsIgnoreCase(wablasStatus) || "read".equalsIgnoreCase(wablasStatus)) {
+                        item.setWaStatus("DELIVERED");
+                        item.setWaErrorMessage(null);
+                        updated++;
+                        if ("delivered".equalsIgnoreCase(wablasStatus)) {
+                            delivered++;
+                        } else {
+                            read++;
+                        }
+                        logger.info("[WA SYNC] Item {} delivered/read: {}", item.getId(), wablasStatus);
+                    } else if ("sent".equalsIgnoreCase(wablasStatus)) {
+                        // Still sent, not yet delivered - keep as SENT
+                        logger.info("[WA SYNC] Item {} still sent, not delivered yet", item.getId());
+                    } else if ("cancel".equalsIgnoreCase(wablasStatus) || "rejected".equalsIgnoreCase(wablasStatus) || "failed".equalsIgnoreCase(wablasStatus)) {
+                        item.setWaStatus("FAILED");
+                        item.setWaErrorMessage("Wablas status: " + wablasStatus);
+                        updated++;
+                        failed++;
+                        
+                        // Update report counters
+                        report.setWaSentCount(Math.max(0, (report.getWaSentCount() == null ? 0 : report.getWaSentCount()) - 1));
+                        report.setWaFailedCount((report.getWaFailedCount() == null ? 0 : report.getWaFailedCount()) + 1);
+                        
+                        logger.warn("[WA SYNC] Item {} failed: {}", item.getId(), wablasStatus);
+                    } else if ("pending".equalsIgnoreCase(wablasStatus)) {
+                        // Still pending in Wablas queue
+                        logger.info("[WA SYNC] Item {} still pending in Wablas", item.getId());
+                    }
+                    
+                    itemUpdate.put("newStatus", item.getWaStatus());
+                    videoReportItemRepository.save(item);
+                } else {
+                    itemUpdate.put("error", waResult.get("error"));
+                    logger.warn("[WA SYNC] Failed to get status for item {}: {}", item.getId(), waResult.get("error"));
+                }
+                
+                statusUpdates.add(itemUpdate);
+                
+                // Add small delay to avoid rate limiting
+                Thread.sleep(200);
+                
+            } catch (Exception e) {
+                logger.error("[WA SYNC] Error checking item {}: {}", item.getId(), e.getMessage());
+            }
+        }
+        
+        videoReportRepository.save(report);
+        
+        result.put("success", true);
+        result.put("totalChecked", pendingItems.size());
+        result.put("updated", updated);
+        result.put("delivered", delivered);
+        result.put("read", read);
+        result.put("failed", failed);
+        result.put("statusUpdates", statusUpdates);
+        
+        logger.info("[WA SYNC] Completed for report {}: {} checked, {} updated ({} delivered, {} read, {} failed)", 
+                reportId, pendingItems.size(), updated, delivered, read, failed);
+        
+        return result;
+    }
+    
+    /**
+     * Update WA message template for a report
+     */
+    @Transactional
+    public VideoReport updateWaTemplate(Long reportId, String waTemplate) {
+        VideoReport report = videoReportRepository.findById(reportId).orElse(null);
+        if (report == null) {
+            throw new RuntimeException("Report not found");
+        }
+        
+        report.setWaMessageTemplate(waTemplate);
+        return videoReportRepository.save(report);
+    }
+
+    /**
+     * Check status of all pending clips and update
+     * Uses parallel processing for efficiency with large batches
+     */
+    @Transactional
+    public void checkPendingClips(Long reportId) {
+        List<VideoReportItem> processingItems = videoReportItemRepository
+                .findByVideoReportIdAndStatus(reportId, "PROCESSING");
+
+        logger.info("[CHECK CLIPS] Checking {} PROCESSING items for report {}", processingItems.size(), reportId);
+        
+        if (processingItems.isEmpty()) {
+            logger.info("[CHECK CLIPS] No processing items to check");
+            return;
+        }
+        
+        // Use parallel checking for large batches
+        if (processingItems.size() > 10) {
+            checkClipsParallel(processingItems);
+        } else {
+            checkClipsSequential(processingItems);
+        }
+
+        checkAndUpdateReportStatus(reportId);
+    }
+    
+    /**
+     * Check clips sequentially (for small batches)
+     */
+    private void checkClipsSequential(List<VideoReportItem> items) {
+        for (VideoReportItem item : items) {
+            checkSingleClipStatus(item);
+        }
+    }
+    
+    /**
+     * Check clips in parallel (for large batches)
+     */
+    private void checkClipsParallel(List<VideoReportItem> items) {
+        ExecutorService executor = Executors.newFixedThreadPool(VIDEO_GENERATION_PARALLELISM);
+        
+        try {
+            List<CompletableFuture<Void>> futures = items.stream()
+                    .map(item -> CompletableFuture.runAsync(() -> checkSingleClipStatus(item), executor))
+                    .collect(Collectors.toList());
+            
+            CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+        } finally {
+            executor.shutdown();
+            try {
+                executor.awaitTermination(60, TimeUnit.SECONDS);
+            } catch (InterruptedException e) {
+                executor.shutdownNow();
+            }
+        }
+    }
+    
+    /**
+     * Check status of a single clip
+     */
+    private void checkSingleClipStatus(VideoReportItem item) {
+        if (item.getDidClipId() == null) return;
+        
+        try {
+            logger.debug("[CHECK CLIPS] Checking D-ID status for clip: {}", item.getDidClipId());
+            Map<String, Object> status = didService.getClipStatus(item.getDidClipId());
+            
+            if ((Boolean) status.get("success")) {
+                String clipStatus = (String) status.get("status");
+                
+                if ("done".equals(clipStatus)) {
+                    item.setStatus("DONE");
+                    item.setVideoUrl((String) status.get("result_url"));
+                    item.setVideoGeneratedAt(LocalDateTime.now());
+                    logger.info("[CHECK CLIPS] Item {} DONE with videoUrl", item.getId());
+                } else if ("error".equals(clipStatus)) {
+                    item.setStatus("FAILED");
+                    item.setErrorMessage((String) status.get("error"));
+                    logger.warn("[CHECK CLIPS] Item {} FAILED: {}", item.getId(), item.getErrorMessage());
+                }
+                // Keep as PROCESSING if still being processed
+                
+                videoReportItemRepository.save(item);
+            }
+        } catch (Exception e) {
+            logger.error("[CHECK CLIPS] Error checking item {}: {}", item.getId(), e.getMessage());
+        }
+    }
+    
+    /**
+     * Retry all failed video items in a report
+     */
+    @Async
+    @Transactional
+    public void retryFailedVideos(Long reportId) {
+        List<VideoReportItem> failedItems = videoReportItemRepository
+                .findByVideoReportIdAndStatus(reportId, "FAILED");
+        
+        logger.info("[RETRY] ========================================");
+        logger.info("[RETRY] Retrying {} failed items for report {}", failedItems.size(), reportId);
+        logger.info("[RETRY] ========================================");
+        
+        if (failedItems.isEmpty()) {
+            logger.info("[RETRY] No failed items to retry");
+            return;
+        }
+        
+        // Reset status to PENDING for retry
+        for (VideoReportItem item : failedItems) {
+            item.setStatus("PENDING");
+            item.setErrorMessage(null);
+            item.setDidClipId(null);
+            videoReportItemRepository.save(item);
+        }
+        
+        // Update report status
+        VideoReport report = videoReportRepository.findById(reportId).orElse(null);
+        if (report != null) {
+            report.setStatus("PROCESSING");
+            videoReportRepository.save(report);
+        }
+        
+        // Start video generation for reset items
+        startVideoGeneration(reportId);
+    }
+    
+    /**
+     * Retry all failed WA messages - reset to PENDING so next startWaBlast will pick them up
+     */
+    @Transactional  
+    public void retryFailedWaMessages(Long reportId) {
+        List<VideoReportItem> failedItems = videoReportItemRepository.findByVideoReportIdOrderByRowNumberAsc(reportId).stream()
+                .filter(item -> "DONE".equals(item.getStatus())) // Only items with completed videos
+                .filter(item -> "FAILED".equals(item.getWaStatus()))
+                .collect(Collectors.toList());
+        
+        logger.info("[WA RETRY VIDEO] Retrying {} failed WA items for report {}", failedItems.size(), reportId);
+        
+        if (failedItems.isEmpty()) {
+            logger.info("[WA RETRY VIDEO] No failed WA items to retry");
+            return;
+        }
+        
+        VideoReport report = videoReportRepository.findById(reportId).orElse(null);
+        if (report == null) {
+            logger.error("[WA RETRY VIDEO] Report not found: {}", reportId);
+            return;
+        }
+        
+        // Reset WA status to PENDING for retry
+        for (VideoReportItem item : failedItems) {
+            item.setWaStatus("PENDING");
+            item.setWaErrorMessage(null);
+            item.setWaMessageId(null);
+            videoReportItemRepository.save(item);
+        }
+        
+        // Update report failed count (subtract items being retried)
+        int currentFailedCount = report.getWaFailedCount() == null ? 0 : report.getWaFailedCount();
+        report.setWaFailedCount(Math.max(0, currentFailedCount - failedItems.size()));
+        videoReportRepository.save(report);
+        
+        logger.info("[WA RETRY VIDEO] Reset {} items to PENDING", failedItems.size());
+        
+        // Now send them immediately
+        startWaBlast(reportId);
+    }
+
+    private void checkAndUpdateReportStatus(Long reportId) {
+        VideoReport report = videoReportRepository.findById(reportId).orElse(null);
+        if (report == null) {
+            logger.warn("[STATUS CHECK] Report {} not found", reportId);
+            return;
+        }
+
+        int doneCount = videoReportItemRepository.countByVideoReportIdAndStatus(reportId, "DONE");
+        int failedCount = videoReportItemRepository.countByVideoReportIdAndStatus(reportId, "FAILED");
+        int processingCount = videoReportItemRepository.countByVideoReportIdAndStatus(reportId, "PROCESSING");
+        int pendingCount = videoReportItemRepository.countByVideoReportIdAndStatus(reportId, "PENDING");
+
+        report.setSuccessCount(doneCount);
+        report.setFailedCount(failedCount);
+        report.setProcessedRecords(doneCount + failedCount);
+
+        // Check if all non-excluded items are done or failed (no more processing/pending)
+        boolean allItemsFinished = (processingCount == 0 && pendingCount == 0);
+        boolean hasFinishedItems = (doneCount + failedCount) > 0;
+        
+        if (allItemsFinished && hasFinishedItems) {
+            report.setStatus("COMPLETED");
+            report.setCompletedAt(LocalDateTime.now());
+            logger.info("[VIDEO STATUS] Report {} marked as COMPLETED. WA blast will be triggered automatically.", reportId);
+        }
+        
+        videoReportRepository.save(report);
+    }
+
+    /**
+     * Get video report by ID with items
+     */
+    @Transactional(readOnly = true)
+    public VideoReportResponse getVideoReport(Long id) {
+        VideoReport report = videoReportRepository.findById(id).orElse(null);
+        if (report == null) return null;
+
+        // Don't load items here for large datasets - use separate paginated endpoint
+        return mapToResponseWithoutItems(report);
+    }
+
+    /**
+     * Get video report by ID with paginated items
+     */
+    @Transactional(readOnly = true)
+    public VideoReportResponse getVideoReportWithItems(Long id, Pageable pageable, String status, String waStatus, String search) {
+        VideoReport report = videoReportRepository.findById(id).orElse(null);
+        if (report == null) return null;
+
+        Page<VideoReportItem> itemsPage;
+        
+        // Handle waStatus filter
+        if (waStatus != null && !waStatus.isEmpty()) {
+            if (search != null && !search.isEmpty()) {
+                itemsPage = videoReportItemRepository.searchByReportIdAndWaStatus(id, waStatus.toUpperCase(), search, pageable);
+            } else {
+                itemsPage = videoReportItemRepository.findByVideoReportIdAndWaStatusOrderByRowNumberAsc(id, waStatus.toUpperCase(), pageable);
+            }
+        } else if (search != null && !search.isEmpty()) {
+            if (status != null && !status.isEmpty() && !status.equals("all")) {
+                itemsPage = videoReportItemRepository.searchByReportIdAndStatus(id, status.toUpperCase(), search, pageable);
+            } else {
+                itemsPage = videoReportItemRepository.searchByReportId(id, search, pageable);
+            }
+        } else {
+            if (status != null && !status.isEmpty() && !status.equals("all")) {
+                itemsPage = videoReportItemRepository.findByVideoReportIdAndStatusOrderByRowNumberAsc(id, status.toUpperCase(), pageable);
+            } else {
+                itemsPage = videoReportItemRepository.findByVideoReportIdOrderByRowNumberAsc(id, pageable);
+            }
+        }
+
+        return mapToResponseWithPagedItems(report, itemsPage);
+    }
+
+    /**
+     * Get all video reports paginated
+     */
+    @Transactional(readOnly = true)
+    public Page<VideoReportResponse> getAllVideoReports(Pageable pageable) {
+        return videoReportRepository.findAllByOrderByCreatedAtDesc(pageable)
+                .map(this::mapToResponseWithoutItems);
+    }
+
+    /**
+     * Delete video report
+     */
+    @Transactional
+    public void deleteVideoReport(Long id) {
+        videoReportItemRepository.deleteAll(
+                videoReportItemRepository.findByVideoReportIdOrderByRowNumberAsc(id)
+        );
+        videoReportRepository.deleteById(id);
+    }
+
+    /**
+     * Get single video item by report ID and item ID
+     */
+    @Transactional(readOnly = true)
+    public VideoReportResponse.VideoReportItemResponse getVideoItemById(Long reportId, Long itemId) {
+        VideoReportItem item = videoReportItemRepository.findByIdAndVideoReportId(itemId, reportId);
+        if (item == null) {
+            return null;
+        }
+        
+        return mapItemToResponse(item);
+    }
+    
+    private VideoReportItemResponse mapItemToResponse(VideoReportItem item) {
+        VideoReportItemResponse ir = new VideoReportItemResponse();
+        ir.setId(item.getId());
+        ir.setRowNumber(item.getRowNumber());
+        ir.setName(item.getName());
+        ir.setPhone(item.getPhone());
+        ir.setAvatar(item.getAvatar());
+        ir.setPersonalizedMessage(item.getPersonalizedMessage());
+        ir.setDidClipId(item.getDidClipId());
+        ir.setStatus(item.getStatus());
+        ir.setVideoUrl(item.getVideoUrl());
+        ir.setVideoGeneratedAt(item.getVideoGeneratedAt());
+        ir.setErrorMessage(item.getErrorMessage());
+        ir.setWaStatus(item.getWaStatus());
+        ir.setWaMessageId(item.getWaMessageId());
+        ir.setWaErrorMessage(item.getWaErrorMessage());
+        ir.setWaSentAt(item.getWaSentAt());
+        ir.setExcluded(item.getExcluded());
+        return ir;
+    }
+
+    private VideoReportResponse mapToResponse(VideoReport report, List<VideoReportItem> items) {
+        VideoReportResponse response = new VideoReportResponse();
+        response.setId(report.getId());
+        response.setReportName(report.getReportName());
+        response.setMessageTemplate(report.getMessageTemplate());
+        response.setWaMessageTemplate(report.getWaMessageTemplate());
+        response.setStatus(report.getStatus());
+        response.setTotalRecords(report.getTotalRecords());
+        response.setProcessedRecords(report.getProcessedRecords());
+        response.setSuccessCount(report.getSuccessCount());
+        response.setFailedCount(report.getFailedCount());
+        response.setWaSentCount(report.getWaSentCount());
+        response.setWaFailedCount(report.getWaFailedCount());
+        response.setCreatedAt(report.getCreatedAt());
+        response.setCompletedAt(report.getCompletedAt());
+
+        List<VideoReportItemResponse> itemResponses = items.stream()
+                .map(this::mapItemToResponse)
+                .collect(Collectors.toList());
+
+        response.setItems(itemResponses);
+        return response;
+    }
+
+    private VideoReportResponse mapToResponseWithoutItems(VideoReport report) {
+        VideoReportResponse response = new VideoReportResponse();
+        response.setId(report.getId());
+        response.setReportName(report.getReportName());
+        response.setMessageTemplate(report.getMessageTemplate());
+        response.setWaMessageTemplate(report.getWaMessageTemplate());
+        response.setStatus(report.getStatus());
+        response.setTotalRecords(report.getTotalRecords());
+        response.setProcessedRecords(report.getProcessedRecords());
+        response.setSuccessCount(report.getSuccessCount());
+        response.setFailedCount(report.getFailedCount());
+        // Get accurate counts from database (not from paginated items)
+        int pendingCount = videoReportItemRepository.countByVideoReportIdAndStatus(report.getId(), "PENDING");
+        int processingCount = videoReportItemRepository.countByVideoReportIdAndStatus(report.getId(), "PROCESSING");
+        response.setPendingCount(pendingCount);
+        response.setProcessingCount(processingCount);
+        response.setWaSentCount(report.getWaSentCount());
+        response.setWaFailedCount(report.getWaFailedCount());
+        // Calculate WA pending count
+        int waPendingCount = videoReportItemRepository.countByVideoReportIdAndWaStatus(report.getId(), "PENDING");
+        response.setWaPendingCount(waPendingCount);
+        response.setCreatedAt(report.getCreatedAt());
+        response.setCompletedAt(report.getCompletedAt());
+        response.setItems(new ArrayList<>());
+        return response;
+    }
+
+    private VideoReportResponse mapToResponseWithPagedItems(VideoReport report, Page<VideoReportItem> itemsPage) {
+        VideoReportResponse response = new VideoReportResponse();
+        response.setId(report.getId());
+        response.setReportName(report.getReportName());
+        response.setMessageTemplate(report.getMessageTemplate());
+        response.setWaMessageTemplate(report.getWaMessageTemplate());
+        response.setStatus(report.getStatus());
+        response.setTotalRecords(report.getTotalRecords());
+        response.setProcessedRecords(report.getProcessedRecords());
+        response.setSuccessCount(report.getSuccessCount());
+        response.setFailedCount(report.getFailedCount());
+        // Get accurate counts from database (not from paginated items)
+        int pendingCount = videoReportItemRepository.countByVideoReportIdAndStatus(report.getId(), "PENDING");
+        int processingCount = videoReportItemRepository.countByVideoReportIdAndStatus(report.getId(), "PROCESSING");
+        response.setPendingCount(pendingCount);
+        response.setProcessingCount(processingCount);
+        response.setWaSentCount(report.getWaSentCount());
+        response.setWaFailedCount(report.getWaFailedCount());
+        // Calculate WA pending count
+        int waPendingCount = videoReportItemRepository.countByVideoReportIdAndWaStatus(report.getId(), "PENDING");
+        response.setWaPendingCount(waPendingCount);
+        response.setCreatedAt(report.getCreatedAt());
+        response.setCompletedAt(report.getCompletedAt());
+        
+        // Pagination info
+        response.setItemsPage(itemsPage.getNumber());
+        response.setItemsTotalPages(itemsPage.getTotalPages());
+        response.setItemsTotalElements(itemsPage.getTotalElements());
+
+        List<VideoReportItemResponse> itemResponses = itemsPage.getContent().stream()
+                .map(this::mapItemToResponse)
+                .collect(Collectors.toList());
+
+        response.setItems(itemResponses);
+        return response;
+    }
+}

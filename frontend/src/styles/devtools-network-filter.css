@@ -1,0 +1,68 @@
+/* Network Filter Styles untuk DevTools */
+/* File ini membantu mengurangi visual noise di browser DevTools */
+
+/* Hide HMR and Next.js internal requests in Network tab */
+/* Ini dapat digunakan sebagai custom CSS di DevTools */
+
+/*
+Untuk menggunakan CSS ini di DevTools:
+1. Buka DevTools (F12)
+2. Pergi ke Settings (⚙️)  
+3. Pilih Experiments
+4. Enable "Allow custom UI themes"
+5. Pergi ke Sources
+6. Buat file baru dengan nama "devtools-network-filter.css"
+7. Copy-paste CSS di bawah ini
+
+Atau gunakan filter di Network tab dengan pattern:
+-url:_next -url:webpack -url:hot-update -url:favicon
+*/
+
+/* Console styling untuk backend calls */
+.console-backend-call {
+  background: linear-gradient(90deg, #00ff00 0%, #00cc00 100%);
+  color: white;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-weight: bold;
+}
+
+.console-backend-response {
+  background: linear-gradient(90deg, #0099ff 0%, #0066cc 100%);
+  color: white;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-weight: bold;
+}
+
+.console-backend-error {
+  background: linear-gradient(90deg, #ff4444 0%, #cc0000 100%);
+  color: white;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-weight: bold;
+}
+
+/* Network tab filter suggestions */
+/*
+Gunakan filter berikut di Network tab untuk menyembunyikan noise:
+
+Method filter:
+-method:OPTIONS
+
+Domain filter:
+domain:localhost:8080
+
+URL pattern filter:
+-url:_next -url:webpack -url:hot-update -url:favicon -url:.js -url:.css -url:.png -url:.jpg -url:.svg
+
+Kombinasi filter untuk hanya menampilkan backend:
+domain:localhost:8080 method:GET,POST,PUT,DELETE
+
+Filter untuk menyembunyikan static assets:
+-type:image -type:script -type:stylesheet -type:font
+
+Custom filter yang disarankan:
+url:*/api/* -url:_next -url:webpack -url:hot-update
+
+*/

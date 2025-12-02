@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Fixed URLs - Koperasi Desa</title>
+</head>
+<body>
+    <h1>Test Fixed Image URLs</h1>
+    
+    <h2>✅ CORRECT URLs (should work):</h2>
+    <div style="border: 2px solid green; padding: 10px; margin: 10px 0;">
+        <h3>1. Target Image:</h3>
+        <img src="http://localhost:8080/images/1f0e7f26-d80f-424b-b417-3b7eece822da.png" alt="Test Image 1" style="max-width: 300px; border: 1px solid #ccc;">
+        <p><strong>URL:</strong> http://localhost:8080/images/1f0e7f26-d80f-424b-b417-3b7eece822da.png</p>
+        
+        <h3>2. Other test image:</h3>
+        <img src="http://localhost:8080/images/1ddbe7a9-6179-4315-886b-64afe6801dc8.png" alt="Test Image 2" style="max-width: 300px; border: 1px solid #ccc;">
+        <p><strong>URL:</strong> http://localhost:8080/images/1ddbe7a9-6179-4315-886b-64afe6801dc8.png</p>
+    </div>
+    
+    <h2>❌ BROKEN URLs (should NOT work):</h2>
+    <div style="border: 2px solid red; padding: 10px; margin: 10px 0;">
+        <h3>1. Double /api/api/ (OLD):</h3>
+        <img src="http://localhost:8080/api/api/images/1f0e7f26-d80f-424b-b417-3b7eece822da.png" alt="Test Image 3 OLD" style="max-width: 300px; border: 1px solid #ccc;">
+        <p><strong>URL:</strong> http://localhost:8080/api/api/images/1f0e7f26-d80f-424b-b417-3b7eece822da.png (SHOULD FAIL)</p>
+        
+        <h3>2. Single /api/ (OLD):</h3>
+        <img src="http://localhost:8080/api/images/1f0e7f26-d80f-424b-b417-3b7eece822da.png" alt="Test Image 4 OLD" style="max-width: 300px; border: 1px solid #ccc;">
+        <p><strong>URL:</strong> http://localhost:8080/api/images/1f0e7f26-d80f-424b-b417-3b7eece822da.png (SHOULD FAIL)</p>
+    </div>
+    
+    <h2>📝 Summary of Changes:</h2>
+    <div style="background: #f0f0f0; padding: 15px; margin: 10px 0;">
+        <ul>
+            <li><strong>Backend:</strong> FileUploadController returns <code>/images/filename.png</code></li>
+            <li><strong>Backend:</strong> Static resource handler serves at <code>/images/**</code></li>
+            <li><strong>Frontend:</strong> Uses <code>NEXT_PUBLIC_BASE_URL</code> instead of <code>NEXT_PUBLIC_API_URL</code> for images</li>
+            <li><strong>Result:</strong> <code>http://localhost:8080/images/filename.png</code> (NO double /api/)</li>
+        </ul>
+    </div>
+</body>
+</html>
