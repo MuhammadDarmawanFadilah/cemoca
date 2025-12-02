@@ -56,7 +56,7 @@ echo "✅ Frontend built"
 
 # Step 4: Start frontend
 echo "▶️  Starting frontend..."
-$PM2_PATH start $SERVICE_NAME
+$PM2_PATH restart $SERVICE_NAME || $PM2_PATH start $FRONTEND_DIR/ecosystem.config.js
 $PM2_PATH save
 echo "✅ Frontend started"
 
