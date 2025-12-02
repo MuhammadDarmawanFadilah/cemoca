@@ -66,6 +66,17 @@ echo "✅ Frontend built"
 
 # Step 6: Create PM2 config
 echo "⚙️  Creating PM2 config..."
+
+# Find PM2 path
+PM2_PATH=$(which pm2 2>/dev/null || echo "/root/.nvm/versions/node/$(ls /root/.nvm/versions/node 2>/dev/null | head -1)/bin/pm2" 2>/dev/null || echo "/usr/local/bin/pm2")
+if [ ! -f "$PM2_PATH" ]; then
+    PM2_PATH="/root/.local/share/pnpm/pm2"
+fi
+if [ ! -f "$PM2_PATH" ]; then
+    PM2_PATH=$(find /root -name "pm2" -type f 2>/dev/null | head -1)
+fi
+echo "📍 Using PM2 at: $PM2_PATH"
+
 cat > $FRONTEND_DIR/ecosystem.config.js << 'EOF'
 module.exports = {
   apps: [{
@@ -85,9 +96,9 @@ module.exports = {
 }
 EOF
 
-pm2 start $FRONTEND_DIR/ecosystem.config.js
-pm2 save
-pm2 startup
+$PM2_PATH start $FRONTEND_DIR/ecosystem.config.js
+$PM2_PATH save
+$PM2_PATH startup
 echo "✅ Frontend started with PM2"
 
 # Step 7: Create Nginx config

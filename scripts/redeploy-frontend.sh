@@ -15,9 +15,20 @@ SERVICE_NAME="camoca-frontend"
 # Clone from public repo or use SSH
 GITHUB_REPO="https://github.com/MuhammadDarmawanFadilah/cemoca.git"
 
+# Find PM2 path
+PM2_PATH=$(which pm2 2>/dev/null || echo "/root/.nvm/versions/node/$(ls /root/.nvm/versions/node 2>/dev/null | head -1)/bin/pm2" 2>/dev/null || echo "/usr/local/bin/pm2")
+if [ ! -f "$PM2_PATH" ]; then
+    PM2_PATH="/root/.local/share/pnpm/pm2"
+fi
+if [ ! -f "$PM2_PATH" ]; then
+    PM2_PATH=$(find /root -name "pm2" -type f 2>/dev/null | head -1)
+fi
+
+echo "📍 Using PM2 at: $PM2_PATH"
+
 # Step 1: Stop frontend
 echo "⏹️  Stopping frontend..."
-pm2 stop $SERVICE_NAME || true
+$PM2_PATH stop $SERVICE_NAME || true
 echo "✅ Frontend stopped"
 
 # Step 2: Pull latest code
@@ -45,8 +56,8 @@ echo "✅ Frontend built"
 
 # Step 4: Start frontend
 echo "▶️  Starting frontend..."
-pm2 start $SERVICE_NAME
-pm2 save
+$PM2_PATH start $SERVICE_NAME
+$PM2_PATH save
 echo "✅ Frontend started"
 
 # Step 5: Reload Nginx
@@ -72,4 +83,4 @@ echo "✅ Port: 3003"
 echo "✅ URL: http://srv906504.hstgr.cloud"
 echo "✅ Time: $(date)"
 echo ""
-echo "📝 Logs: pm2 logs $SERVICE_NAME"
+echo "📝 Logs: $PM2_PATH logs $SERVICE_NAME"
