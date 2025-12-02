@@ -16,15 +16,15 @@ SERVICE_NAME="camoca-frontend"
 GITHUB_REPO="https://github.com/MuhammadDarmawanFadilah/cemoca.git"
 
 # Find PM2 path - try multiple locations
+export PATH="$PATH:/root/.nvm/versions/node/v22.11.0/bin:/root/.local/share/pnpm:/usr/local/bin"
+
+PM2_PATH=""
 if command -v pm2 &> /dev/null; then
-    PM2_PATH="pm2"
+    PM2_PATH=$(command -v pm2)
+elif [ -f "/root/.nvm/versions/node/v22.11.0/bin/pm2" ]; then
+    PM2_PATH="/root/.nvm/versions/node/v22.11.0/bin/pm2"
 elif [ -f "/root/.local/share/pnpm/pm2" ]; then
     PM2_PATH="/root/.local/share/pnpm/pm2"
-elif [ -d "/root/.nvm/versions/node" ]; then
-    NVM_NODE=$(ls /root/.nvm/versions/node 2>/dev/null | tail -1)
-    if [ -n "$NVM_NODE" ] && [ -f "/root/.nvm/versions/node/$NVM_NODE/bin/pm2" ]; then
-        PM2_PATH="/root/.nvm/versions/node/$NVM_NODE/bin/pm2"
-    fi
 elif [ -f "/usr/local/bin/pm2" ]; then
     PM2_PATH="/usr/local/bin/pm2"
 else
@@ -32,16 +32,16 @@ else
 fi
 
 if [ -z "$PM2_PATH" ]; then
-    echo "❌ PM2 not found! Installing..."
+    echo "❌ PM2 not found! Installing globally..."
     npm install -g pm2
-    PM2_PATH="pm2"
+    PM2_PATH=$(command -v pm2)
 fi
 
 echo "📍 Using PM2 at: $PM2_PATH"
 
 # Step 1: Stop frontend
 echo "⏹️  Stopping frontend..."
-"$PM2_PATH" stop $SERVICE_NAME 2>/dev/null || true
+"$PM2_PATH" stop "$SERVICE_NAME" 2>/dev/null || true
 echo "✅ Frontend stopped"
 
 # Step 2: Pull latest code
@@ -69,8 +69,7 @@ echo "✅ Frontend built"
 
 # Step 4: Start frontend
 echo "▶️  Starting frontend..."
-"$PM2_PATH" delete $SERVICE_NAME 2>/dev/null || true
-"$PM2_PATH" start $FRONTEND_DIR/ecosystem.config.js
+"$PM2_PATH" restart "$SERVICE_NAME" 2>/dev/null || "$PM2_PATH" start "$FRONTEND_DIR/ecosystem.config.js"
 "$PM2_PATH" save
 echo "✅ Frontend started"
 
@@ -97,4 +96,4 @@ echo "✅ Port: 3003"
 echo "✅ URL: http://srv906504.hstgr.cloud"
 echo "✅ Time: $(date)"
 echo ""
-echo "📝 Logs: \"$PM2_PATH\" logs $SERVICE_NAME"
+echo "📝 Logs: \"$PM2_PATH\" logs \"$SERVICE_NAME\""
