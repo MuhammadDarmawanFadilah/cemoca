@@ -82,7 +82,7 @@ StandardOutput=syslog
 StandardError=syslog
 SyslogIdentifier=$SERVICE_NAME
 Environment=NODE_ENV=production
-Environment=PORT=3003
+Environment=PORT=3008
 
 [Install]
 WantedBy=multi-user.target
@@ -101,7 +101,7 @@ server {
     server_name srv906504.hstgr.cloud 31.97.110.194;
 
     location / {
-        proxy_pass http://127.0.0.1:3003;
+        proxy_pass http://127.0.0.1:3008;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection 'upgrade';
@@ -147,7 +147,7 @@ else
     echo "⚠️  Backend API not responding yet"
 fi
 
-if curl -s http://localhost:3003 > /dev/null; then
+if curl -s http://localhost:3008 > /dev/null; then
     echo "✅ Frontend OK"
 else
     echo "⚠️  Frontend not responding yet"

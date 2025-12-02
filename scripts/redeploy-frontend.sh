@@ -70,7 +70,7 @@ echo "🔍 Verifying deployment..."
 if sudo systemctl is-active --quiet $SERVICE_NAME; then
     echo "✅ Service is running"
     
-    if curl -s http://localhost:3003 > /dev/null; then
+    if curl -s http://localhost:3008 > /dev/null; then
         echo "✅ Local connection successful"
     else
         echo "⚠️  Local connection failed"
@@ -86,7 +86,7 @@ echo ""
 echo "🎉 CAMOCA FRONTEND REDEPLOY COMPLETED!"
 echo "========================================"
 echo "✅ Service: $SERVICE_NAME"
-echo "✅ Port: 3003"
+echo "✅ Port: 3008"
 echo "✅ Directory: $FRONTEND_DIR"
 echo "✅ URL: http://srv906504.hstgr.cloud"
 echo "✅ Status: $(sudo systemctl is-active $SERVICE_NAME)"
