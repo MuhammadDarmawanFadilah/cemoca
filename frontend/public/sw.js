@@ -1,11 +1,11 @@
 // Service Worker for Alumni PWA - Auto-generated
-// Generated at: 2025-12-01T12:20:06.879Z
-// Deployment ID: ddfi63
+// Generated at: 2025-12-02T13:22:35.848Z
+// Deployment ID: xtqojr
 
 // Dynamic cache name with timestamp for development
 const VERSION = '0.1.0';
-const BUILD_TIME = 1764591606769;
-const DEPLOYMENT_ID = 'ddfi63';
+const BUILD_TIME = 1764681755817;
+const DEPLOYMENT_ID = 'xtqojr';
 const isDev = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
 const CACHE_NAME = isDev ? `alumni-system-dev-${BUILD_TIME}` : `alumni-system-v${VERSION}-${DEPLOYMENT_ID}`;
 const OFFLINE_URL = '/offline';

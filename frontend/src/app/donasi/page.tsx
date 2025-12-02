@@ -61,19 +61,19 @@ export default function DonasiPage() {
     const loadMidtransConfig = async () => {
       try {
         const response = await fetch(`${config.baseUrl}/api/donations/midtrans-config`);
-        const config = await response.json();
+        const configData = await response.json();
         
-        if (config.success) {
-          setMidtransConfig(config.data);
+        if (configData.success) {
+          setMidtransConfig(configData.data);
           
           // Load Midtrans Snap script
-          const snapUrl = config.data.isProduction 
+          const snapUrl = configData.data.isProduction 
             ? 'https://app.midtrans.com/snap/snap.js'
             : 'https://app.sandbox.midtrans.com/snap/snap.js';
             
           const script = document.createElement('script');
           script.src = snapUrl;
-          script.setAttribute('data-client-key', config.data.clientKey);
+          script.setAttribute('data-client-key', configData.data.clientKey);
           script.onload = () => setSnapLoaded(true);
           script.onerror = () => {
             console.error('Failed to load Midtrans Snap script');
