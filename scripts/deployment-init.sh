@@ -4,7 +4,7 @@
 # Run this script ONCE for first time deployment
 # Server: srv906504.hstgr.cloud
 
-set -e  # Exit on any error
+set -e
 
 echo "🚀 Starting CAMOCA Initial Deployment..."
 echo "=========================================="
@@ -64,11 +64,11 @@ sudo pnpm install
 sudo pnpm build
 echo "✅ Frontend built"
 
-# Step 6: Create systemd service for frontend
-echo "⚙️  Creating systemd service for frontend..."
+# Step 6: Create systemd service for frontend (similar to ikafk-frontend)
+echo "⚙️  Creating systemd service..."
 sudo tee /etc/systemd/system/$SERVICE_NAME.service > /dev/null << EOF
 [Unit]
-Description=CAMOCA Frontend Next.js Application
+Description=CAMOCA Frontend (Next.js)
 After=network.target
 
 [Service]
@@ -93,7 +93,7 @@ sudo systemctl enable $SERVICE_NAME
 sudo systemctl start $SERVICE_NAME
 echo "✅ Frontend service created and started"
 
-# Step 7: Create Nginx config
+# Step 7: Create Nginx config (only for camoca, don't touch other sites)
 echo "🌐 Creating Nginx config..."
 sudo tee /etc/nginx/sites-available/camoca > /dev/null << 'EOF'
 server {
@@ -137,27 +137,20 @@ sudo ln -sf /etc/nginx/sites-available/camoca /etc/nginx/sites-enabled/
 sudo nginx -t && sudo systemctl reload nginx
 echo "✅ Nginx configured"
 
-# Step 8: Wait and verify
-echo "⏳ Waiting for services to start..."
+# Step 8: Verify
+echo "🔍 Verifying deployment..."
 sleep 10
 
-echo "🔍 Verifying deployment..."
 if curl -s http://localhost:8080/camoca/api > /dev/null; then
     echo "✅ Backend API OK"
 else
     echo "⚠️  Backend API not responding yet"
 fi
 
-if sudo systemctl is-active --quiet $SERVICE_NAME; then
-    echo "✅ Frontend service is running"
-    if curl -s http://localhost:3003 > /dev/null; then
-        echo "✅ Frontend OK"
-    else
-        echo "⚠️  Frontend not responding yet"
-    fi
+if curl -s http://localhost:3003 > /dev/null; then
+    echo "✅ Frontend OK"
 else
-    echo "❌ Frontend service failed to start"
-    sudo systemctl status $SERVICE_NAME --no-pager
+    echo "⚠️  Frontend not responding yet"
 fi
 
 echo ""
@@ -174,5 +167,6 @@ echo "   Backend: sudo tail -f /opt/tomcat/logs/catalina.out"
 echo "   Frontend: sudo journalctl -u $SERVICE_NAME -f"
 echo ""
 echo "🔄 Commands:"
-echo "   Restart backend: sudo systemctl restart tomcat"
 echo "   Restart frontend: sudo systemctl restart $SERVICE_NAME"
+echo "   Restart backend: sudo systemctl restart tomcat"
+echo "   Status: sudo systemctl status $SERVICE_NAME"
