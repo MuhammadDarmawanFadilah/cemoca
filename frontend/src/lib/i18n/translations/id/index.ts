@@ -7,6 +7,7 @@ import { roles } from './roles';
 import { reportVideo } from './reportVideo';
 import { reportPdf } from './reportPdf';
 import { profile, settings, errors, confirmation, time, languages } from './misc';
+import { learningModule } from './learningModule';
 
 export const id = {
   common,
@@ -17,6 +18,7 @@ export const id = {
   roles,
   reportVideo,
   reportPdf,
+  learningModule,
   profile,
   settings,
   errors,

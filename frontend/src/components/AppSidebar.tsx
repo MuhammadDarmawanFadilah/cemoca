@@ -7,12 +7,14 @@ import {
   ChevronDown,
   Users,
   UserCircle,
+  Building,
   Shield,
   LogOut,
   LogIn,
   Key,
   Video,
   FileVideo,
+  Image as ImageIcon,
   FileText,
   Mail,
 } from "lucide-react";
@@ -61,6 +63,8 @@ const AppSidebar = () => {
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(!isMobile);
   const [isReportVideoMenuOpen, setIsReportVideoMenuOpen] = useState(!isMobile);
   const [isReportPdfMenuOpen, setIsReportPdfMenuOpen] = useState(!isMobile);
+  const [isLearningModuleMenuOpen, setIsLearningModuleMenuOpen] = useState(!isMobile);
+  const [isMasterDataMenuOpen, setIsMasterDataMenuOpen] = useState(!isMobile);
   
   // Update state ketika device berubah dari desktop ke mobile atau sebaliknya
   useEffect(() => {
@@ -70,12 +74,16 @@ const AppSidebar = () => {
       setIsProfileMenuOpen(false);
       setIsReportVideoMenuOpen(false);
       setIsReportPdfMenuOpen(false);
+      setIsLearningModuleMenuOpen(false);
+      setIsMasterDataMenuOpen(false);
     } else {
       setIsMainMenuOpen(true);
       setIsAdminMenuOpen(true);
       setIsProfileMenuOpen(true);
       setIsReportVideoMenuOpen(true);
       setIsReportPdfMenuOpen(true);
+      setIsLearningModuleMenuOpen(true);
+      setIsMasterDataMenuOpen(true);
     }
   }, [isMobile]);
 
@@ -109,6 +117,19 @@ const AppSidebar = () => {
     },
   ];
 
+  const masterDataItems = [
+    {
+      title: t('nav.agencyList'),
+      url: "/master-data/agency-list",
+      icon: Users,
+    },
+    {
+      title: t('nav.policySales'),
+      url: "/master-data/policy-sales",
+      icon: FileText,
+    },
+  ];
+
   // Report Video items
   const reportVideoItems = [
     {
@@ -124,6 +145,30 @@ const AppSidebar = () => {
       title: t('nav.personalLetter'),
       url: "/report-pdf/personal-letter",
       icon: Mail,
+    },
+  ];
+
+  // Learning Module items
+  const learningModuleItems = [
+    {
+      title: t('nav.learningModuleVideos'),
+      url: "/learning-module/videos",
+      icon: FileVideo,
+    },
+    {
+      title: t('nav.learningModuleImages'),
+      url: "/learning-module/images",
+      icon: ImageIcon,
+    },
+    {
+      title: t('nav.learningModulePowerPoints'),
+      url: "/learning-module/power-points",
+      icon: FileText,
+    },
+    {
+      title: t('nav.learningModulePdfs'),
+      url: "/learning-module/pdfs",
+      icon: FileText,
     },
   ];
 
@@ -227,6 +272,45 @@ const AppSidebar = () => {
           </Collapsible>
         )}
 
+        {/* MASTER DATA SECTION - Visible when authenticated */}
+        {isAuthenticated && (
+          <Collapsible open={isMasterDataMenuOpen} onOpenChange={setIsMasterDataMenuOpen} className="group/collapsible">
+            <SidebarGroup>
+              <SidebarGroupLabel asChild>
+                <CollapsibleTrigger className="w-full flex items-center justify-between hover:bg-sidebar-accent hover:text-sidebar-accent-foreground px-2 py-1.5 text-sm font-medium transition-colors rounded-md">
+                  <span className="flex items-center gap-2">
+                    <Building className="h-4 w-4" />
+                    <span className="hidden md:inline">{t('nav.masterData')}</span>
+                    <span className="md:hidden">{t('nav.masterData')}</span>
+                  </span>
+                  <ChevronDown className="h-4 w-4 transition-transform group-data-[state=open]/collapsible:rotate-180" />
+                </CollapsibleTrigger>
+              </SidebarGroupLabel>
+              <CollapsibleContent>
+                <SidebarGroupContent>
+                  <SidebarMenu className="space-y-1">
+                    {masterDataItems.map((item) => (
+                      <SidebarMenuItem key={item.title}>
+                        <SidebarMenuButton asChild className="w-full">
+                          <Link
+                            href={item.url}
+                            onClick={handleMenuClick}
+                            className="flex items-center gap-3 px-3 py-2 text-sm font-medium transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground rounded-md group"
+                          >
+                            <item.icon className="h-4 w-4 flex-shrink-0" />
+                            <span className="hidden md:inline truncate">{item.title}</span>
+                            <span className="md:hidden text-xs truncate max-w-[80px]">{item.title}</span>
+                          </Link>
+                        </SidebarMenuButton>
+                      </SidebarMenuItem>
+                    ))}
+                  </SidebarMenu>
+                </SidebarGroupContent>
+              </CollapsibleContent>
+            </SidebarGroup>
+          </Collapsible>
+        )}
+
         {/* REPORT VIDEO SECTION - Only visible when authenticated */}
         {isAuthenticated && (
           <Collapsible open={isReportVideoMenuOpen} onOpenChange={setIsReportVideoMenuOpen} className="group/collapsible">
@@ -305,6 +389,45 @@ const AppSidebar = () => {
           </Collapsible>
         )}
 
+        {/* LEARNING MODULE SECTION - Only visible when authenticated */}
+        {isAuthenticated && (
+          <Collapsible open={isLearningModuleMenuOpen} onOpenChange={setIsLearningModuleMenuOpen} className="group/collapsible">
+            <SidebarGroup>
+              <SidebarGroupLabel asChild>
+                <CollapsibleTrigger className="w-full flex items-center justify-between hover:bg-sidebar-accent hover:text-sidebar-accent-foreground px-2 py-1.5 text-sm font-medium transition-colors rounded-md">
+                  <span className="flex items-center gap-2">
+                    <Video className="h-4 w-4" />
+                    <span className="hidden md:inline">{t('nav.learningModule')}</span>
+                    <span className="md:hidden">{t('nav.learningModule')}</span>
+                  </span>
+                  <ChevronDown className="h-4 w-4 transition-transform group-data-[state=open]/collapsible:rotate-180" />
+                </CollapsibleTrigger>
+              </SidebarGroupLabel>
+              <CollapsibleContent>
+                <SidebarGroupContent>
+                  <SidebarMenu className="space-y-1">
+                    {learningModuleItems.map((item) => (
+                      <SidebarMenuItem key={item.title}>
+                        <SidebarMenuButton asChild className="w-full">
+                          <Link
+                            href={item.url}
+                            onClick={handleMenuClick}
+                            className="flex items-center gap-3 px-3 py-2 text-sm font-medium transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground rounded-md group"
+                          >
+                            <item.icon className="h-4 w-4 flex-shrink-0" />
+                            <span className="hidden md:inline truncate">{item.title}</span>
+                            <span className="md:hidden text-xs truncate max-w-[80px]">{item.title}</span>
+                          </Link>
+                        </SidebarMenuButton>
+                      </SidebarMenuItem>
+                    ))}
+                  </SidebarMenu>
+                </SidebarGroupContent>
+              </CollapsibleContent>
+            </SidebarGroup>
+          </Collapsible>
+        )}
+
         {/* USER PROFILE SECTION - Only visible when authenticated */}
         {isAuthenticated && (
           <Collapsible open={isProfileMenuOpen} onOpenChange={setIsProfileMenuOpen} className="group/collapsible">
@@ -322,6 +445,19 @@ const AppSidebar = () => {
               <CollapsibleContent>
                 <SidebarGroupContent>
                   <SidebarMenu className="space-y-1">
+                    <SidebarMenuItem>
+                      <SidebarMenuButton asChild className="w-full">
+                        <Link 
+                          href="/profile"
+                          onClick={handleMenuClick}
+                          className="flex items-center gap-3 px-3 py-2 text-sm font-medium transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground rounded-md group"
+                        >
+                          <Building className="h-4 w-4 flex-shrink-0" />
+                          <span className="hidden md:inline truncate">{t('profile.companyProfile')}</span>
+                          <span className="md:hidden text-xs truncate">{t('profile.companyProfile')}</span>
+                        </Link>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
                     <SidebarMenuItem>
                       <SidebarMenuButton asChild className="w-full">
                         <Link 

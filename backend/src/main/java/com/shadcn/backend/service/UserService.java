@@ -1,5 +1,6 @@
 package com.shadcn.backend.service;
 
+import com.shadcn.backend.dto.RegistrationRequest;
 import com.shadcn.backend.dto.UserRequest;
 import com.shadcn.backend.model.Role;
 import com.shadcn.backend.model.User;
@@ -15,6 +16,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.Locale;
+import java.util.UUID;
 
 @Slf4j
 @Service
@@ -79,6 +82,99 @@ public class UserService {
         User savedUser = userRepository.save(user);
         log.info("User created successfully: {}", savedUser.getUsername());
         return savedUser;
+    }
+
+    public User registerUser(RegistrationRequest request) {
+        log.info("Public registration for username: {}", request.getUsername());
+
+        String username = request.getUsername() != null ? request.getUsername().trim() : null;
+        String email = request.getEmail() != null ? request.getEmail().trim() : null;
+        String companyName = request.getCompanyName() != null ? request.getCompanyName().trim() : null;
+        String phoneNumber = request.getPhoneNumber() != null ? request.getPhoneNumber().trim() : null;
+        String agencyRange = request.getAgencyRange() != null ? request.getAgencyRange().trim() : null;
+        String reasonToUse = request.getReasonToUse() != null ? request.getReasonToUse().trim() : null;
+
+        if (username == null || username.isBlank()) {
+            throw new RuntimeException("Username is required");
+        }
+        if (email == null || email.isBlank()) {
+            throw new RuntimeException("Email is required");
+        }
+        if (companyName == null || companyName.isBlank()) {
+            throw new RuntimeException("Company name is required");
+        }
+        if (phoneNumber == null || phoneNumber.isBlank()) {
+            throw new RuntimeException("Phone number is required");
+        }
+        if (agencyRange == null || agencyRange.isBlank()) {
+            throw new RuntimeException("Agency range is required");
+        }
+        if (reasonToUse == null || reasonToUse.isBlank()) {
+            throw new RuntimeException("Reason is required");
+        }
+        if (request.getPassword() == null || request.getPassword().trim().isEmpty()) {
+            throw new RuntimeException("Password is required");
+        }
+
+        if (existsByUsername(username)) {
+            throw new RuntimeException("Username already exists");
+        }
+        if (existsByEmail(email)) {
+            throw new RuntimeException("Email already exists");
+        }
+        if (userRepository.existsByPhoneNumber(phoneNumber)) {
+            throw new RuntimeException("Phone number already exists");
+        }
+
+        Role userRole = roleRepository.findByName("USER")
+            .orElseGet(() -> roleRepository.findByName("MODERATOR")
+                .orElseThrow(() -> new RuntimeException("Role USER not found")));
+
+        String companyCode = generateCompanyCode(companyName, username);
+
+        User user = User.builder()
+            .username(username)
+            .email(email)
+            .fullName(companyName)
+            .phoneNumber(phoneNumber)
+            .password(passwordEncoder.encode(request.getPassword()))
+            .role(userRole)
+            .status(User.UserStatus.ACTIVE)
+            .companyName(companyName)
+            .companyCode(companyCode)
+            .agencyRange(agencyRange)
+            .reasonToUse(reasonToUse)
+            .build();
+
+        User savedUser = userRepository.save(user);
+        log.info("Public registration successful for username: {}", savedUser.getUsername());
+        return savedUser;
+    }
+
+    private String generateCompanyCode(String companyName, String username) {
+        String base = (companyName != null && !companyName.isBlank()) ? companyName : username;
+        if (base == null) {
+            base = "COMPANY";
+        }
+
+        String normalized = base.trim().toUpperCase(Locale.ROOT)
+            .replaceAll("[^A-Z0-9]", "");
+        if (normalized.isBlank()) {
+            normalized = "COMPANY";
+        }
+        if (normalized.length() > 8) {
+            normalized = normalized.substring(0, 8);
+        }
+
+        for (int i = 0; i < 10; i++) {
+            String suffix = UUID.randomUUID().toString().replace("-", "").substring(0, 6).toUpperCase(Locale.ROOT);
+            String code = normalized + suffix;
+            if (!userRepository.existsByCompanyCode(code)) {
+                return code;
+            }
+        }
+
+        return normalized + UUID.randomUUID().toString().replace("-", "").substring(0, 10).toUpperCase(Locale.ROOT);
     }
 
     public User updateUser(Long id, UserRequest userRequest) {
@@ -151,6 +247,10 @@ public class UserService {
 
     public boolean existsByEmail(String email) {
         return userRepository.existsByEmail(email);
+    }
+
+    public boolean existsByPhoneNumber(String phoneNumber) {
+        return userRepository.existsByPhoneNumber(phoneNumber);
     }
 
     public Page<User> getAllUsersPaginated(Pageable pageable) {

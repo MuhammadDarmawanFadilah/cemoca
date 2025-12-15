@@ -3,6 +3,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { User } from '@/lib/api';
 import { config, getApiUrl } from '@/lib/config';
+import { setCompanyProfileToLocalStorage } from '@/lib/companyProfileLocal';
 
 interface AuthContextType {
   user: User | null;
@@ -20,6 +21,24 @@ export const useAuth = () => {
   const context = useContext(AuthContext);
   if (context === undefined) {
     throw new Error('useAuth must be used within an AuthProvider');
+  }
+  return context;
+};
+
+export const useOptionalAuth = (): AuthContextType => {
+  const context = useContext(AuthContext);
+  if (context === undefined) {
+    return {
+      user: null,
+      token: null,
+      isLoading: false,
+      login: async () => {
+        throw new Error('Auth is not available');
+      },
+      logout: () => {},
+      setUser: () => {},
+      isAuthenticated: false,
+    };
   }
   return context;
 };
@@ -96,6 +115,21 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       // Store token and user
       localStorage.setItem('auth_token', data.token);
       localStorage.setItem('auth_user', JSON.stringify(data.user));
+
+      if (data?.user?.id) {
+        setCompanyProfileToLocalStorage(
+          {
+            companyName: data.user.companyName || undefined,
+            companyCode: data.user.companyCode || undefined,
+          },
+          data.user.id
+        );
+      }
+
+      setCompanyProfileToLocalStorage({
+        companyName: data?.user?.companyName || undefined,
+        companyCode: data?.user?.companyCode || undefined,
+      });
       
       setToken(data.token);
       setUser(data.user);

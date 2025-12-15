@@ -71,6 +71,36 @@ public class UserController {
             return ResponseEntity.internalServerError().build();
         }
     }
+
+    @GetMapping("/exists/username/{username}")
+    public ResponseEntity<Boolean> checkUsernameExists(@PathVariable String username) {
+        try {
+            return ResponseEntity.ok(userService.existsByUsername(username));
+        } catch (Exception e) {
+            log.error("Error checking username exists: {}", username, e);
+            return ResponseEntity.internalServerError().build();
+        }
+    }
+
+    @GetMapping("/exists/email/{email}")
+    public ResponseEntity<Boolean> checkEmailExists(@PathVariable String email) {
+        try {
+            return ResponseEntity.ok(userService.existsByEmail(email));
+        } catch (Exception e) {
+            log.error("Error checking email exists", e);
+            return ResponseEntity.internalServerError().build();
+        }
+    }
+
+    @GetMapping("/exists/phone/{phone}")
+    public ResponseEntity<Boolean> checkPhoneExists(@PathVariable String phone) {
+        try {
+            return ResponseEntity.ok(userService.existsByPhoneNumber(phone));
+        } catch (Exception e) {
+            log.error("Error checking phone exists", e);
+            return ResponseEntity.internalServerError().build();
+        }
+    }
     
     @PostMapping
     public ResponseEntity<User> createUser(@RequestBody UserRequest userRequest) {

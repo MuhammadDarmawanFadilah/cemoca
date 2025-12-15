@@ -20,7 +20,7 @@ export class FileUploadService {
     const formData = new FormData();
     formData.append('file', file);
 
-    return ApiClient.postFormData<FileUploadResponse>('/api/documents/upload', formData);
+    return ApiClient.postFormData<FileUploadResponse>('/api/document-files/upload', formData);
   }
 
   static getImageUrl(filename: string): string {
@@ -36,7 +36,10 @@ export class FileUploadService {
 
   static getDocumentUrl(filename: string): string {
     const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || config.baseUrl;
-    const documentEndpoint = process.env.NEXT_PUBLIC_DOCUMENT_DOWNLOAD_ENDPOINT || '/api/documents';
+    const documentEndpoint =
+      process.env.NEXT_PUBLIC_DOCUMENT_SERVE_ENDPOINT ||
+      process.env.NEXT_PUBLIC_DOCUMENT_DOWNLOAD_ENDPOINT ||
+      '/api/document-files';
     
     if (filename.startsWith('http://') || filename.startsWith('https://')) {
       return filename;

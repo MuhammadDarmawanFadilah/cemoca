@@ -1,5 +1,20 @@
 export const profile = {
   title: "个人资料",
+  companyProfile: "公司资料",
+  companyProfileDesc: "管理公司资料与标志。",
+  companyInfo: "公司信息",
+  companyInfoDesc: "公司的基本信息。",
+  companyPhoto: "公司照片",
+  companyPhotoDesc: "上传公司标志或照片。",
+  uploadPhoto: "上传照片",
+  noPhoto: "暂无",
+  companyNamePlaceholder: "公司",
+  companyCode: "公司代码",
+  companyCodePlaceholder: "输入公司代码",
+  resetCompanyCode: "重置",
+  photoHint: "建议使用方形图片",
+  photoStorageNote: "",
+  companyPhotoUploaded: "公司照片已上传",
   editProfile: "编辑资料",
   editBiography: "编辑简介",
   personalInfo: "个人信息",
@@ -18,7 +33,6 @@ export const settings = {
   timezone: "时区",
   theme: "主题",
 } as const;
-
 export const errors = {
   general: "发生错误",
   notFound: "未找到",

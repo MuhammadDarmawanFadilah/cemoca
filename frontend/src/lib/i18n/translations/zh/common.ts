@@ -3,6 +3,7 @@ export const common = {
   save: "保存",
   cancel: "取消",
   delete: "删除",
+  remove: "移除",
   edit: "编辑",
   create: "创建",
   search: "搜索",
@@ -34,4 +35,13 @@ export const common = {
   noData: "暂无数据",
   required: "必填",
   optional: "可选",
+  pagination: {
+    showing: "显示第 {start} - {end} 条，共 {total} 条",
+    rowsPerPage: "每页行数",
+    pageOf: "第 {page} 页 / 共 {totalPages} 页",
+    goToFirst: "跳到第一页",
+    goToPrevious: "上一页",
+    goToNext: "下一页",
+    goToLast: "跳到最后一页",
+  },
 } as const;

@@ -10,11 +10,48 @@ interface ApiError {
   details?: Record<string, any>
 }
 
+interface ImportErrorRow {
+  rowNumber?: number
+  column?: string
+  message?: string
+  rawValue?: string
+}
+
+interface ImportResultLike {
+  success?: boolean
+  errors?: ImportErrorRow[]
+  createdCount?: number
+  updatedCount?: number
+}
+
+function isImportResultLike(data: any): data is ImportResultLike {
+  return !!data && typeof data === 'object' && Array.isArray((data as any).errors) && typeof (data as any).success === 'boolean'
+}
+
+function formatImportErrorsForToast(data: ImportResultLike) {
+  const errors = data.errors || []
+  const count = errors.length
+  if (count === 0) return 'Import gagal'
+  const first = errors[0] || {}
+  const row = first.rowNumber ? `Baris ${first.rowNumber}` : 'Baris -'
+  const col = first.column ? first.column : 'Kolom -'
+  const msg = first.message ? first.message : 'Error'
+  const raw = first.rawValue ? ` (Value: ${String(first.rawValue).slice(0, 120)})` : ''
+  const more = count > 1 ? ` (+${count - 1} error lain)` : ''
+  return `${row} • ${col} • ${msg}${raw}${more}`
+}
+
 export const showErrorToast = (error: any) => {
   let message = "Terjadi kesalahan yang tidak diketahui"
   let title = "Error"
   
-  if (error?.response?.data) {
+  if (isImportResultLike(error)) {
+    title = 'Import Gagal'
+    message = formatImportErrorsForToast(error)
+  } else if (isImportResultLike(error?.response?.data)) {
+    title = 'Import Gagal'
+    message = formatImportErrorsForToast(error.response.data)
+  } else if (error?.response?.data) {
     const apiError: ApiError = error.response.data
     message = apiError.message || message
     

@@ -34,4 +34,13 @@ export const common = {
   noData: "데이터 없음",
   required: "필수",
   optional: "선택",
+  pagination: {
+    showing: "총 {total}개 중 {start}~{end} 표시",
+    rowsPerPage: "페이지당 행",
+    pageOf: "{totalPages}페이지 중 {page}페이지",
+    goToFirst: "첫 페이지로 이동",
+    goToPrevious: "이전 페이지로 이동",
+    goToNext: "다음 페이지로 이동",
+    goToLast: "마지막 페이지로 이동",
+  },
 } as const;

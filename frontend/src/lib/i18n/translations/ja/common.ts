@@ -34,4 +34,13 @@ export const common = {
   noData: "データがありません",
   required: "必須",
   optional: "任意",
+  pagination: {
+    showing: "{total} 件中 {start} から {end} を表示",
+    rowsPerPage: "1ページあたりの行数",
+    pageOf: "{totalPages} ページ中 {page} ページ",
+    goToFirst: "最初のページへ",
+    goToPrevious: "前のページへ",
+    goToNext: "次のページへ",
+    goToLast: "最後のページへ",
+  },
 } as const;

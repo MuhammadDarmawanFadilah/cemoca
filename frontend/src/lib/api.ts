@@ -4,7 +4,7 @@ import { config } from './config';
 const API_BASE_URL = config.apiUrl;
 
 // Clean API helper function
-async function apiCall<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
+export async function apiCall<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
   const url = `${API_BASE_URL}${endpoint}`;
   const method = options.method || 'GET';
   
@@ -74,6 +74,28 @@ async function apiCall<T>(endpoint: string, options: RequestInit = {}): Promise<
     console.error(`API Error for ${endpoint}:`, error);
     throw error;
   }
+}
+
+function isMasterAgencyAgentImportResult(data: any): data is MasterAgencyAgentImportResult {
+  return (
+    !!data &&
+    typeof data === 'object' &&
+    typeof data.success === 'boolean' &&
+    typeof data.createdCount === 'number' &&
+    typeof data.updatedCount === 'number' &&
+    Array.isArray(data.errors)
+  )
+}
+
+function isMasterPolicySalesImportResult(data: any): data is MasterPolicySalesImportResult {
+  return (
+    !!data &&
+    typeof data === 'object' &&
+    typeof data.success === 'boolean' &&
+    typeof data.createdCount === 'number' &&
+    typeof data.updatedCount === 'number' &&
+    Array.isArray(data.errors)
+  )
 }
 
 // User API functions - Simple and Easy
@@ -411,6 +433,7 @@ export const imageAPI = {
   uploadImage: async (file: File): Promise<{success: string, filename: string, url: string}> => {
     const formData = new FormData();
     formData.append('file', file);
+    const token = localStorage.getItem('auth_token');
     
     try {
       const response = await fetch(`${API_BASE_URL}/images/upload`, {
@@ -418,6 +441,9 @@ export const imageAPI = {
         body: formData,
         mode: 'cors',
         credentials: 'omit',
+        headers: {
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+        },
         // Don't set Content-Type header - let browser set it with boundary
       });
 
@@ -531,6 +557,10 @@ export interface User {
   fullName: string;
   phoneNumber?: string;
   avatarUrl?: string;
+  companyName?: string;
+  companyCode?: string;
+  agencyRange?: string;
+  reasonToUse?: string;
   status: 'ACTIVE' | 'INACTIVE' | 'SUSPENDED' | 'WAITING_APPROVAL' | 'REJECTED';
   role?: Role;
   biografi?: Biografi;
@@ -1068,6 +1098,16 @@ export interface PublicInvitationLink {
   updatedAt: string;
 }
 
+export interface RegistrationRequest {
+  username: string;
+  email: string;
+  password: string;
+  phoneNumber: string;
+  companyName: string;
+  agencyRange: string;
+  reasonToUse: string;
+}
+
 export interface PublicRegistrationRequest {
   username: string;
   email: string;
@@ -1233,6 +1273,34 @@ export const userApprovalAPI = {  // Get users waiting for approval
 // Auth API - Add public registration
 export const authAPI = {
   // ... existing auth functions ...
+
+  register: (request: RegistrationRequest): Promise<{
+    message: string;
+    user: {
+      id: number;
+      username: string;
+      fullName: string;
+      email: string;
+      status: string;
+      companyName?: string;
+      companyCode?: string;
+    };
+  }> =>
+    apiCall<{
+      message: string;
+      user: {
+        id: number;
+        username: string;
+        fullName: string;
+        email: string;
+        status: string;
+        companyName?: string;
+        companyCode?: string;
+      };
+    }>(`/auth/register`, {
+      method: 'POST',
+      body: JSON.stringify(request),
+    }),
 
   // Register from public invitation link
   registerFromPublicLink: (request: PublicRegistrationRequest): Promise<{
@@ -1716,8 +1784,468 @@ export interface MasterSpesialisasiKedokteranResponse {
   updatedAt: string;
 }
 
+export type MasterAgencyAgentGender = 'MALE' | 'FEMALE';
+
+export interface MasterAgencyAgentRequest {
+  agentCode: string;
+  fullName: string;
+  shortName?: string;
+  birthday?: string;
+  gender?: MasterAgencyAgentGender;
+  genderTitle?: string;
+  phoneNo: string;
+  rankCode: string;
+  rankTitle: string;
+  appointmentDate?: string;
+  isActive?: boolean;
+}
+
+export interface MasterAgencyAgentResponse {
+  id: number;
+  agentCode: string;
+  fullName: string;
+  shortName?: string;
+  birthday?: string;
+  gender?: MasterAgencyAgentGender;
+  genderTitle?: string;
+  phoneNo: string;
+  rankCode: string;
+  rankTitle?: string;
+  appointmentDate?: string;
+  isActive: boolean;
+  createdBy?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface MasterAgencyAgentImportError {
+  rowNumber: number;
+  column: string;
+  message: string;
+  rawValue?: string;
+}
+
+export interface MasterAgencyAgentImportResult {
+  success: boolean;
+  createdCount: number;
+  updatedCount: number;
+  errors: MasterAgencyAgentImportError[];
+}
+
+export interface MasterAgencyAgentApiImportRequest {
+  companyCode: string;
+  companyName?: string;
+  removeExisting?: boolean;
+  items: MasterAgencyAgentRequest[];
+}
+
+export interface MasterAgencyAgentListFilters {
+  search?: string;
+  fullName?: string;
+  phoneNo?: string;
+  rankCode?: string;
+  createdBy?: string;
+  isActive?: boolean;
+}
+
+export interface MasterPolicySalesRequest {
+  agentCode: string;
+  policyDate: string;
+  policyCode: string;
+  policyApe: number;
+}
+
+export interface MasterPolicySalesResponse {
+  id: number;
+  agentCode: string;
+  policyDate: string;
+  policyCode: string;
+  policyApe: number;
+  createdBy?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface MasterPolicySalesImportError {
+  rowNumber: number;
+  column: string;
+  message: string;
+  rawValue?: string;
+}
+
+export interface MasterPolicySalesImportResult {
+  success: boolean;
+  createdCount: number;
+  updatedCount: number;
+  errors: MasterPolicySalesImportError[];
+}
+
+export interface MasterPolicySalesApiImportRequest {
+  companyCode: string;
+  companyName?: string;
+  removeExisting?: boolean;
+  items: MasterPolicySalesRequest[];
+}
+
+export interface MasterPolicySalesListFilters {
+  search?: string;
+  agentCode?: string;
+  policyCode?: string;
+  createdBy?: string;
+}
+
 // Master Data API functions
 export const masterDataAPI = {
+  agencyList: {
+    getAll: (
+      companyCode: string,
+      filters?: MasterAgencyAgentListFilters | string,
+      isActiveLegacy?: boolean,
+      page = 0,
+      size = 10,
+      sortBy = 'createdAt',
+      sortDir: 'asc' | 'desc' = 'desc'
+    ) => {
+      const params = new URLSearchParams();
+      params.append('companyCode', companyCode);
+
+      if (typeof filters === 'string') {
+        if (filters) params.append('search', filters);
+        if (isActiveLegacy !== undefined) params.append('isActive', isActiveLegacy.toString());
+      } else {
+        const f = filters;
+        if (f?.search) params.append('search', f.search);
+        if (f?.fullName) params.append('fullName', f.fullName);
+        if (f?.phoneNo) params.append('phoneNo', f.phoneNo);
+        if (f?.rankCode) params.append('rankCode', f.rankCode);
+        if (f?.createdBy) params.append('createdBy', f.createdBy);
+        if (f?.isActive !== undefined) params.append('isActive', f.isActive.toString());
+      }
+
+      params.append('page', page.toString());
+      params.append('size', size.toString());
+      params.append('sortBy', sortBy);
+      params.append('sortDir', sortDir);
+
+      return apiCall<{
+        content: MasterAgencyAgentResponse[];
+        totalElements: number;
+        totalPages: number;
+        number: number;
+        size: number;
+      }>(`/admin/master-data/agency-list?${params.toString()}`);
+    },
+
+    getById: (companyCode: string, id: number): Promise<MasterAgencyAgentResponse> =>
+      apiCall<MasterAgencyAgentResponse>(`/admin/master-data/agency-list/${id}?companyCode=${encodeURIComponent(companyCode)}`),
+
+    create: (companyCode: string, data: MasterAgencyAgentRequest): Promise<MasterAgencyAgentResponse> =>
+      apiCall<MasterAgencyAgentResponse>(`/admin/master-data/agency-list?companyCode=${encodeURIComponent(companyCode)}`, {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+
+    update: (companyCode: string, id: number, data: MasterAgencyAgentRequest): Promise<MasterAgencyAgentResponse> =>
+      apiCall<MasterAgencyAgentResponse>(`/admin/master-data/agency-list/${id}?companyCode=${encodeURIComponent(companyCode)}`, {
+        method: 'PUT',
+        body: JSON.stringify(data),
+      }),
+
+    delete: (companyCode: string, id: number): Promise<void> =>
+      apiCall<void>(`/admin/master-data/agency-list/${id}?companyCode=${encodeURIComponent(companyCode)}`, {
+        method: 'DELETE',
+      }),
+
+    toggleActive: (companyCode: string, id: number): Promise<MasterAgencyAgentResponse> =>
+      apiCall<MasterAgencyAgentResponse>(`/admin/master-data/agency-list/${id}/toggle-active?companyCode=${encodeURIComponent(companyCode)}`, {
+        method: 'PATCH',
+      }),
+
+    importExcel: async (companyCode: string, file: File, removeExisting = false): Promise<MasterAgencyAgentImportResult> => {
+      const formData = new FormData();
+      formData.append('file', file);
+      const token = localStorage.getItem('auth_token');
+
+      const response = await fetch(`${API_BASE_URL}/admin/master-data/agency-list/import-excel?companyCode=${encodeURIComponent(companyCode)}&removeExisting=${removeExisting ? 'true' : 'false'}`, {
+        method: 'POST',
+        body: formData,
+        mode: 'cors',
+        credentials: 'omit',
+        headers: {
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+        },
+      });
+
+      const text = await response.text();
+      let data: any = null;
+      try {
+        data = text ? JSON.parse(text) : null;
+      } catch {
+        data = null;
+      }
+
+      if (!response.ok) {
+        if (isMasterAgencyAgentImportResult(data)) {
+          return data;
+        }
+        const errorMessage = data?.error || data?.message || text || `HTTP ${response.status}`;
+        throw new Error(errorMessage);
+      }
+
+      if (isMasterAgencyAgentImportResult(data)) {
+        return data;
+      }
+      return (data ?? ({} as any)) as MasterAgencyAgentImportResult;
+    },
+
+    importCsv: async (companyCode: string, file: File, removeExisting = false): Promise<MasterAgencyAgentImportResult> => {
+      const formData = new FormData();
+      formData.append('file', file);
+      const token = localStorage.getItem('auth_token');
+
+      const response = await fetch(`${API_BASE_URL}/admin/master-data/agency-list/import-csv?companyCode=${encodeURIComponent(companyCode)}&removeExisting=${removeExisting ? 'true' : 'false'}`, {
+        method: 'POST',
+        body: formData,
+        mode: 'cors',
+        credentials: 'omit',
+        headers: {
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+        },
+      });
+
+      const text = await response.text();
+      let data: any = null;
+      try {
+        data = text ? JSON.parse(text) : null;
+      } catch {
+        data = null;
+      }
+
+      if (!response.ok) {
+        if (isMasterAgencyAgentImportResult(data)) {
+          return data;
+        }
+        const errorMessage = data?.error || data?.message || text || `HTTP ${response.status}`;
+        throw new Error(errorMessage);
+      }
+
+      if (isMasterAgencyAgentImportResult(data)) {
+        return data;
+      }
+      return (data ?? ({} as any)) as MasterAgencyAgentImportResult;
+    },
+
+    importApi: async (companyCode: string, items: MasterAgencyAgentRequest[], companyName?: string, removeExisting = false): Promise<MasterAgencyAgentImportResult> => {
+      const token = localStorage.getItem('auth_token');
+      const response = await fetch(`${API_BASE_URL}/admin/master-data/agency-list/import-api`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+        },
+        mode: 'cors',
+        credentials: 'omit',
+        body: JSON.stringify({ companyCode, companyName: companyName || undefined, removeExisting, items } satisfies MasterAgencyAgentApiImportRequest),
+      });
+
+      const text = await response.text();
+      let data: any = null;
+      try {
+        data = text ? JSON.parse(text) : null;
+      } catch {
+        data = null;
+      }
+
+      if (!response.ok) {
+        if (isMasterAgencyAgentImportResult(data)) {
+          return data;
+        }
+        const errorMessage = data?.error || data?.message || text || `HTTP ${response.status}`;
+        throw new Error(errorMessage);
+      }
+
+      if (isMasterAgencyAgentImportResult(data)) {
+        return data;
+      }
+      return (data ?? ({} as any)) as MasterAgencyAgentImportResult;
+    },
+
+    getTemplateExcelUrl: () => `${API_BASE_URL}/admin/master-data/agency-list/template-excel`,
+    getTemplateCsvUrl: () => `${API_BASE_URL}/admin/master-data/agency-list/template-csv`,
+  },
+
+  policySales: {
+    getAll: (
+      companyCode: string,
+      filters?: MasterPolicySalesListFilters | string,
+      _legacyUnused?: any,
+      page = 0,
+      size = 10,
+      sortBy = 'createdAt',
+      sortDir: 'asc' | 'desc' = 'desc'
+    ) => {
+      const params = new URLSearchParams();
+      params.append('companyCode', companyCode);
+
+      if (typeof filters === 'string') {
+        if (filters) params.append('search', filters);
+      } else {
+        const f = filters;
+        if (f?.search) params.append('search', f.search);
+        if (f?.agentCode) params.append('agentCode', f.agentCode);
+        if (f?.policyCode) params.append('policyCode', f.policyCode);
+        if (f?.createdBy) params.append('createdBy', f.createdBy);
+      }
+
+      params.append('page', page.toString());
+      params.append('size', size.toString());
+      params.append('sortBy', sortBy);
+      params.append('sortDir', sortDir);
+
+      return apiCall<{
+        content: MasterPolicySalesResponse[];
+        totalElements: number;
+        totalPages: number;
+        number: number;
+        size: number;
+      }>(`/admin/master-data/policy-sales?${params.toString()}`);
+    },
+
+    getById: (companyCode: string, id: number): Promise<MasterPolicySalesResponse> =>
+      apiCall<MasterPolicySalesResponse>(`/admin/master-data/policy-sales/${id}?companyCode=${encodeURIComponent(companyCode)}`),
+
+    create: (companyCode: string, data: MasterPolicySalesRequest): Promise<MasterPolicySalesResponse> =>
+      apiCall<MasterPolicySalesResponse>(`/admin/master-data/policy-sales?companyCode=${encodeURIComponent(companyCode)}`, {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+
+    update: (companyCode: string, id: number, data: MasterPolicySalesRequest): Promise<MasterPolicySalesResponse> =>
+      apiCall<MasterPolicySalesResponse>(`/admin/master-data/policy-sales/${id}?companyCode=${encodeURIComponent(companyCode)}`, {
+        method: 'PUT',
+        body: JSON.stringify(data),
+      }),
+
+    delete: (companyCode: string, id: number): Promise<void> =>
+      apiCall<void>(`/admin/master-data/policy-sales/${id}?companyCode=${encodeURIComponent(companyCode)}`, {
+        method: 'DELETE',
+      }),
+
+    importExcel: async (companyCode: string, file: File, removeExisting = false): Promise<MasterPolicySalesImportResult> => {
+      const formData = new FormData();
+      formData.append('file', file);
+      const token = localStorage.getItem('auth_token');
+
+      const response = await fetch(`${API_BASE_URL}/admin/master-data/policy-sales/import-excel?companyCode=${encodeURIComponent(companyCode)}&removeExisting=${removeExisting ? 'true' : 'false'}`, {
+        method: 'POST',
+        body: formData,
+        mode: 'cors',
+        credentials: 'omit',
+        headers: {
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+        },
+      });
+
+      const text = await response.text();
+      let data: any = null;
+      try {
+        data = text ? JSON.parse(text) : null;
+      } catch {
+        data = null;
+      }
+
+      if (!response.ok) {
+        if (isMasterPolicySalesImportResult(data)) {
+          return data;
+        }
+        const errorMessage = data?.error || data?.message || text || `HTTP ${response.status}`;
+        throw new Error(errorMessage);
+      }
+
+      if (isMasterPolicySalesImportResult(data)) {
+        return data;
+      }
+      return (data ?? ({} as any)) as MasterPolicySalesImportResult;
+    },
+
+    importCsv: async (companyCode: string, file: File, removeExisting = false): Promise<MasterPolicySalesImportResult> => {
+      const formData = new FormData();
+      formData.append('file', file);
+      const token = localStorage.getItem('auth_token');
+
+      const response = await fetch(`${API_BASE_URL}/admin/master-data/policy-sales/import-csv?companyCode=${encodeURIComponent(companyCode)}&removeExisting=${removeExisting ? 'true' : 'false'}`, {
+        method: 'POST',
+        body: formData,
+        mode: 'cors',
+        credentials: 'omit',
+        headers: {
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+        },
+      });
+
+      const text = await response.text();
+      let data: any = null;
+      try {
+        data = text ? JSON.parse(text) : null;
+      } catch {
+        data = null;
+      }
+
+      if (!response.ok) {
+        if (isMasterPolicySalesImportResult(data)) {
+          return data;
+        }
+        const errorMessage = data?.error || data?.message || text || `HTTP ${response.status}`;
+        throw new Error(errorMessage);
+      }
+
+      if (isMasterPolicySalesImportResult(data)) {
+        return data;
+      }
+      return (data ?? ({} as any)) as MasterPolicySalesImportResult;
+    },
+
+    importApi: async (companyCode: string, items: MasterPolicySalesRequest[], companyName?: string, removeExisting = false): Promise<MasterPolicySalesImportResult> => {
+      const token = localStorage.getItem('auth_token');
+      const response = await fetch(`${API_BASE_URL}/admin/master-data/policy-sales/import-api`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+        },
+        mode: 'cors',
+        credentials: 'omit',
+        body: JSON.stringify({ companyCode, companyName: companyName || undefined, removeExisting, items } satisfies MasterPolicySalesApiImportRequest),
+      });
+
+      const text = await response.text();
+      let data: any = null;
+      try {
+        data = text ? JSON.parse(text) : null;
+      } catch {
+        data = null;
+      }
+
+      if (!response.ok) {
+        if (isMasterPolicySalesImportResult(data)) {
+          return data;
+        }
+        const errorMessage = data?.error || data?.message || text || `HTTP ${response.status}`;
+        throw new Error(errorMessage);
+      }
+
+      if (isMasterPolicySalesImportResult(data)) {
+        return data;
+      }
+      return (data ?? ({} as any)) as MasterPolicySalesImportResult;
+    },
+
+    getTemplateExcelUrl: () => `${API_BASE_URL}/admin/master-data/policy-sales/template-excel`,
+    getTemplateCsvUrl: () => `${API_BASE_URL}/admin/master-data/policy-sales/template-csv`,
+  },
+
   // Spesialisasi API
   spesialisasi: {
     getAll: (search?: string, isActive?: boolean, page = 0, size = 10) => {

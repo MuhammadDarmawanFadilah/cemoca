@@ -1,17 +1,10 @@
+
 "use client"
 
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
-import { AlertTriangle, Trash2, ToggleLeft, ToggleRight, CheckCircle, XCircle } from "lucide-react"
+import { AlertTriangle, Trash2, ToggleLeft, CheckCircle } from "lucide-react"
+import * as React from "react"
 
 interface ConfirmationDialogProps {
   open: boolean
@@ -38,7 +31,6 @@ export function ConfirmationDialog({
   onCancel,
   loading = false
 }: ConfirmationDialogProps) {
-  
   const getIcon = () => {
     switch (variant) {
       case "destructive":
@@ -63,60 +55,55 @@ export function ConfirmationDialog({
     }
   }
 
-  const handleConfirm = () => {
-    onConfirm()
-  }
-
-  const handleCancel = () => {
-    if (onCancel) {
-      onCancel()
-    }
+  const handleConfirm = React.useCallback(() => {
     onOpenChange(false)
-  }
+    setTimeout(() => onConfirm(), 0)
+  }, [onOpenChange, onConfirm])
+
+  const handleCancel = React.useCallback(() => {
+    if (onCancel) onCancel()
+    onOpenChange(false)
+  }, [onCancel, onOpenChange])
 
   return (
-    <AlertDialog open={open} onOpenChange={onOpenChange}>
-      <AlertDialogContent className="sm:max-w-[425px]">
-        <AlertDialogHeader>
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-[425px]">
+        <DialogHeader>
           <div className="flex items-center gap-3">
             {getIcon()}
-            <AlertDialogTitle className="text-lg font-semibold">
+            <DialogTitle className="text-lg font-semibold">
               {title}
-            </AlertDialogTitle>
+            </DialogTitle>
           </div>
-          <AlertDialogDescription className="text-sm text-muted-foreground mt-2">
+          <DialogDescription className="text-sm text-muted-foreground mt-2">
             {description}
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter className="gap-2 sm:gap-2">
-          <AlertDialogCancel asChild>
-            <Button 
-              variant="outline" 
-              onClick={handleCancel}
-              disabled={loading}
-            >
-              {cancelText}
-            </Button>
-          </AlertDialogCancel>
-          <AlertDialogAction asChild>
-            <Button 
-              variant={getConfirmButtonVariant()}
-              onClick={handleConfirm}
-              disabled={loading}
-              className="min-w-20"
-            >
-              {loading ? (
-                <div className="flex items-center gap-2">
-                  <div className="animate-spin h-4 w-4 border-2 border-current border-t-transparent rounded-full" />
-                  <span>Memproses...</span>
-                </div>
-              ) : (
-                confirmText
-              )}
-            </Button>
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter className="gap-2 sm:gap-2">
+          <Button
+            variant="outline"
+            onClick={handleCancel}
+            disabled={loading}
+          >
+            {cancelText}
+          </Button>
+          <Button
+            variant={getConfirmButtonVariant()}
+            onClick={handleConfirm}
+            disabled={loading}
+            className="min-w-20"
+          >
+            {loading ? (
+              <div className="flex items-center gap-2">
+                <div className="animate-spin h-4 w-4 border-2 border-current border-t-transparent rounded-full" />
+                <span>Memproses...</span>
+              </div>
+            ) : (
+              confirmText
+            )}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }

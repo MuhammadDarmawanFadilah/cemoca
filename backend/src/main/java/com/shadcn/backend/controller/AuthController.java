@@ -2,7 +2,7 @@ package com.shadcn.backend.controller;
 
 import com.shadcn.backend.dto.AuthRequest;
 import com.shadcn.backend.dto.AuthResponse;
-import com.shadcn.backend.dto.PublicRegistrationRequest;
+import com.shadcn.backend.dto.RegistrationRequest;
 import com.shadcn.backend.model.User;
 import com.shadcn.backend.service.AuthService;
 import com.shadcn.backend.service.UserService;
@@ -94,6 +94,37 @@ public class AuthController {
             log.error("Error refreshing token", e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(Map.of("error", "Token refresh failed"));
+        }
+    }
+
+    @PostMapping("/register")
+    public ResponseEntity<?> register(@Valid @RequestBody RegistrationRequest request) {
+        try {
+            log.debug("Registration attempt for username: {}", request.getUsername());
+            User user = userService.registerUser(request);
+            log.info("Registration successful for username: {}", user.getUsername());
+
+            return ResponseEntity.status(HttpStatus.CREATED)
+                .body(Map.of(
+                    "message", "Registration successful",
+                    "user", Map.of(
+                        "id", user.getId(),
+                        "username", user.getUsername(),
+                        "fullName", user.getFullName(),
+                        "email", user.getEmail(),
+                        "status", user.getStatus(),
+                        "companyName", user.getCompanyName(),
+                        "companyCode", user.getCompanyCode()
+                    )
+                ));
+        } catch (RuntimeException e) {
+            log.warn("Registration failed for username: {} - {}", request.getUsername(), e.getMessage());
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(Map.of("error", e.getMessage()));
+        } catch (Exception e) {
+            log.error("Error during registration for username: {}", request.getUsername(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(Map.of("error", "Registration failed"));
         }
     }
       /**

@@ -13,7 +13,6 @@ import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 
 import java.time.LocalDateTime;
-import java.util.List;
 
 /**
  * User entity with Java 21 features and optimized JPA configuration
@@ -24,7 +23,8 @@ import java.util.List;
     @Index(name = "idx_user_username", columnList = "username"),
     @Index(name = "idx_user_email", columnList = "email"),
     @Index(name = "idx_user_status", columnList = "status"),
-    @Index(name = "idx_user_created", columnList = "createdAt")
+    @Index(name = "idx_user_created", columnList = "createdAt"),
+    @Index(name = "idx_user_company_code", columnList = "company_code")
 })
 @JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
 @DynamicUpdate
@@ -63,6 +63,18 @@ public class User {
     @Size(max = 20, message = "Phone number maksimal 20 karakter")
     @Column(name = "phoneNumber", unique = true, nullable = false, length = 20)
     private String phoneNumber;
+
+    @Column(name = "company_name", length = 150)
+    private String companyName;
+
+    @Column(name = "company_code", length = 32)
+    private String companyCode;
+
+    @Column(name = "agency_range", length = 20)
+    private String agencyRange;
+
+    @Column(name = "reason_to_use", length = 1000)
+    private String reasonToUse;
     
     @ManyToOne(fetch = FetchType.EAGER)
     @JoinColumn(name = "role_id")

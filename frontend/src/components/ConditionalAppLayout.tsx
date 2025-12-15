@@ -16,6 +16,16 @@ interface ConditionalAppLayoutProps {
 // Routes that should have NO app UI (navbar, sidebar)
 const publicVideoRoutes = ["/v", "/p"];
 
+// Routes that should keep header but hide sidebar
+const noSidebarRoutes = [
+  "/login",
+  "/forgot-password",
+  "/reset-password",
+  "/register",
+  "/register/invitation",
+  "/register/public",
+];
+
 export default function ConditionalAppLayout({ 
   children, 
   defaultOpen 
@@ -23,8 +33,8 @@ export default function ConditionalAppLayout({
   const pathname = usePathname();
   
   // Check if current route should bypass the app layout
-  const isPublicVideoRoute = pathname?.startsWith("/v");
-  const isPublicPdfRoute = pathname?.startsWith("/p");
+  const isPublicVideoRoute = pathname === "/v" || pathname?.startsWith("/v/");
+  const isPublicPdfRoute = pathname === "/p" || pathname?.startsWith("/p/");
 
   // For public video routes, render children without any app UI (black bg)
   if (isPublicVideoRoute) {
@@ -40,13 +50,15 @@ export default function ConditionalAppLayout({
     return <>{children}</>;
   }
 
+  const shouldHideSidebar = !!pathname && noSidebarRoutes.some((p) => pathname === p || pathname.startsWith(`${p}/`));
+
   // For all other routes, render the full app layout
   return (
     <AuthProvider>
       <PWAProvider>
         <NetworkInitializer />
         <SidebarProvider defaultOpen={defaultOpen}>
-          <ClientSidebarWrapper />
+          {!shouldHideSidebar && <ClientSidebarWrapper />}
           <main className="flex-1 min-h-screen bg-gray-50 dark:bg-gray-900">
             <Navbar />
             <div className="w-full">{children}</div>

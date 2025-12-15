@@ -3,6 +3,7 @@ export const common = {
   save: "Simpan",
   cancel: "Batal",
   delete: "Hapus",
+  remove: "Hapus",
   edit: "Ubah",
   create: "Buat",
   search: "Cari",
@@ -34,4 +35,13 @@ export const common = {
   noData: "Tidak ada data",
   required: "Wajib",
   optional: "Opsional",
+  pagination: {
+    showing: "Menampilkan {start} sampai {end} dari {total} data",
+    rowsPerPage: "Baris per halaman",
+    pageOf: "Halaman {page} dari {totalPages}",
+    goToFirst: "Ke halaman pertama",
+    goToPrevious: "Ke halaman sebelumnya",
+    goToNext: "Ke halaman berikutnya",
+    goToLast: "Ke halaman terakhir",
+  },
 } as const;

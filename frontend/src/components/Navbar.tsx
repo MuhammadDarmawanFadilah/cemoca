@@ -1,6 +1,6 @@
 "use client";
 
-import { LogOut, Moon, Settings, Sun, User, LogIn, UserCircle, Key, Newspaper, Home, FileText, CreditCard, Database, Users, Shield, MapPin, Building, Briefcase, Heart, Stethoscope, Gift, UserCheck, Mail, MessageCircle, Download, Globe, Check } from "lucide-react";
+import { LogOut, Moon, Settings, Sun, User, LogIn, UserCircle, Key, Newspaper, Home, FileText, CreditCard, Database, Users, Shield, MapPin, Building, Briefcase, Heart, Stethoscope, Gift, UserCheck, Mail, MessageCircle, Download, Globe, Check, Building2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar";
@@ -23,6 +23,7 @@ import { useState, useEffect, useCallback } from "react";
 import { imageAPI, biografiAPI } from "@/lib/api";
 import { Loader2 } from "lucide-react";
 import { SupportedLocale } from "@/lib/i18n";
+import { getCompanyProfileFromLocalStorage } from "@/lib/companyProfileLocal";
 
 const Navbar = () => {
   const { setTheme } = useTheme();
@@ -33,15 +34,26 @@ const Navbar = () => {
   const pathname = usePathname() || "";
   const searchParams = useSearchParams();
   const isBeritaPage = pathname === "/berita" || pathname.startsWith("/berita/");
+  const hideSidebarTrigger = [
+    "/login",
+    "/forgot-password",
+    "/reset-password",
+    "/register",
+    "/register/invitation",
+    "/register/public",
+  ].some((p) => pathname === p || pathname.startsWith(`${p}/`));
 
   // Debug PWA state
   console.log('PWA Debug - isInstallable:', isInstallable, 'install function:', typeof install);
 
   const [isCategoryLoading, setIsCategoryLoading] = useState(false);
   const [currentCategory, setCurrentCategory] = useState('Semua');
-  const [biografiPhoto, setBiografiPhoto] = useState<string | null>(null);// Function to get page title and icon based on current path
+  const [biografiPhoto, setBiografiPhoto] = useState<string | null>(null);
+  const [companyPhotoFilename, setCompanyPhotoFilename] = useState<string | null>(null);
+
+  // Function to get page title and icon based on current path
   const getPageInfo = () => {
-    if (pathname === "/") return { title: "Dashboard", icon: Home };
+    if (pathname === "/" || pathname === "/dashboard") return { title: t('nav.dashboard'), icon: Home };
     if (pathname === "/documents") return { title: "Document Center", icon: FileText };
     if (pathname.startsWith("/biografi")) {
       if (pathname.includes("/edit")) return { title: "Edit Biografi", icon: UserCircle };
@@ -51,6 +63,7 @@ const Navbar = () => {
     if (pathname.startsWith("/komunikasi")) return { title: "Komunikasi Kita", icon: MessageCircle };
     if (pathname.startsWith("/alumni-card")) return { title: "Kartu Member", icon: CreditCard };
     if (pathname.startsWith("/public-biografi")) return { title: "Profil Member", icon: UserCircle };
+    if (pathname.startsWith("/profile")) return { title: t('profile.companyProfile'), icon: Building2 };
     if (pathname.startsWith("/admin")) {
       if (pathname.includes("/users")) return { title: "Karyawan Management", icon: Users };
       if (pathname.includes("/berita")) return { title: "Berita Management", icon: Newspaper };
@@ -60,6 +73,7 @@ const Navbar = () => {
       if (pathname.includes("/approvals")) return { title: "Approval Undangan", icon: UserCheck };
       if (pathname.includes("/birthday")) return { title: "Birthday Admin", icon: Gift };
       if (pathname.includes("/master-data")) {
+        if (pathname.includes("/agency-list")) return { title: "Agency List", icon: Users };
         if (pathname.includes("/spesialisasi")) return { title: "Spesialisasi Kedokteran", icon: Stethoscope };
         if (pathname.includes("/provinsi")) return { title: "Provinsi", icon: MapPin };
         if (pathname.includes("/kota")) return { title: "Kota/Kabupaten", icon: Building };
@@ -70,9 +84,9 @@ const Navbar = () => {
       }
       return { title: "Administration", icon: Settings };
     }
-    if (pathname === "/reset-password") return { title: "Reset Password", icon: Key };
-    if (pathname === "/login") return { title: "Login", icon: LogIn };
-    if (pathname === "/register") return { title: "Register", icon: User };
+    if (pathname === "/reset-password") return { title: t('profile.changePassword'), icon: Key };
+    if (pathname === "/login") return { title: t('auth.login'), icon: LogIn };
+    if (pathname === "/register") return { title: t('auth.register'), icon: User };
     
     // Default fallback
     const segments = pathname.split('/').filter(Boolean);
@@ -115,6 +129,26 @@ const Navbar = () => {
     fetchBiographyPhoto();
   }, [user]);
 
+  useEffect(() => {
+    const updateCompanyPhoto = () => {
+      if (!isAuthenticated) {
+        setCompanyPhotoFilename(null);
+        return;
+      }
+
+      const profile = getCompanyProfileFromLocalStorage(user?.id);
+      setCompanyPhotoFilename(profile.photoFilename || null);
+    };
+
+    updateCompanyPhoto();
+
+    const onUpdated = () => updateCompanyPhoto();
+    window.addEventListener("companyProfileUpdated", onUpdated as EventListener);
+    return () => {
+      window.removeEventListener("companyProfileUpdated", onUpdated as EventListener);
+    };
+  }, [isAuthenticated, user?.id]);
+
   // Listen for category changes from BeritaPage
   useEffect(() => {
     const handleCategoryUpdate = (event: CustomEvent) => {
@@ -151,7 +185,7 @@ const Navbar = () => {
     <nav className={`p-4 flex items-center justify-between sticky top-0 bg-background z-10 border-b ${isBeritaPage ? 'shadow-md' : ''}`}>
       {/* LEFT */}
       <div className="flex items-center gap-4">
-        <SidebarTrigger />        <div className="hidden sm:block">
+        {!hideSidebarTrigger && <SidebarTrigger />}        <div className="hidden sm:block">
           {/* Removed duplicate Portal Berita Alumni title */}
         </div>        {/* Quick Navigation Links */}
         <div className="hidden lg:flex items-center space-x-6 ml-6">
@@ -280,6 +314,7 @@ const Navbar = () => {
             <DropdownMenuTrigger>              <Avatar className="h-8 w-8">
                 <AvatarImage 
                   src={
+                    (companyPhotoFilename ? imageAPI.getImageUrl(companyPhotoFilename) : undefined) ||
                     user?.avatarUrl || 
                     (user?.biografi?.fotoProfil ? imageAPI.getImageUrl(user.biografi.fotoProfil) : 
                      user?.biografi?.foto ? imageAPI.getImageUrl(user.biografi.foto) :
@@ -302,9 +337,9 @@ const Navbar = () => {
                   </p>
                 </div>
               </DropdownMenuLabel>              <DropdownMenuSeparator />              <DropdownMenuItem asChild>
-                <Link href={`/biografi/${user?.id}/edit`}>
-                  <User className="h-[1.2rem] w-[1.2rem] mr-2" />
-                  {t('profile.editBiography')}
+                <Link href="/profile">
+                  <Building2 className="h-[1.2rem] w-[1.2rem] mr-2" />
+                  {t('profile.companyProfile')}
                 </Link>
               </DropdownMenuItem>
               <DropdownMenuItem asChild>

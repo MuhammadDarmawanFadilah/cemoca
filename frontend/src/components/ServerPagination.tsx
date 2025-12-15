@@ -1,3 +1,5 @@
+"use client";
+
 import {
   ChevronLeft,
   ChevronRight,
@@ -13,6 +15,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { useLanguage } from "@/contexts/LanguageContext"
 
 interface ServerPaginationProps {
   currentPage: number;
@@ -21,6 +24,7 @@ interface ServerPaginationProps {
   pageSize: number;
   onPageChange: (page: number) => void;
   onPageSizeChange: (size: number) => void;
+  pageSizeOptions?: number[];
 }
 
 export function ServerPagination({
@@ -30,25 +34,33 @@ export function ServerPagination({
   pageSize,
   onPageChange,
   onPageSizeChange,
+  pageSizeOptions = [10, 25, 50, 100],
 }: ServerPaginationProps) {
+  const { t } = useLanguage();
   const startItem = currentPage * pageSize + 1;
   const endItem = Math.min((currentPage + 1) * pageSize, totalElements);
 
   return (
     <div className="flex items-center justify-between px-2 py-4">
       <div className="flex-1 text-sm text-muted-foreground">
-        Showing {startItem} to {endItem} of {totalElements} results
+        {t("common.pagination.showing", {
+          start: startItem,
+          end: endItem,
+          total: totalElements,
+        })}
       </div>
       <div className="flex items-center space-x-6 lg:space-x-8">
         <div className="flex items-center space-x-2">
-          <p className="text-sm font-medium">Rows per page</p>          <Select
+          <p className="text-sm font-medium">{t("common.pagination.rowsPerPage")}</p>
+          <Select
             value={`${pageSize}`}
             onValueChange={(value) => onPageSizeChange(Number(value))}
           >
             <SelectTrigger className="h-8 w-[80px]">
               <SelectValue placeholder={pageSize} />
-            </SelectTrigger>            <SelectContent side="top">
-              {[10, 25, 50, 100, 1000, 10000].map((size) => (
+            </SelectTrigger>
+            <SelectContent side="top">
+              {pageSizeOptions.map((size) => (
                 <SelectItem key={size} value={`${size}`}>
                   {size}
                 </SelectItem>
@@ -57,7 +69,10 @@ export function ServerPagination({
           </Select>
         </div>
         <div className="flex w-[100px] items-center justify-center text-sm font-medium">
-          Page {currentPage + 1} of {totalPages}
+          {t("common.pagination.pageOf", {
+            page: currentPage + 1,
+            totalPages,
+          })}
         </div>
         <div className="flex items-center space-x-2">
           <Button
@@ -66,7 +81,7 @@ export function ServerPagination({
             onClick={() => onPageChange(0)}
             disabled={currentPage === 0}
           >
-            <span className="sr-only">Go to first page</span>
+            <span className="sr-only">{t("common.pagination.goToFirst")}</span>
             <ChevronsLeft />
           </Button>
           <Button
@@ -75,7 +90,7 @@ export function ServerPagination({
             onClick={() => onPageChange(currentPage - 1)}
             disabled={currentPage === 0}
           >
-            <span className="sr-only">Go to previous page</span>
+            <span className="sr-only">{t("common.pagination.goToPrevious")}</span>
             <ChevronLeft />
           </Button>
           <Button
@@ -84,7 +99,7 @@ export function ServerPagination({
             onClick={() => onPageChange(currentPage + 1)}
             disabled={currentPage >= totalPages - 1}
           >
-            <span className="sr-only">Go to next page</span>
+            <span className="sr-only">{t("common.pagination.goToNext")}</span>
             <ChevronRight />
           </Button>
           <Button
@@ -93,7 +108,7 @@ export function ServerPagination({
             onClick={() => onPageChange(totalPages - 1)}
             disabled={currentPage >= totalPages - 1}
           >
-            <span className="sr-only">Go to last page</span>
+            <span className="sr-only">{t("common.pagination.goToLast")}</span>
             <ChevronsRight />
           </Button>
         </div>

@@ -3,6 +3,7 @@ import { nav, auth, dashboard, users, roles } from './nav';
 import { reportVideo } from './reportVideo';
 import { reportPdf } from './reportPdf';
 import { profile, settings, errors, confirmation, time, languages } from './misc';
+import { learningModule } from './learningModule';
 
 export const ko = {
   common,
@@ -13,6 +14,7 @@ export const ko = {
   roles,
   reportVideo,
   reportPdf,
+  learningModule,
   profile,
   settings,
   errors,

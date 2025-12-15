@@ -7,9 +7,10 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Loader2, ArrowLeft, KeyRound, Smartphone, CheckCircle } from 'lucide-react';
+import { Loader2, Smartphone, CheckCircle } from 'lucide-react';
 import { z } from 'zod';
 import { getApiUrl } from '@/lib/config';
+import Image from 'next/image';
 
 const forgotPasswordSchema = z.object({
   identifier: z.string()
@@ -100,28 +101,34 @@ export default function ForgotPasswordPage() {
 
   if (success) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center px-4">
-        <Card className="w-full max-w-md shadow-xl border-0">
-          <CardContent className="p-8">
+      <div className="min-h-[calc(100svh-64px)] flex items-center justify-center px-4 py-10">
+        <Card className="w-full max-w-md rounded-2xl shadow-sm">
+          <CardContent className="p-6 sm:p-8">
             <div className="text-center">
-              <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6">
-                <CheckCircle className="h-8 w-8 text-green-600" />
+              <div className="flex items-center justify-center mb-5">
+                <div className="h-12 w-12 rounded-2xl border bg-background flex items-center justify-center">
+                  <Image src="/logo.svg" alt="CAMOCA" width={26} height={26} />
+                </div>
+              </div>
+
+              <div className="w-14 h-14 bg-green-500/10 rounded-full flex items-center justify-center mx-auto mb-5">
+                <CheckCircle className="h-7 w-7 text-green-600" />
               </div>
               
-              <h1 className="text-xl font-semibold text-gray-900 mb-3">
+              <h1 className="text-xl font-semibold mb-2">
                 Link Terkirim!
               </h1>
               
-              <p className="text-gray-600 mb-6 leading-relaxed">
+              <p className="text-muted-foreground mb-6 leading-relaxed">
                 {message}
               </p>
               
-              <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-6">
+              <div className="bg-muted/40 border rounded-lg p-4 mb-6 text-left">
                 <div className="flex items-start">
-                  <Smartphone className="h-5 w-5 text-green-600 mt-0.5 mr-3 flex-shrink-0" />
-                  <div className="text-sm text-green-800">
+                  <Smartphone className="h-5 w-5 text-muted-foreground mt-0.5 mr-3 flex-shrink-0" />
+                  <div className="text-sm">
                     <p className="font-medium mb-1">Cek WhatsApp Anda</p>
-                    <p>Link reset password telah dikirim ke nomor telepon yang terdaftar. Link berlaku selama 1 jam.</p>
+                    <p className="text-muted-foreground">Link reset password telah dikirim ke nomor telepon yang terdaftar. Link berlaku selama 1 jam.</p>
                   </div>
                 </div>
               </div>
@@ -137,7 +144,7 @@ export default function ForgotPasswordPage() {
                 
                 <Button 
                   onClick={() => router.push('/login')} 
-                  className="w-full bg-blue-600 hover:bg-blue-700"
+                  className="w-full"
                 >
                   Kembali ke Login
                 </Button>
@@ -150,26 +157,24 @@ export default function ForgotPasswordPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center px-4">
-      <Card className="w-full max-w-md shadow-xl border-0">
-        <CardHeader className="text-center pb-4">
-          <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
-            <KeyRound className="h-8 w-8 text-blue-600" />
+    <div className="min-h-[calc(100svh-64px)] flex items-center justify-center px-4 py-10">
+      <Card className="w-full max-w-md rounded-2xl shadow-sm">
+        <CardHeader className="text-center space-y-3">
+          <div className="flex items-center justify-center">
+            <div className="h-12 w-12 rounded-2xl border bg-background flex items-center justify-center">
+              <Image src="/logo.svg" alt="CAMOCA" width={26} height={26} />
+            </div>
           </div>
-          
-          <CardTitle className="text-2xl font-semibold text-gray-900">
-            Lupa Password?
-          </CardTitle>
-          
-          <CardDescription className="text-gray-600 mt-2">
-            Masukkan username atau nomor telepon untuk mendapatkan link reset password
-          </CardDescription>
+          <div className="space-y-1">
+            <CardTitle className="text-xl font-semibold">Lupa Kata Sandi</CardTitle>
+            <CardDescription>Masukkan username atau nomor telepon untuk menerima link reset password</CardDescription>
+          </div>
         </CardHeader>
         
-        <CardContent className="px-8 pb-8">
+        <CardContent className="space-y-5">
           <form onSubmit={handleSubmit} className="space-y-6">
             <div className="space-y-2">
-              <Label htmlFor="identifier" className="text-sm font-medium text-gray-700">
+              <Label htmlFor="identifier" className="text-sm font-medium">
                 Username atau Nomor Telepon
               </Label>
               <Input
@@ -178,41 +183,39 @@ export default function ForgotPasswordPage() {
                 value={form.identifier}
                 onChange={(e) => handleInputChange('identifier', e.target.value)}
                 placeholder="contoh: tika atau 081234567890"
-                className={`h-12 ${errors.identifier ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : 'border-gray-300 focus:border-blue-500 focus:ring-blue-500'}`}
+                className="h-11"
                 disabled={isLoading}
               />
               {errors.identifier && (
-                <p className="text-sm text-red-600">{errors.identifier}</p>
+                <p className="text-sm text-destructive">{errors.identifier}</p>
               )}
             </div>
 
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+            <div className="bg-muted/40 border rounded-lg p-4">
               <div className="flex items-start">
-                <Smartphone className="h-5 w-5 text-blue-600 mt-0.5 mr-3 flex-shrink-0" />
-                <div className="text-sm text-blue-800">
+                <Smartphone className="h-5 w-5 text-muted-foreground mt-0.5 mr-3 flex-shrink-0" />
+                <div className="text-sm">
                   <p className="font-medium mb-1">Link akan dikirim via WhatsApp</p>
-                  <p>Pastikan nomor telepon yang terdaftar dapat menerima WhatsApp</p>
+                  <p className="text-muted-foreground">Pastikan nomor telepon yang terdaftar dapat menerima WhatsApp</p>
                 </div>
               </div>
             </div>
 
             {message && !success && (
-              <Alert className="border-red-200 bg-red-50">
-                <AlertDescription className="text-red-700">
-                  {message}
-                </AlertDescription>
+              <Alert variant="destructive">
+                <AlertDescription>{message}</AlertDescription>
               </Alert>
             )}
 
             <div className="space-y-3">
               <Button 
                 type="submit" 
-                className="w-full h-12 bg-blue-600 hover:bg-blue-700 text-white font-medium" 
+                className="w-full h-11" 
                 disabled={isLoading}
               >
                 {isLoading ? (
                   <>
-                    <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                     Mengirim Link...
                   </>
                 ) : (
@@ -222,12 +225,11 @@ export default function ForgotPasswordPage() {
               
               <Button 
                 type="button"
-                variant="ghost" 
+                variant="outline" 
                 onClick={() => router.push('/login')}
-                className="w-full h-12 text-gray-600 hover:text-gray-800"
+                className="w-full h-11"
                 disabled={isLoading}
               >
-                <ArrowLeft className="mr-2 h-4 w-4" />
                 Kembali ke Login
               </Button>
             </div>

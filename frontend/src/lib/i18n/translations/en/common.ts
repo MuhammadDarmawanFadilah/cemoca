@@ -3,6 +3,7 @@ export const common = {
   save: "Save",
   cancel: "Cancel",
   delete: "Delete",
+  remove: "Remove",
   edit: "Edit",
   create: "Create",
   search: "Search",
@@ -34,4 +35,13 @@ export const common = {
   noData: "No data available",
   required: "Required",
   optional: "Optional",
+  pagination: {
+    showing: "Showing {start} to {end} of {total} results",
+    rowsPerPage: "Rows per page",
+    pageOf: "Page {page} of {totalPages}",
+    goToFirst: "Go to first page",
+    goToPrevious: "Go to previous page",
+    goToNext: "Go to next page",
+    goToLast: "Go to last page",
+  },
 } as const;

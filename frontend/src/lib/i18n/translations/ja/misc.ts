@@ -1,5 +1,20 @@
 export const profile = {
   title: "プロフィール",
+  companyProfile: "会社プロフィール",
+  companyProfileDesc: "会社情報とロゴを管理します。",
+  companyInfo: "会社情報",
+  companyInfoDesc: "会社の基本情報。",
+  companyPhoto: "会社画像",
+  companyPhotoDesc: "会社ロゴまたは写真をアップロードします。",
+  uploadPhoto: "画像をアップロード",
+  noPhoto: "未設定",
+  companyNamePlaceholder: "会社",
+  companyCode: "会社コード",
+  companyCodePlaceholder: "会社コードを入力",
+  resetCompanyCode: "リセット",
+  photoHint: "正方形の画像を推奨",
+  photoStorageNote: "",
+  companyPhotoUploaded: "会社画像をアップロードしました",
   editProfile: "プロフィール編集",
   editBiography: "自己紹介編集",
   personalInfo: "個人情報",
@@ -18,7 +33,6 @@ export const settings = {
   timezone: "タイムゾーン",
   theme: "テーマ",
 } as const;
-
 export const errors = {
   general: "エラーが発生しました",
   notFound: "見つかりません",
