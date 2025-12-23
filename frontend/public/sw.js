@@ -1,13 +1,13 @@
-// Service Worker for Alumni PWA - Auto-generated
-// Generated at: 2025-12-22T11:09:20.634Z
-// Deployment ID: 7f5u8p
+// Service Worker for CEMOCA PWA - Auto-generated
+// Generated at: 2025-12-23T11:27:26.691Z
+// Deployment ID: wtefoy
 
 // Dynamic cache name with timestamp for development
 const VERSION = '0.1.0';
-const BUILD_TIME = 1766401760618;
-const DEPLOYMENT_ID = '7f5u8p';
+const BUILD_TIME = 1766489246642;
+const DEPLOYMENT_ID = 'wtefoy';
 const isDev = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
-const CACHE_NAME = isDev ? `alumni-system-dev-${BUILD_TIME}` : `alumni-system-v${VERSION}-${DEPLOYMENT_ID}`;
+const CACHE_NAME = isDev ? `cemoca-system-dev-${BUILD_TIME}` : `cemoca-system-v${VERSION}-${DEPLOYMENT_ID}`;
 const OFFLINE_URL = '/offline';
 
 // Files to cache immediately
@@ -71,7 +71,7 @@ self.addEventListener('activate', (event) => {
               type: 'SW_UPDATED',
               deploymentId: DEPLOYMENT_ID,
               buildTime: BUILD_TIME,
-              message: 'Alumni System updated!'
+              message: 'CEMOCA System updated!'
             });
           });
         });
@@ -233,13 +233,13 @@ self.addEventListener('sync', (event) => {
   
   if (event.tag === 'background-sync') {
     event.waitUntil(
-      // Perform background sync operations for alumni data
-      console.log('Performing background sync for alumni data')
+      // Perform background sync operations for CEMOCA data
+      console.log('Performing background sync for CEMOCA data')
     );
   }
 });
 
-console.log('Service Worker: Alumni System loaded successfully');
+console.log('Service Worker: CEMOCA System loaded successfully');
 console.log('Environment:', isDev ? 'Development' : 'Production');
 console.log('Cache Name:', CACHE_NAME);
 console.log('Build Time:', new Date(BUILD_TIME).toLocaleString());

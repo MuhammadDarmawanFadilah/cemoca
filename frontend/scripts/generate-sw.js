@@ -9,13 +9,13 @@ const buildTime = new Date().getTime();
 const deploymentId = Math.random().toString(36).substring(2, 8); // Random 6-char ID
 const version = require('../package.json').version || '1.0.0';
 
-console.log('🔧 Generating Service Worker for Alumni System...');
+console.log('🔧 Generating Service Worker for CEMOCA System...');
 console.log('🏗️  Environment:', isDev ? 'Development' : 'Production');
 console.log('📦 Version:', version);
 console.log('⏰ Build Time:', new Date(buildTime).toLocaleString());
 console.log('🆔 Deployment ID:', deploymentId);
 
-const swTemplate = `// Service Worker for Alumni PWA - Auto-generated
+const swTemplate = `// Service Worker for CEMOCA PWA - Auto-generated
 // Generated at: ${new Date().toISOString()}
 // Deployment ID: ${deploymentId}
 
@@ -24,7 +24,7 @@ const VERSION = '${version}';
 const BUILD_TIME = ${buildTime};
 const DEPLOYMENT_ID = '${deploymentId}';
 const isDev = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
-const CACHE_NAME = isDev ? \`alumni-system-dev-\${BUILD_TIME}\` : \`alumni-system-v\${VERSION}-\${DEPLOYMENT_ID}\`;
+const CACHE_NAME = isDev ? \`cemoca-system-dev-\${BUILD_TIME}\` : \`cemoca-system-v\${VERSION}-\${DEPLOYMENT_ID}\`;
 const OFFLINE_URL = '/offline';
 
 // Files to cache immediately
@@ -88,7 +88,7 @@ self.addEventListener('activate', (event) => {
               type: 'SW_UPDATED',
               deploymentId: DEPLOYMENT_ID,
               buildTime: BUILD_TIME,
-              message: 'Alumni System updated!'
+              message: 'CEMOCA System updated!'
             });
           });
         });
@@ -250,13 +250,13 @@ self.addEventListener('sync', (event) => {
   
   if (event.tag === 'background-sync') {
     event.waitUntil(
-      // Perform background sync operations for alumni data
-      console.log('Performing background sync for alumni data')
+      // Perform background sync operations for CEMOCA data
+      console.log('Performing background sync for CEMOCA data')
     );
   }
 });
 
-console.log('Service Worker: Alumni System loaded successfully');
+console.log('Service Worker: CEMOCA System loaded successfully');
 console.log('Environment:', isDev ? 'Development' : 'Production');
 console.log('Cache Name:', CACHE_NAME);
 console.log('Build Time:', new Date(BUILD_TIME).toLocaleString());
@@ -267,7 +267,7 @@ console.log('Deployment ID:', DEPLOYMENT_ID);
 const swPath = path.join(__dirname, '../public/sw.js');
 fs.writeFileSync(swPath, swTemplate);
 
-console.log('✅ Alumni System service worker generated successfully!');
+console.log('✅ CEMOCA System service worker generated successfully!');
 console.log('📁 Path:', swPath);
 console.log('🏗️  Environment:', isDev ? 'Development' : 'Production');
 console.log('⏰ Build time:', new Date(buildTime).toLocaleString());
