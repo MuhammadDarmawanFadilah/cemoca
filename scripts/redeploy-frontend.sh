@@ -1,18 +1,41 @@
 #!/bin/bash
 
-# CAMOCA Frontend Redeploy Script
-# Script untuk redeploy frontend aplikasi CAMOCA
+# CEMOCA Frontend Redeploy Script
+# Script untuk redeploy frontend aplikasi CEMOCA
 
 set -e
 
-echo "🚀 Starting CAMOCA Frontend Redeploy..."
+echo "🚀 Starting CEMOCA Frontend Redeploy..."
 echo "========================================"
 
 # Variables
-REPO_DIR="/opt/camoca/app"
-FRONTEND_DIR="/opt/camoca/app/frontend"
-SERVICE_NAME="camoca-frontend"
+REPO_DIR="/opt/cemoca/app"
+FRONTEND_DIR="/opt/cemoca/app/frontend"
+SERVICE_NAME="cemoca-frontend"
 GITHUB_REPO="https://github.com/MuhammadDarmawanFadilah/cemoca.git"
+
+with_github_token() {
+    if [ -z "${GITHUB_TOKEN:-}" ]; then
+        "$@"
+        return $?
+    fi
+
+    local tmp_home
+    local code
+    tmp_home=$(mktemp -d)
+    chmod 700 "$tmp_home"
+    cat > "$tmp_home/.netrc" << EOF
+machine github.com
+login x-access-token
+password ${GITHUB_TOKEN}
+EOF
+    chmod 600 "$tmp_home/.netrc"
+
+    code=0
+    HOME="$tmp_home" GIT_TERMINAL_PROMPT=0 "$@" || code=$?
+    rm -rf "$tmp_home"
+    return $code
+}
 
 # Step 1: Stop frontend service
 echo "⏹️  Stopping frontend service..."
@@ -23,9 +46,9 @@ echo "✅ Frontend service stopped"
 echo "📥 Pulling latest code from repository..."
 if [ -d "$REPO_DIR/.git" ]; then
     cd $REPO_DIR
-    sudo git fetch --all
+    with_github_token sudo -E git fetch --all
     sudo git reset --hard origin/main
-    sudo git pull origin main
+    with_github_token sudo -E git pull origin main
     echo "✅ Code updated"
 else
     echo "❌ Repository not found. Run deployment-init.sh first!"
@@ -83,12 +106,12 @@ else
 fi
 
 echo ""
-echo "🎉 CAMOCA FRONTEND REDEPLOY COMPLETED!"
+echo "🎉 CEMOCA FRONTEND REDEPLOY COMPLETED!"
 echo "========================================"
 echo "✅ Service: $SERVICE_NAME"
 echo "✅ Port: 3008"
 echo "✅ Directory: $FRONTEND_DIR"
-echo "✅ URL: http://srv906504.hstgr.cloud"
+echo "✅ URL: http://cemoca.org"
 echo "✅ Status: $(sudo systemctl is-active $SERVICE_NAME)"
 echo "✅ Deployment Time: $(date)"
 echo ""

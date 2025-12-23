@@ -3,11 +3,11 @@ package com.shadcn.backend.dto;
 import java.time.LocalDate;
 import java.util.List;
 
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
-import jakarta.validation.Valid;
 
 public record LearningScheduleConfigRequest(
         @NotBlank String schedulerType,

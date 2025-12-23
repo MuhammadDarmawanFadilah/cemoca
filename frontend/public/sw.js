@@ -178,7 +178,7 @@ self.addEventListener('fetch', (event) => {
   );
 });
 
-// Handle push notifications for alumni updates
+// Handle push notifications for CEMOCA updates
 self.addEventListener('push', (event) => {
   console.log('Service Worker: Push event received');
   

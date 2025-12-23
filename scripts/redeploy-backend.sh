@@ -1,26 +1,49 @@
 #!/bin/bash
 
-# CAMOCA Backend Redeploy Script
-# Script untuk redeploy backend aplikasi CAMOCA
+# CEMOCA Backend Redeploy Script
+# Script untuk redeploy backend aplikasi CEMOCA
 
 set -e
 
-echo "🚀 Starting CAMOCA Backend Redeploy..."
+echo "🚀 Starting CEMOCA Backend Redeploy..."
 echo "======================================="
 
 # Variables
-REPO_DIR="/opt/camoca/app"
+REPO_DIR="/opt/cemoca/app"
 TOMCAT_DIR="/opt/tomcat"
-WAR_NAME="camoca.war"
+WAR_NAME="cemoca.war"
 GITHUB_REPO="https://github.com/MuhammadDarmawanFadilah/cemoca.git"
+
+with_github_token() {
+    if [ -z "${GITHUB_TOKEN:-}" ]; then
+        "$@"
+        return $?
+    fi
+
+    local tmp_home
+    local code
+    tmp_home=$(mktemp -d)
+    chmod 700 "$tmp_home"
+    cat > "$tmp_home/.netrc" << EOF
+machine github.com
+login x-access-token
+password ${GITHUB_TOKEN}
+EOF
+    chmod 600 "$tmp_home/.netrc"
+
+    code=0
+    HOME="$tmp_home" GIT_TERMINAL_PROMPT=0 "$@" || code=$?
+    rm -rf "$tmp_home"
+    return $code
+}
 
 # Step 1: Pull latest code
 echo "📥 Pulling latest code from repository..."
 if [ -d "$REPO_DIR/.git" ]; then
     cd $REPO_DIR
-    sudo git fetch --all
+    with_github_token sudo -E git fetch --all
     sudo git reset --hard origin/main
-    sudo git pull origin main
+    with_github_token sudo -E git pull origin main
     echo "✅ Code updated"
 else
     echo "❌ Repository not found. Run deployment-init.sh first!"
@@ -34,13 +57,16 @@ sudo cp src/main/resources/application-prod.properties src/main/resources/applic
 sudo mvn clean package -DskipTests
 echo "✅ Backend built"
 
+# Ensure log directories exist
+sudo mkdir -p /opt/cemoca/logs/{application,scheduler}
+
 # Step 3: Remove old deployment
 echo "🗑️  Removing old deployment..."
 if [ -f "$TOMCAT_DIR/webapps/$WAR_NAME" ]; then
     sudo rm -f $TOMCAT_DIR/webapps/$WAR_NAME
 fi
-if [ -d "$TOMCAT_DIR/webapps/camoca" ]; then
-    sudo rm -rf $TOMCAT_DIR/webapps/camoca
+if [ -d "$TOMCAT_DIR/webapps/cemoca" ]; then
+    sudo rm -rf $TOMCAT_DIR/webapps/cemoca
 fi
 echo "✅ Old deployment removed"
 
@@ -62,7 +88,7 @@ sleep 15
 
 # Step 7: Verify deployment
 echo "🔍 Verifying deployment..."
-if curl -s http://localhost:8080/camoca/api > /dev/null; then
+if curl -s http://localhost:8080/cemoca/api > /dev/null; then
     echo "✅ Backend API OK"
 else
     echo "⚠️  Backend API not responding yet"
@@ -70,10 +96,10 @@ else
 fi
 
 echo ""
-echo "🎉 CAMOCA BACKEND REDEPLOY COMPLETED!"
+echo "🎉 CEMOCA BACKEND REDEPLOY COMPLETED!"
 echo "====================================="
 echo "✅ WAR: $TOMCAT_DIR/webapps/$WAR_NAME"
-echo "✅ API: http://srv906504.hstgr.cloud/camoca/api"
+echo "✅ API: http://cemoca.org/cemoca/api"
 echo "✅ Deployment Time: $(date)"
 echo ""
 echo "📝 Logs command: sudo tail -f $TOMCAT_DIR/logs/catalina.out"
