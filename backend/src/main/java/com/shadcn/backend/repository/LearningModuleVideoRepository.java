@@ -1,16 +1,19 @@
 package com.shadcn.backend.repository;
 
-import com.shadcn.backend.model.LearningModuleVideo;
+import java.util.Optional;
+
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.Pageable;
 
-import java.util.Optional;
+import com.shadcn.backend.model.LearningModuleVideo;
 
 public interface LearningModuleVideoRepository extends JpaRepository<LearningModuleVideo, Long> {
     boolean existsByCode(String code);
+
+        Optional<LearningModuleVideo> findByCodeIgnoreCase(String code);
 
     @Query("select v from LearningModuleVideo v where coalesce(v.shareScope, 'GENERAL') = 'GENERAL'")
     Page<LearningModuleVideo> findGeneralVisible(Pageable pageable);
@@ -23,6 +26,7 @@ public interface LearningModuleVideoRepository extends JpaRepository<LearningMod
 
     @Query(value = "SELECT * FROM learning_module_videos v WHERE " +
             "(COALESCE(v.share_scope, 'GENERAL') = 'GENERAL' OR (COALESCE(v.share_scope, 'GENERAL') = 'COMPANY_ONLY' AND v.created_by_company_name = :requesterCompanyName)) " +
+            "AND (:category IS NULL OR (:category = 'VIDEO_1' AND (v.video_category IS NULL OR v.video_category = 'VIDEO_1')) OR (:category <> 'VIDEO_1' AND v.video_category = :category)) " +
             "AND (:title IS NULL OR LOWER(v.title) LIKE LOWER(CONCAT('%', :title, '%'))) " +
             "AND (:duration IS NULL OR v.duration = :duration) " +
             "AND (:creator IS NULL OR LOWER(v.created_by_company_name) LIKE LOWER(CONCAT('%', :creator, '%'))) " +
@@ -30,6 +34,7 @@ public interface LearningModuleVideoRepository extends JpaRepository<LearningMod
             "AND (:contentTypeRegex IS NULL OR v.content_types REGEXP :contentTypeRegex)",
             countQuery = "SELECT count(*) FROM learning_module_videos v WHERE " +
                     "(COALESCE(v.share_scope, 'GENERAL') = 'GENERAL' OR (COALESCE(v.share_scope, 'GENERAL') = 'COMPANY_ONLY' AND v.created_by_company_name = :requesterCompanyName)) " +
+                    "AND (:category IS NULL OR (:category = 'VIDEO_1' AND (v.video_category IS NULL OR v.video_category = 'VIDEO_1')) OR (:category <> 'VIDEO_1' AND v.video_category = :category)) " +
                     "AND (:title IS NULL OR LOWER(v.title) LIKE LOWER(CONCAT('%', :title, '%'))) " +
                     "AND (:duration IS NULL OR v.duration = :duration) " +
                     "AND (:creator IS NULL OR LOWER(v.created_by_company_name) LIKE LOWER(CONCAT('%', :creator, '%'))) " +
@@ -38,6 +43,7 @@ public interface LearningModuleVideoRepository extends JpaRepository<LearningMod
             nativeQuery = true)
     Page<LearningModuleVideo> search(
             @Param("requesterCompanyName") String requesterCompanyName,
+            @Param("category") String category,
             @Param("title") String title,
             @Param("duration") String duration,
             @Param("creator") String creator,
@@ -48,6 +54,7 @@ public interface LearningModuleVideoRepository extends JpaRepository<LearningMod
 
     @Query(value = "SELECT * FROM learning_module_videos v WHERE " +
             "COALESCE(v.share_scope, 'GENERAL') = 'GENERAL' " +
+            "AND (:category IS NULL OR (:category = 'VIDEO_1' AND (v.video_category IS NULL OR v.video_category = 'VIDEO_1')) OR (:category <> 'VIDEO_1' AND v.video_category = :category)) " +
             "AND (:title IS NULL OR LOWER(v.title) LIKE LOWER(CONCAT('%', :title, '%'))) " +
             "AND (:duration IS NULL OR v.duration = :duration) " +
             "AND (:creator IS NULL OR LOWER(v.created_by_company_name) LIKE LOWER(CONCAT('%', :creator, '%'))) " +
@@ -55,6 +62,7 @@ public interface LearningModuleVideoRepository extends JpaRepository<LearningMod
             "AND (:contentTypeRegex IS NULL OR v.content_types REGEXP :contentTypeRegex)",
             countQuery = "SELECT count(*) FROM learning_module_videos v WHERE " +
                     "COALESCE(v.share_scope, 'GENERAL') = 'GENERAL' " +
+                    "AND (:category IS NULL OR (:category = 'VIDEO_1' AND (v.video_category IS NULL OR v.video_category = 'VIDEO_1')) OR (:category <> 'VIDEO_1' AND v.video_category = :category)) " +
                     "AND (:title IS NULL OR LOWER(v.title) LIKE LOWER(CONCAT('%', :title, '%'))) " +
                     "AND (:duration IS NULL OR v.duration = :duration) " +
                     "AND (:creator IS NULL OR LOWER(v.created_by_company_name) LIKE LOWER(CONCAT('%', :creator, '%'))) " +
@@ -62,6 +70,7 @@ public interface LearningModuleVideoRepository extends JpaRepository<LearningMod
                     "AND (:contentTypeRegex IS NULL OR v.content_types REGEXP :contentTypeRegex)",
             nativeQuery = true)
     Page<LearningModuleVideo> searchGeneral(
+            @Param("category") String category,
             @Param("title") String title,
             @Param("duration") String duration,
             @Param("creator") String creator,

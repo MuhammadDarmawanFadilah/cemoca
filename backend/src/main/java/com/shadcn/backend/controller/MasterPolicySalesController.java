@@ -33,14 +33,13 @@ public class MasterPolicySalesController {
             @RequestParam String companyCode,
             @RequestParam(required = false) String search,
             @RequestParam(required = false) String agentCode,
-            @RequestParam(required = false) String policyCode,
             @RequestParam(required = false) String createdBy,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "25") int size,
             @RequestParam(defaultValue = "createdAt") String sortBy,
             @RequestParam(defaultValue = "desc") String sortDir
     ) {
-        Page<MasterPolicySalesResponse> result = service.findAll(companyCode, search, agentCode, policyCode, createdBy, page, size, sortBy, sortDir);
+        Page<MasterPolicySalesResponse> result = service.findAll(companyCode, search, agentCode, createdBy, page, size, sortBy, sortDir);
         return ResponseEntity.ok(result);
     }
 

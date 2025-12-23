@@ -6,21 +6,25 @@ import org.springframework.stereotype.Service;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.*;
+import org.springframework.core.io.ByteArrayResource;
+import org.springframework.core.io.Resource;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.RestTemplate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.stream.Collectors;
+import java.util.Locale;
 
 @Service
 public class WhatsAppService {
+
+    public static final int WABLAS_MAX_MEDIA_BYTES = 2 * 1024 * 1024;
     
     // Wablas v2 API batch size limit
     private static final int BULK_BATCH_SIZE = 100;
@@ -37,6 +41,9 @@ public class WhatsAppService {
     @Value("${whatsapp.api.token}")
     private String whatsappApiToken;
     
+    @Value("${whatsapp.api.secret-key:}")
+    private String whatsappApiSecretKey;
+    
     @Value("${whatsapp.api.sender}")
     private String whatsappSender;
     
@@ -48,6 +55,43 @@ public class WhatsAppService {
     
     @Autowired
     private ObjectMapper objectMapper;
+
+    private boolean isWablasSuccess(JsonNode responseJson) {
+        if (responseJson == null || !responseJson.has("status")) {
+            return false;
+        }
+
+        JsonNode st = responseJson.get("status");
+        if (st == null || st.isNull()) {
+            return false;
+        }
+
+        if (st.isBoolean()) {
+            return st.asBoolean();
+        }
+
+        String s = st.asText("").trim().toLowerCase();
+        return "true".equals(s) || "success".equals(s) || "ok".equals(s);
+    }
+
+    private String authorizationHeaderValue() {
+        String token = whatsappApiToken == null ? "" : whatsappApiToken.trim();
+        if (token.isEmpty()) {
+            return token;
+        }
+
+        // Wablas docs use Authorization: {token}.{secret_key}
+        if (token.contains(".")) {
+            return token;
+        }
+
+        String secret = whatsappApiSecretKey == null ? "" : whatsappApiSecretKey.trim();
+        if (secret.isEmpty()) {
+            return token;
+        }
+
+        return token + "." + secret;
+    }
     
     /**
      * Send invitation message via WhatsApp using Wablas API
@@ -165,7 +209,7 @@ public class WhatsAppService {
             // IMPORTANT: Wablas v1 API requires APPLICATION_FORM_URLENCODED, not MULTIPART_FORM_DATA
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
-            headers.set("Authorization", whatsappApiToken);
+            headers.set("Authorization", authorizationHeaderValue());
             
             HttpEntity<MultiValueMap<String, String>> requestEntity = new HttpEntity<>(body, headers);
             String url = whatsappApiUrl + "/api/send-message";
@@ -185,7 +229,8 @@ public class WhatsAppService {
                 JsonNode responseJson = objectMapper.readTree(response.getBody());
                 
                 // Check status field - Wablas returns status: true/false
-                boolean apiSuccess = responseJson.has("status") && responseJson.get("status").asBoolean();
+                // Wablas may return status as boolean or string
+                boolean apiSuccess = isWablasSuccess(responseJson);
                 
                 if (apiSuccess) {
                     result.put("success", true);
@@ -291,7 +336,7 @@ public class WhatsAppService {
             // IMPORTANT: Wablas v1 API requires APPLICATION_FORM_URLENCODED, not MULTIPART_FORM_DATA
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
-            headers.set("Authorization", whatsappApiToken);
+            headers.set("Authorization", authorizationHeaderValue());
             
             HttpEntity<MultiValueMap<String, String>> requestEntity = new HttpEntity<>(body, headers);
             String url = whatsappApiUrl + "/api/send-message";
@@ -397,7 +442,7 @@ public class WhatsAppService {
             try {
                 // Simple ping test to check if API is reachable
                 HttpHeaders headers = new HttpHeaders();
-                headers.set("Authorization", whatsappApiToken);
+                headers.set("Authorization", authorizationHeaderValue());
                 
                 HttpEntity<String> entity = new HttpEntity<>(headers);
                 ResponseEntity<String> response = restTemplate.exchange(
@@ -425,7 +470,7 @@ public class WhatsAppService {
         Map<String, Object> result = new HashMap<>();
         try {
             HttpHeaders headers = new HttpHeaders();
-            headers.set("Authorization", whatsappApiToken);
+            headers.set("Authorization", authorizationHeaderValue());
             
             HttpEntity<String> entity = new HttpEntity<>(headers);
             ResponseEntity<String> response = restTemplate.exchange(
@@ -476,7 +521,7 @@ public class WhatsAppService {
             
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
-            headers.set("Authorization", whatsappApiToken);
+            headers.set("Authorization", authorizationHeaderValue());
             
             HttpEntity<MultiValueMap<String, String>> requestEntity = new HttpEntity<>(body, headers);
             String url = whatsappApiUrl + "/api/check-number";
@@ -522,7 +567,7 @@ public class WhatsAppService {
         
         try {
             HttpHeaders headers = new HttpHeaders();
-            headers.set("Authorization", whatsappApiToken);
+            headers.set("Authorization", authorizationHeaderValue());
             
             HttpEntity<String> entity = new HttpEntity<>(headers);
             String url = whatsappApiUrl + "/api/report/message?message_id=" + messageId;
@@ -540,7 +585,7 @@ public class WhatsAppService {
             if (response.getStatusCode() == HttpStatus.OK) {
                 JsonNode responseJson = objectMapper.readTree(response.getBody());
                 
-                boolean apiSuccess = responseJson.has("status") && responseJson.get("status").asBoolean();
+                boolean apiSuccess = isWablasSuccess(responseJson);
                 
                 if (apiSuccess) {
                     result.put("success", true);
@@ -624,7 +669,7 @@ public class WhatsAppService {
             result.put("formattedPhone", cleanPhone);
             
             HttpHeaders headers = new HttpHeaders();
-            headers.set("Authorization", whatsappApiToken);
+            headers.set("Authorization", authorizationHeaderValue());
             headers.set("url", whatsappApiUrl);
             
             HttpEntity<String> entity = new HttpEntity<>(headers);
@@ -1010,7 +1055,7 @@ public class WhatsAppService {
             
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.APPLICATION_JSON);
-            headers.set("Authorization", whatsappApiToken);
+            headers.set("Authorization", authorizationHeaderValue());
             
             String url = whatsappApiUrl + "/api/v2/send-message";
             
@@ -1024,7 +1069,7 @@ public class WhatsAppService {
             
             if (response.getStatusCode() == HttpStatus.OK) {
                 JsonNode responseJson = objectMapper.readTree(response.getBody());
-                boolean apiSuccess = responseJson.has("status") && responseJson.get("status").asBoolean();
+                boolean apiSuccess = isWablasSuccess(responseJson);
                 
                 if (apiSuccess && responseJson.has("data") && responseJson.get("data").has("messages")) {
                     JsonNode messages = responseJson.get("data").get("messages");
@@ -1140,7 +1185,7 @@ public class WhatsAppService {
             
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.APPLICATION_JSON);
-            headers.set("Authorization", whatsappApiToken);
+            headers.set("Authorization", authorizationHeaderValue());
             
             HttpEntity<Map<String, Object>> requestEntity = new HttpEntity<>(body, headers);
             String url = whatsappApiUrl + "/api/device/speed";
@@ -1154,7 +1199,7 @@ public class WhatsAppService {
             
             if (response.getStatusCode() == HttpStatus.OK) {
                 JsonNode responseJson = objectMapper.readTree(response.getBody());
-                if (responseJson.has("status") && responseJson.get("status").asBoolean()) {
+                if (isWablasSuccess(responseJson)) {
                     result.put("success", true);
                     result.put("delay", safeDelay);
                 } else {
@@ -1170,4 +1215,1000 @@ public class WhatsAppService {
         
         return result;
     }
+
+    public Map<String, Object> sendDocumentAttachmentWithDetails(String phoneNumber, String caption, String filename, byte[] bytes, MediaType contentType) {
+        // Wablas docs (bdg) for local document: POST /api/send-document-from-local with base64 file + json meta
+        return sendBase64FileWithDetails("/api/send-document-from-local", phoneNumber, caption, filename, bytes, contentType);
+    }
+
+    public Map<String, Object> sendDocumentAttachmentWithDetailsOrLink(
+            String phoneNumber,
+            String caption,
+            String filename,
+            byte[] bytes,
+            MediaType contentType,
+            String documentUrl
+    ) {
+        Map<String, Object> primary = sendDocumentAttachmentWithDetails(phoneNumber, caption, filename, bytes, contentType);
+        if (Boolean.TRUE.equals(primary.get("success"))) {
+            return primary;
+        }
+
+        String err = primary.get("error") == null ? "" : primary.get("error").toString();
+        String errLower = err.toLowerCase();
+        boolean packageNotSupport = errLower.contains("package") && errLower.contains("not support");
+        boolean tooLarge = errLower.contains("payload too large") || errLower.contains("413");
+
+        if (documentUrl != null && !documentUrl.isBlank() && (packageNotSupport || tooLarge)) {
+            return fallbackToTextLink(phoneNumber, caption, documentUrl, err, "document");
+        }
+        return primary;
+    }
+
+    public Map<String, Object> sendImageAttachmentWithDetails(String phoneNumber, String caption, String filename, byte[] bytes, MediaType contentType) {
+        // Wablas docs (bdg) for local image: POST /api/send-image-from-local with base64 file + json meta
+        Map<String, Object> primary = sendBase64FileWithDetails("/api/send-image-from-local", phoneNumber, caption, filename, bytes, contentType);
+
+        if (Boolean.TRUE.equals(primary.get("success"))) {
+            return primary;
+        }
+
+        String err = primary.get("error") == null ? "" : primary.get("error").toString();
+        String errLower = err.toLowerCase();
+        boolean packageNotSupport = errLower.contains("package") && errLower.contains("not support");
+        boolean tooLarge = errLower.contains("payload too large") || errLower.contains("413");
+
+        if (packageNotSupport || tooLarge) {
+            Map<String, Object> fallback = sendBase64FileWithDetails(
+                    "/api/send-document-from-local",
+                    phoneNumber,
+                    caption,
+                    filename,
+                    bytes,
+                    contentType
+            );
+            fallback.put("imageFallback", "document-from-local");
+            fallback.put("originalError", err);
+            return fallback;
+        }
+
+        return primary;
+    }
+
+    public Map<String, Object> sendImageAttachmentWithDetailsOrLink(
+            String phoneNumber,
+            String caption,
+            String filename,
+            byte[] bytes,
+            MediaType contentType,
+            String imageUrl
+    ) {
+        Map<String, Object> primary = sendImageAttachmentWithDetails(phoneNumber, caption, filename, bytes, contentType);
+        if (Boolean.TRUE.equals(primary.get("success"))) {
+            return primary;
+        }
+
+        String err = primary.get("error") == null ? "" : primary.get("error").toString();
+        String errLower = err.toLowerCase();
+        boolean packageNotSupport = errLower.contains("package") && errLower.contains("not support");
+        boolean tooLarge = errLower.contains("payload too large") || errLower.contains("413");
+
+        if (imageUrl != null && !imageUrl.isBlank() && (packageNotSupport || tooLarge)) {
+            Map<String, Object> fallback = sendMediaUrlWithDetails("/api/send-image", "image", phoneNumber, caption, imageUrl);
+            fallback.put("imageFallback", "send-image-url");
+            fallback.put("originalError", err);
+            return fallback;
+        }
+
+        return primary;
+    }
+
+    private Map<String, Object> fallbackToTextLink(
+            String phoneNumber,
+            String caption,
+            String url,
+            String originalError,
+            String kind
+    ) {
+        Map<String, Object> fallback = new HashMap<>();
+        fallback.put("success", false);
+        fallback.put("phone", phoneNumber);
+        fallback.put("endpoint", "text-link");
+        fallback.put("originalError", originalError);
+        fallback.put("fallbackKind", kind);
+
+        try {
+            String msg = (caption == null ? "" : caption);
+            if (!msg.isBlank()) {
+                msg = msg + "\n";
+            }
+            msg = msg + url;
+
+            String messageId = sendWhatsAppMessage(phoneNumber, msg);
+            fallback.put("success", true);
+            fallback.put("messageId", (messageId == null || messageId.isBlank())
+                    ? ("WA_LINK_" + System.currentTimeMillis())
+                    : messageId);
+            fallback.put("messageStatus", "pending");
+            return fallback;
+        } catch (Exception e) {
+            fallback.put("error", e.getMessage());
+            return fallback;
+        }
+    }
+
+    public Map<String, Object> sendImageUrlWithDetails(String phoneNumber, String caption, String imageUrl) {
+        return sendMediaUrlWithDetails("/api/send-image", "image", phoneNumber, caption, imageUrl);
+    }
+
+    public Map<String, Object> sendVideoUrlWithDetails(String phoneNumber, String caption, String videoUrl) {
+        return sendMediaUrlWithDetails("/api/send-video", "video", phoneNumber, caption, videoUrl);
+    }
+
+    public Map<String, Object> sendTextMessageWithDetails(String phoneNumber, String message) {
+        Map<String, Object> result = new HashMap<>();
+        result.put("success", false);
+        result.put("phone", phoneNumber);
+        result.put("endpoint", "text");
+
+        try {
+            String messageId = sendWhatsAppMessage(phoneNumber, message);
+            result.put("success", true);
+            result.put("messageId", (messageId == null || messageId.isBlank())
+                    ? ("WA_TEXT_" + System.currentTimeMillis())
+                    : messageId);
+            result.put("messageStatus", "pending");
+            return result;
+        } catch (Exception e) {
+            result.put("error", e.getMessage());
+            return result;
+        }
+    }
+
+    public Map<String, Object> sendVideoAttachmentWithDetails(String phoneNumber, String caption, String filename, byte[] bytes) {
+        // Wablas docs (bdg) for local video: POST /api/send-video-from-local with multipart field name 'file'
+        Map<String, Object> primary = sendMultipartFileWithDetails(
+                "/api/send-video-from-local",
+                "file",
+                phoneNumber,
+                caption,
+                filename,
+                bytes,
+                MediaType.valueOf("video/mp4")
+        );
+
+        if (Boolean.TRUE.equals(primary.get("success"))) {
+            return primary;
+        }
+
+        String err = primary.get("error") == null ? null : primary.get("error").toString();
+        if (err != null && err.toLowerCase().contains("package") && err.toLowerCase().contains("not support")) {
+            Map<String, Object> fallback = sendBase64FileWithDetails(
+                    "/api/send-document-from-local",
+                    phoneNumber,
+                    caption,
+                    filename,
+                    bytes,
+                    MediaType.valueOf("video/mp4")
+            );
+            fallback.put("videoFallback", "document-from-local");
+            return fallback;
+        }
+
+        return primary;
+    }
+
+    public Map<String, Object> sendVideoAttachmentWithDetailsOrLink(
+            String phoneNumber,
+            String caption,
+            String filename,
+            byte[] bytes,
+            String videoUrl
+    ) {
+        Map<String, Object> primary = sendMultipartFileWithDetails(
+                "/api/send-video-from-local",
+                "file",
+                phoneNumber,
+                caption,
+                filename,
+                bytes,
+                MediaType.valueOf("video/mp4")
+        );
+
+        if (Boolean.TRUE.equals(primary.get("success"))) {
+            return primary;
+        }
+
+        String err = primary.get("error") == null ? "" : primary.get("error").toString();
+        String errLower = err.toLowerCase(Locale.ROOT);
+        boolean packageNotSupport = errLower.contains("package") && errLower.contains("not support");
+        boolean tooLarge = errLower.contains("payload too large") || errLower.contains("413") || errLower.contains("too large");
+
+        // If local-send fails, try: upload to Wablas -> send by URL (more reliable per docs)
+        // Only attempt upload when we actually have bytes and within Wablas 2MB max.
+        if (!Boolean.TRUE.equals(primary.get("success"))
+                && bytes != null
+                && bytes.length > 0
+                && bytes.length <= WABLAS_MAX_MEDIA_BYTES
+        ) {
+            Map<String, Object> upload = uploadFileToWablas("video", filename, bytes, MediaType.valueOf("video/mp4"));
+            if (Boolean.TRUE.equals(upload.get("success"))) {
+                String uploadedUrl = upload.get("url") == null ? null : upload.get("url").toString();
+                if (uploadedUrl != null && !uploadedUrl.isBlank()) {
+                    Map<String, Object> viaUrl = sendMediaUrlWithDetails("/api/send-video", "video", phoneNumber, caption, uploadedUrl);
+                    viaUrl.put("videoFallback", "upload-video-then-send-video");
+                    viaUrl.put("originalError", err);
+                    viaUrl.put("uploadedUrl", uploadedUrl);
+                    if (Boolean.TRUE.equals(viaUrl.get("success"))) {
+                        return viaUrl;
+                    }
+                }
+            }
+        }
+
+        // If URL-based sending is needed (package limitation or payload too large), use provided videoUrl when available.
+        if (videoUrl != null && !videoUrl.isBlank() && (packageNotSupport || tooLarge)) {
+            Map<String, Object> fallback = sendMediaUrlWithDetails("/api/send-video", "video", phoneNumber, caption, videoUrl);
+            fallback.put("videoFallback", "send-video-url");
+            fallback.put("originalError", err);
+            return fallback;
+        }
+
+        return primary;
+    }
+
+    // ===============================================
+    // BULK VIDEO MESSAGING - Wablas v2 API
+    // Supports up to 100 items per batch
+    // Reference: https://tegal.wablas.com/documentation/api
+    // ===============================================
+
+    public static class BulkVideoItem {
+        private final String phone;
+        private final String caption;
+        private final String videoUrl;
+        private final String originalId;
+
+        public BulkVideoItem(String phone, String caption, String videoUrl, String originalId) {
+            this.phone = phone;
+            this.caption = caption;
+            this.videoUrl = videoUrl;
+            this.originalId = originalId;
+        }
+
+        public String getPhone() {
+            return phone;
+        }
+
+        public String getCaption() {
+            return caption;
+        }
+
+        public String getVideoUrl() {
+            return videoUrl;
+        }
+
+        public String getOriginalId() {
+            return originalId;
+        }
+    }
+
+    public static class BulkVideoResult {
+        private String originalId;
+        private String phone;
+        private String messageId;
+        private boolean success;
+        private String status;
+        private String error;
+
+        public String getOriginalId() { return originalId; }
+        public void setOriginalId(String originalId) { this.originalId = originalId; }
+        public String getPhone() { return phone; }
+        public void setPhone(String phone) { this.phone = phone; }
+        public String getMessageId() { return messageId; }
+        public void setMessageId(String messageId) { this.messageId = messageId; }
+        public boolean isSuccess() { return success; }
+        public void setSuccess(boolean success) { this.success = success; }
+        public String getStatus() { return status; }
+        public void setStatus(String status) { this.status = status; }
+        public String getError() { return error; }
+        public void setError(String error) { this.error = error; }
+    }
+
+    public List<BulkVideoResult> sendBulkVideos(List<BulkVideoItem> items) {
+        return sendBulkVideosWithRetry(items, MAX_RETRY_ATTEMPTS);
+    }
+
+    public List<BulkVideoResult> sendBulkVideosWithRetry(List<BulkVideoItem> items, int maxRetries) {
+        List<BulkVideoResult> allResults = new ArrayList<>();
+
+        if (items == null || items.isEmpty()) {
+            logger.warn("[WABLAS-BULK-VIDEO] No items to send");
+            return allResults;
+        }
+
+        logger.info("[WABLAS-BULK-VIDEO] ========================================");
+        logger.info("[WABLAS-BULK-VIDEO] Starting bulk video send for {} items", items.size());
+        logger.info("[WABLAS-BULK-VIDEO] Batch size: {}, Max retries: {}", BULK_BATCH_SIZE, maxRetries);
+        logger.info("[WABLAS-BULK-VIDEO] ========================================");
+
+        List<List<BulkVideoItem>> batches = splitIntoBatches(items, BULK_BATCH_SIZE);
+        int batchNumber = 0;
+
+        for (List<BulkVideoItem> batch : batches) {
+            batchNumber++;
+            logger.info("[WABLAS-BULK-VIDEO] Processing batch {}/{} ({} items)", batchNumber, batches.size(), batch.size());
+
+            List<BulkVideoResult> batchResults = sendVideoBatchWithRetry(batch, maxRetries, batchNumber, batches.size());
+            allResults.addAll(batchResults);
+
+            long successCount = batchResults.stream().filter(BulkVideoResult::isSuccess).count();
+            logger.info("[WABLAS-BULK-VIDEO] Batch {}/{} complete - Success: {}, Failed: {}",
+                    batchNumber, batches.size(), successCount, batch.size() - successCount);
+
+            if (batchNumber < batches.size()) {
+                try {
+                    Thread.sleep(500);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    logger.error("[WABLAS-BULK-VIDEO] Interrupted at batch {}", batchNumber);
+                    break;
+                }
+            }
+        }
+
+        long totalSuccess = allResults.stream().filter(BulkVideoResult::isSuccess).count();
+        logger.info("[WABLAS-BULK-VIDEO] ========================================");
+        logger.info("[WABLAS-BULK-VIDEO] COMPLETE - Total: {}, Success: {}, Failed: {}",
+                allResults.size(), totalSuccess, allResults.size() - totalSuccess);
+        logger.info("[WABLAS-BULK-VIDEO] ========================================");
+
+        return allResults;
+    }
+
+    private List<BulkVideoResult> sendVideoBatchWithRetry(List<BulkVideoItem> batch, int maxRetries, int batchNum, int totalBatches) {
+        List<BulkVideoResult> results = new ArrayList<>();
+        List<BulkVideoItem> itemsToRetry = new ArrayList<>(batch);
+
+        for (int attempt = 1; attempt <= maxRetries && !itemsToRetry.isEmpty(); attempt++) {
+            logger.info("[WABLAS-BULK-VIDEO] Batch {}/{} - Attempt {}/{} ({} items)",
+                    batchNum, totalBatches, attempt, maxRetries, itemsToRetry.size());
+
+            try {
+                List<BulkVideoResult> attemptResults = sendBulkVideoBatch(itemsToRetry);
+                List<BulkVideoItem> stillFailed = new ArrayList<>();
+
+                for (BulkVideoResult result : attemptResults) {
+                    if (result.isSuccess()) {
+                        results.add(result);
+                    } else {
+                        if (isRetryableError(result.getError()) && attempt < maxRetries) {
+                            BulkVideoItem originalItem = findVideoItemByOriginalId(itemsToRetry, result.getOriginalId());
+                            if (originalItem != null) {
+                                stillFailed.add(originalItem);
+                                logger.debug("[WABLAS-BULK-VIDEO] Will retry item {} - Error: {}", result.getOriginalId(), result.getError());
+                            } else {
+                                results.add(result);
+                            }
+                        } else {
+                            results.add(result);
+                        }
+                    }
+                }
+
+                itemsToRetry = stillFailed;
+
+                if (!itemsToRetry.isEmpty() && attempt < maxRetries) {
+                    logger.info("[WABLAS-BULK-VIDEO] {} items need retry, waiting {}ms...", itemsToRetry.size(), RETRY_DELAY_MS);
+                    Thread.sleep(RETRY_DELAY_MS);
+                }
+
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                logger.error("[WABLAS-BULK-VIDEO] Interrupted during retry");
+
+                for (BulkVideoItem item : itemsToRetry) {
+                    BulkVideoResult failResult = new BulkVideoResult();
+                    failResult.setOriginalId(item.getOriginalId());
+                    failResult.setPhone(item.getPhone());
+                    failResult.setSuccess(false);
+                    failResult.setError("Interrupted during retry");
+                    results.add(failResult);
+                }
+                break;
+
+            } catch (Exception e) {
+                logger.error("[WABLAS-BULK-VIDEO] Error in attempt {}: {}", attempt, e.getMessage());
+
+                if (attempt == maxRetries) {
+                    for (BulkVideoItem item : itemsToRetry) {
+                        BulkVideoResult failResult = new BulkVideoResult();
+                        failResult.setOriginalId(item.getOriginalId());
+                        failResult.setPhone(item.getPhone());
+                        failResult.setSuccess(false);
+                        failResult.setError("Failed after " + maxRetries + " attempts: " + e.getMessage());
+                        results.add(failResult);
+                    }
+                }
+            }
+        }
+
+        return results;
+    }
+
+    private BulkVideoItem findVideoItemByOriginalId(List<BulkVideoItem> items, String originalId) {
+        if (originalId == null) return null;
+        return items.stream()
+                .filter(item -> originalId.equals(item.getOriginalId()))
+                .findFirst()
+                .orElse(null);
+    }
+
+    private List<BulkVideoResult> sendBulkVideoBatch(List<BulkVideoItem> batch) {
+        List<BulkVideoResult> results = new ArrayList<>();
+
+        try {
+            List<Map<String, String>> dataArray = new ArrayList<>();
+            List<BulkVideoItem> validItems = new ArrayList<>();
+
+            for (BulkVideoItem item : batch) {
+                String formattedPhone = formatPhoneNumberForWhatsApp(item.getPhone());
+
+                if (formattedPhone == null || formattedPhone.length() < 10) {
+                    BulkVideoResult failResult = new BulkVideoResult();
+                    failResult.setOriginalId(item.getOriginalId());
+                    failResult.setPhone(item.getPhone());
+                    failResult.setSuccess(false);
+                    failResult.setError("Invalid phone number format");
+                    results.add(failResult);
+                    continue;
+                }
+
+                if (item.getVideoUrl() == null || item.getVideoUrl().isBlank()) {
+                    BulkVideoResult failResult = new BulkVideoResult();
+                    failResult.setOriginalId(item.getOriginalId());
+                    failResult.setPhone(item.getPhone());
+                    failResult.setSuccess(false);
+                    failResult.setError("Video URL is empty");
+                    results.add(failResult);
+                    continue;
+                }
+
+                Map<String, String> msgData = new HashMap<>();
+                msgData.put("phone", formattedPhone);
+                msgData.put("video", item.getVideoUrl());
+                if (item.getCaption() != null && !item.getCaption().isBlank()) {
+                    msgData.put("caption", item.getCaption());
+                }
+                dataArray.add(msgData);
+                validItems.add(item);
+            }
+
+            if (dataArray.isEmpty()) {
+                logger.warn("[WABLAS-BULK-VIDEO] No valid items in batch");
+                return results;
+            }
+
+            Map<String, Object> requestBody = new HashMap<>();
+            requestBody.put("data", dataArray);
+            requestBody.put("retry", true);
+            requestBody.put("priority", false);
+
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+            headers.set("Authorization", authorizationHeaderValue());
+
+            String url = whatsappApiUrl + "/api/v2/send-video";
+            logger.info("[WABLAS-BULK-VIDEO] Sending {} video messages to v2 API", dataArray.size());
+
+            HttpEntity<Map<String, Object>> requestEntity = new HttpEntity<>(requestBody, headers);
+            ResponseEntity<String> response = restTemplate.exchange(url, HttpMethod.POST, requestEntity, String.class);
+
+            logger.info("[WABLAS-BULK-VIDEO] v2 API Response: {}", response.getBody());
+
+            if (response.getStatusCode() == HttpStatus.OK) {
+                JsonNode responseJson = objectMapper.readTree(response.getBody());
+                boolean apiSuccess = isWablasSuccess(responseJson);
+
+                if (apiSuccess && responseJson.has("data") && responseJson.get("data").has("messages")) {
+                    JsonNode messages = responseJson.get("data").get("messages");
+
+                    if (messages.isArray()) {
+                        int msgIndex = 0;
+                        for (JsonNode msgNode : messages) {
+                            String phone = msgNode.has("phone") ? msgNode.get("phone").asText() : "";
+                            String messageId = msgNode.has("id") ? msgNode.get("id").asText() : "";
+                            String status = msgNode.has("status") ? msgNode.get("status").asText() : "unknown";
+                            String detail = msgNode.has("message") ? msgNode.get("message").asText() : "";
+
+                            BulkVideoItem originalItem = msgIndex < validItems.size() ? validItems.get(msgIndex) : null;
+                            BulkVideoResult result = new BulkVideoResult();
+                            result.setPhone(phone);
+                            result.setMessageId(messageId);
+                            result.setStatus(status);
+                            result.setOriginalId(originalItem != null ? originalItem.getOriginalId() : null);
+
+                            if ("failed".equalsIgnoreCase(status) ||
+                                    "error".equalsIgnoreCase(status) ||
+                                    "rejected".equalsIgnoreCase(status) ||
+                                    "cancel".equalsIgnoreCase(status) ||
+                                    (detail != null && detail.toLowerCase(Locale.ROOT).contains("not registered"))) {
+                                result.setSuccess(false);
+                                result.setError(detail != null && !detail.isEmpty() ? detail : "Status: " + status);
+                            } else {
+                                result.setSuccess(true);
+                            }
+
+                            results.add(result);
+                            msgIndex++;
+                        }
+                    }
+
+                    for (int i = results.size(); i < validItems.size(); i++) {
+                        BulkVideoItem item = validItems.get(i);
+                        BulkVideoResult unknownResult = new BulkVideoResult();
+                        unknownResult.setOriginalId(item.getOriginalId());
+                        unknownResult.setPhone(item.getPhone());
+                        unknownResult.setSuccess(false);
+                        unknownResult.setError("No response from API for this item");
+                        results.add(unknownResult);
+                    }
+                } else {
+                    String errorMsg = responseJson.has("message") ? responseJson.get("message").asText() : "Unknown error";
+                    logger.error("[WABLAS-BULK-VIDEO] API error: {}", errorMsg);
+
+                    for (BulkVideoItem item : validItems) {
+                        BulkVideoResult failResult = new BulkVideoResult();
+                        failResult.setOriginalId(item.getOriginalId());
+                        failResult.setPhone(item.getPhone());
+                        failResult.setSuccess(false);
+                        failResult.setError("API error: " + errorMsg);
+                        results.add(failResult);
+                    }
+                }
+            } else {
+                logger.error("[WABLAS-BULK-VIDEO] HTTP error: {}", response.getStatusCode());
+
+                for (BulkVideoItem item : validItems) {
+                    BulkVideoResult failResult = new BulkVideoResult();
+                    failResult.setOriginalId(item.getOriginalId());
+                    failResult.setPhone(item.getPhone());
+                    failResult.setSuccess(false);
+                    failResult.setError("HTTP " + response.getStatusCode());
+                    results.add(failResult);
+                }
+            }
+
+        } catch (Exception e) {
+            logger.error("[WABLAS-BULK-VIDEO] Exception in batch: {}", e.getMessage(), e);
+            throw new RuntimeException("Bulk video send error: " + e.getMessage(), e);
+        }
+
+        return results;
+    }
+
+    private Map<String, Object> sendMediaUrlWithDetails(
+            String endpoint,
+            String mediaParamName,
+            String phoneNumber,
+            String caption,
+            String mediaUrl
+    ) {
+        Map<String, Object> result = new HashMap<>();
+        result.put("success", false);
+        result.put("phone", phoneNumber);
+        result.put("endpoint", endpoint);
+
+        try {
+            String cleanPhone = formatPhoneNumberForWhatsApp(phoneNumber);
+            result.put("formattedPhone", cleanPhone);
+
+            if (cleanPhone == null || cleanPhone.length() < 10) {
+                result.put("error", "Invalid phone number format: " + phoneNumber);
+                return result;
+            }
+            if (mediaUrl == null || mediaUrl.isBlank()) {
+                result.put("error", "Media URL is empty");
+                return result;
+            }
+
+            // Wablas docs use application/x-www-form-urlencoded for v1 endpoints like /api/send-image, /api/send-video
+            MultiValueMap<String, String> body = new LinkedMultiValueMap<>();
+            body.add("phone", cleanPhone);
+            body.add(mediaParamName, mediaUrl);
+            if (caption != null && !caption.isBlank()) {
+                body.add("caption", caption);
+            }
+
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
+            headers.set("Authorization", authorizationHeaderValue());
+
+            HttpEntity<MultiValueMap<String, String>> requestEntity = new HttpEntity<>(body, headers);
+            String url = whatsappApiUrl + endpoint;
+
+            logger.info("[WABLAS] Sending media URL to {} via {}", cleanPhone, url);
+            ResponseEntity<String> response = restTemplate.exchange(url, HttpMethod.POST, requestEntity, String.class);
+
+            result.put("httpStatus", response.getStatusCode().value());
+            result.put("rawResponse", response.getBody());
+
+            if (response.getStatusCode() != HttpStatus.OK) {
+                result.put("error", "HTTP " + response.getStatusCode());
+                return result;
+            }
+
+            JsonNode responseJson = objectMapper.readTree(response.getBody());
+            boolean apiSuccess = isWablasSuccess(responseJson);
+            if (!apiSuccess) {
+                String errorMsg = responseJson.has("message") ? responseJson.get("message").asText() : "Unknown error";
+                if (responseJson.has("data") && responseJson.get("data").has("message")) {
+                    errorMsg = responseJson.get("data").get("message").asText();
+                }
+                if (errorMsg == null || errorMsg.isBlank()) {
+                    String statusText = responseJson.has("status") ? responseJson.get("status").asText() : "";
+                    errorMsg = "Wablas API returned unsuccessful status: " + statusText;
+                }
+                result.put("error", errorMsg);
+                return result;
+            }
+
+            result.put("success", true);
+
+            if (responseJson.has("data") && responseJson.get("data").has("messages")) {
+                JsonNode messages = responseJson.get("data").get("messages");
+                if (messages.isArray() && messages.size() > 0) {
+                    JsonNode first = messages.get(0);
+                    if (first.has("id")) {
+                        result.put("messageId", first.get("id").asText());
+                    }
+                    if (first.has("status")) {
+                        result.put("messageStatus", first.get("status").asText());
+                    }
+                    if (first.has("message")) {
+                        result.put("messageDetail", first.get("message").asText());
+                    }
+                }
+            }
+
+            if (!result.containsKey("messageId")) {
+                result.put("messageId", "WA_MEDIA_URL_" + System.currentTimeMillis());
+            }
+
+            return result;
+        } catch (Exception e) {
+            logger.error("[WABLAS] Media URL send failed: {}", e.getMessage());
+            result.put("error", e.getMessage());
+            return result;
+        }
+    }
+
+    private Map<String, Object> uploadFileToWablas(
+            String type,
+            String filename,
+            byte[] bytes,
+            MediaType contentType
+    ) {
+        Map<String, Object> result = new HashMap<>();
+        result.put("success", false);
+        result.put("type", type);
+
+        try {
+            String safeType = type == null ? "" : type.trim().toLowerCase(Locale.ROOT);
+            if (!("image".equals(safeType) || "video".equals(safeType) || "audio".equals(safeType) || "document".equals(safeType))) {
+                result.put("error", "Invalid upload type: " + type);
+                return result;
+            }
+            if (bytes == null || bytes.length == 0) {
+                result.put("error", "Attachment is empty");
+                return result;
+            }
+            if (bytes.length > WABLAS_MAX_MEDIA_BYTES) {
+                result.put("error", "Attachment exceeds Wablas max size (2MB): " + bytes.length);
+                return result;
+            }
+
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.MULTIPART_FORM_DATA);
+            headers.set("Authorization", authorizationHeaderValue());
+
+            Resource resource = new ByteArrayResource(bytes) {
+                @Override
+                public String getFilename() {
+                    return (filename == null || filename.isBlank())
+                            ? ("upload-" + safeType)
+                            : filename;
+                }
+            };
+
+            HttpHeaders fileHeaders = new HttpHeaders();
+            if (contentType != null) {
+                fileHeaders.setContentType(contentType);
+            }
+            fileHeaders.setContentDisposition(ContentDisposition.formData().name("file").filename(resource.getFilename()).build());
+
+            HttpEntity<Resource> filePart = new HttpEntity<>(resource, fileHeaders);
+
+            MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
+            body.add("file", filePart);
+
+            HttpEntity<MultiValueMap<String, Object>> requestEntity = new HttpEntity<>(body, headers);
+            String url = whatsappApiUrl + "/api/upload/" + safeType;
+
+            logger.info("[WABLAS] Uploading {} bytes type={} to {}", bytes.length, safeType, url);
+            ResponseEntity<String> response = restTemplate.exchange(url, HttpMethod.POST, requestEntity, String.class);
+
+            result.put("httpStatus", response.getStatusCode().value());
+            result.put("rawResponse", response.getBody());
+
+            if (response.getStatusCode() != HttpStatus.OK) {
+                result.put("error", "HTTP " + response.getStatusCode());
+                return result;
+            }
+
+            JsonNode responseJson = objectMapper.readTree(response.getBody());
+            if (!isWablasSuccess(responseJson)) {
+                String errorMsg = responseJson.has("message") ? responseJson.get("message").asText() : "Upload failed";
+                if (responseJson.has("data") && responseJson.get("data").has("message")) {
+                    errorMsg = responseJson.get("data").get("message").asText();
+                }
+                result.put("error", errorMsg);
+                return result;
+            }
+
+            String uploadedUrl = null;
+            if (responseJson.has("data") && responseJson.get("data").has("messages")) {
+                JsonNode messages = responseJson.get("data").get("messages");
+                if (messages.isArray() && messages.size() > 0) {
+                    JsonNode first = messages.get(0);
+                    if (first.has("url")) {
+                        uploadedUrl = first.get("url").asText();
+                    }
+                }
+            }
+
+            if (uploadedUrl == null || uploadedUrl.isBlank()) {
+                result.put("error", "Upload succeeded but url missing");
+                return result;
+            }
+
+            result.put("success", true);
+            result.put("url", uploadedUrl);
+            return result;
+
+        } catch (Exception e) {
+            logger.error("[WABLAS] Upload failed: {}", e.getMessage());
+            result.put("error", e.getMessage());
+            return result;
+        }
+    }
+    
+    private Map<String, Object> sendBase64FileWithDetails(
+            String endpoint,
+            String phoneNumber,
+            String caption,
+            String filename,
+            byte[] bytes,
+            MediaType contentType
+    ) {
+        Map<String, Object> result = new HashMap<>();
+        result.put("success", false);
+        result.put("phone", phoneNumber);
+        result.put("endpoint", endpoint);
+        
+        try {
+            String cleanPhone = formatPhoneNumberForWhatsApp(phoneNumber);
+            result.put("formattedPhone", cleanPhone);
+            
+            if (cleanPhone == null || cleanPhone.length() < 10) {
+                result.put("error", "Invalid phone number format: " + phoneNumber);
+                return result;
+            }
+            if (bytes == null || bytes.length == 0) {
+                result.put("error", "Attachment is empty");
+                return result;
+            }
+            
+            MultiValueMap<String, String> body = new LinkedMultiValueMap<>();
+            body.add("phone", cleanPhone);
+            if (caption != null && !caption.isBlank()) {
+                body.add("caption", caption);
+            }
+
+            // Optional filename parameters (per Wablas docs)
+            if (filename != null && !filename.isBlank()) {
+                if (endpoint != null && endpoint.contains("send-image-from-local")) {
+                    body.add("filename", filename);
+                } else if (endpoint != null && endpoint.contains("send-document-from-local")) {
+                    body.add("name_file", filename);
+                }
+            }
+            
+            body.add("file", Base64.getEncoder().encodeToString(bytes));
+            
+            Map<String, Object> meta = new HashMap<>();
+            if (filename != null && !filename.isBlank()) {
+                meta.put("name", filename);
+            }
+            meta.put("size", bytes.length);
+            if (contentType != null) {
+                meta.put("type", contentType.toString());
+            }
+            body.add("data", objectMapper.writeValueAsString(meta));
+            
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
+            headers.set("Authorization", authorizationHeaderValue());
+            
+            HttpEntity<MultiValueMap<String, String>> requestEntity = new HttpEntity<>(body, headers);
+            String url = whatsappApiUrl + endpoint;
+            
+            logger.info("[WABLAS] Sending base64 file to {} via {}", cleanPhone, url);
+            ResponseEntity<String> response = restTemplate.exchange(url, HttpMethod.POST, requestEntity, String.class);
+            
+            result.put("httpStatus", response.getStatusCode().value());
+            result.put("rawResponse", response.getBody());
+            
+            if (response.getStatusCode() != HttpStatus.OK) {
+                result.put("error", "HTTP " + response.getStatusCode());
+                return result;
+            }
+            
+            JsonNode responseJson = objectMapper.readTree(response.getBody());
+            boolean apiSuccess = isWablasSuccess(responseJson);
+            if (!apiSuccess) {
+                String errorMsg = responseJson.has("message") ? responseJson.get("message").asText() : "Unknown error";
+                if (responseJson.has("data") && responseJson.get("data").has("message")) {
+                    errorMsg = responseJson.get("data").get("message").asText();
+                }
+                if (errorMsg == null || errorMsg.isBlank()) {
+                    String statusText = responseJson.has("status") ? responseJson.get("status").asText() : "";
+                    errorMsg = "Wablas API returned unsuccessful status: " + statusText;
+                }
+                result.put("error", errorMsg);
+                return result;
+            }
+            
+            result.put("success", true);
+            
+            if (responseJson.has("data") && responseJson.get("data").has("messages")) {
+                JsonNode messages = responseJson.get("data").get("messages");
+                if (messages.isArray() && messages.size() > 0) {
+                    JsonNode first = messages.get(0);
+                    if (first.has("id")) {
+                        result.put("messageId", first.get("id").asText());
+                    }
+                    if (first.has("status")) {
+                        result.put("messageStatus", first.get("status").asText());
+                    }
+                    if (first.has("message")) {
+                        result.put("messageDetail", first.get("message").asText());
+                    }
+                }
+            }
+            
+            if (!result.containsKey("messageId")) {
+                result.put("messageId", "WA_BASE64_" + System.currentTimeMillis());
+            }
+            
+            return result;
+        } catch (Exception e) {
+            logger.error("[WABLAS] Base64 send failed: {}", e.getMessage());
+            result.put("error", e.getMessage());
+            return result;
+        }
+    }
+
+    private Map<String, Object> sendMultipartFileWithDetails(
+            String endpoint,
+            String fileFieldName,
+            String phoneNumber,
+            String caption,
+            String filename,
+            byte[] bytes,
+            MediaType contentType
+    ) {
+        Map<String, Object> result = new HashMap<>();
+        result.put("success", false);
+        result.put("phone", phoneNumber);
+        result.put("endpoint", endpoint);
+
+        try {
+            String cleanPhone = formatPhoneNumberForWhatsApp(phoneNumber);
+            result.put("formattedPhone", cleanPhone);
+
+            if (cleanPhone == null || cleanPhone.length() < 10) {
+                result.put("error", "Invalid phone number format: " + phoneNumber);
+                return result;
+            }
+            if (bytes == null || bytes.length == 0) {
+                result.put("error", "Attachment is empty");
+                return result;
+            }
+
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.MULTIPART_FORM_DATA);
+            headers.set("Authorization", authorizationHeaderValue());
+
+            MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
+            body.add("phone", cleanPhone);
+            if (caption != null && !caption.isBlank()) {
+                body.add("caption", caption);
+            }
+
+            Resource resource = new ByteArrayResource(bytes) {
+                @Override
+                public String getFilename() {
+                    return filename == null || filename.isBlank() ? "attachment" : filename;
+                }
+            };
+
+            HttpHeaders fileHeaders = new HttpHeaders();
+            if (contentType != null) {
+                fileHeaders.setContentType(contentType);
+            }
+            fileHeaders.setContentDisposition(ContentDisposition.formData().name(fileFieldName).filename(resource.getFilename()).build());
+
+            HttpEntity<Resource> filePart = new HttpEntity<>(resource, fileHeaders);
+            body.add(fileFieldName, filePart);
+
+            HttpEntity<MultiValueMap<String, Object>> requestEntity = new HttpEntity<>(body, headers);
+            String url = whatsappApiUrl + endpoint;
+
+            logger.info("[WABLAS] Sending attachment to {} via {}", cleanPhone, url);
+            ResponseEntity<String> response = restTemplate.exchange(url, HttpMethod.POST, requestEntity, String.class);
+
+            result.put("httpStatus", response.getStatusCode().value());
+            result.put("rawResponse", response.getBody());
+
+            if (response.getStatusCode() != HttpStatus.OK) {
+                result.put("error", "HTTP " + response.getStatusCode());
+                return result;
+            }
+
+            JsonNode responseJson = objectMapper.readTree(response.getBody());
+            boolean apiSuccess = isWablasSuccess(responseJson);
+            if (!apiSuccess) {
+                String errorMsg = responseJson.has("message") ? responseJson.get("message").asText() : "Unknown error";
+                if (responseJson.has("data") && responseJson.get("data").has("message")) {
+                    errorMsg = responseJson.get("data").get("message").asText();
+                }
+                if (errorMsg == null || errorMsg.isBlank()) {
+                    String statusText = responseJson.has("status") ? responseJson.get("status").asText() : "";
+                    errorMsg = "Wablas API returned unsuccessful status: " + statusText;
+                }
+                result.put("error", errorMsg);
+                return result;
+            }
+
+            result.put("success", true);
+
+            if (responseJson.has("data") && responseJson.get("data").has("messages")) {
+                JsonNode messages = responseJson.get("data").get("messages");
+                if (messages.isArray() && messages.size() > 0) {
+                    JsonNode first = messages.get(0);
+                    if (first.has("id")) {
+                        result.put("messageId", first.get("id").asText());
+                    }
+                    if (first.has("status")) {
+                        result.put("messageStatus", first.get("status").asText());
+                    }
+                    if (first.has("message")) {
+                        result.put("messageDetail", first.get("message").asText());
+                    }
+                }
+            }
+
+            if (!result.containsKey("messageId")) {
+                result.put("messageId", "WA_ATTACH_" + System.currentTimeMillis());
+            }
+
+            return result;
+        } catch (Exception e) {
+            logger.error("[WABLAS] Attachment send failed: {}", e.getMessage());
+            result.put("error", e.getMessage());
+            return result;
+        }
+    }
+
 }

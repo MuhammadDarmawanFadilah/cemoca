@@ -6,6 +6,52 @@ export interface ApiResponse<T> {
   message?: string;
 }
 
+type ApiClientError = Error & {
+  response?: {
+    status: number
+    data?: any
+  }
+}
+
+async function parseErrorBody(response: Response): Promise<any> {
+  try {
+    const text = await response.text()
+    if (!text) return undefined
+    try {
+      return JSON.parse(text)
+    } catch {
+      return text
+    }
+  } catch {
+    return undefined
+  }
+}
+
+function normalizeErrorData(status: number, data: any) {
+  if (data == null || data === '') {
+    return { message: `HTTP error! status: ${status}`, status }
+  }
+  if (typeof data === 'string') {
+    return { message: data, status }
+  }
+  if (typeof data === 'object') {
+    return data
+  }
+  return { message: String(data), status }
+}
+
+function buildHttpError(status: number, data: any): ApiClientError {
+  const normalized = normalizeErrorData(status, data)
+  const msg =
+    (normalized && typeof normalized === 'object' && typeof (normalized as any).message === 'string' && (normalized as any).message.trim())
+      ? (normalized as any).message
+      : `HTTP error! status: ${status}`
+
+  const err = new Error(msg) as ApiClientError
+  err.response = { status, data: normalized }
+  return err
+}
+
 export class ApiClient {
   private static getAuthHeaders(): Record<string, string> {
     const token = localStorage.getItem('auth_token');
@@ -39,7 +85,8 @@ export class ApiClient {
       });
 
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        const data = await parseErrorBody(response)
+        throw buildHttpError(response.status, data)
       }
 
       return await response.json();
@@ -58,7 +105,8 @@ export class ApiClient {
       });
 
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        const body = await parseErrorBody(response)
+        throw buildHttpError(response.status, body)
       }
 
       return await response.json();
@@ -77,7 +125,8 @@ export class ApiClient {
       });
 
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        const body = await parseErrorBody(response)
+        throw buildHttpError(response.status, body)
       }
 
       return await response.json();
@@ -96,7 +145,8 @@ export class ApiClient {
       });
 
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        const body = await parseErrorBody(response)
+        throw buildHttpError(response.status, body)
       }
 
       return await response.json();
@@ -115,7 +165,8 @@ export class ApiClient {
       });
 
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        const body = await parseErrorBody(response)
+        throw buildHttpError(response.status, body)
       }
 
       return await response.json();
@@ -133,7 +184,8 @@ export class ApiClient {
       });
 
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        const body = await parseErrorBody(response)
+        throw buildHttpError(response.status, body)
       }
 
       // Handle empty response for delete operations
@@ -158,7 +210,8 @@ export class ApiClient {
       });
 
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        const body = await parseErrorBody(response)
+        throw buildHttpError(response.status, body)
       }
 
       return await response.json();

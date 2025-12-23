@@ -9,7 +9,6 @@ import com.shadcn.backend.entity.VideoReport;
 import com.shadcn.backend.entity.VideoReportItem;
 import com.shadcn.backend.repository.VideoReportItemRepository;
 import com.shadcn.backend.repository.VideoReportRepository;
-import com.shadcn.backend.util.VideoLinkEncryptor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -89,7 +88,7 @@ public class VideoReportService {
      * Get default WA message template
      */
     public String getDefaultWaMessageTemplate() {
-        return "Halo :name!\n\nKami punya video spesial untuk Anda.\n\nKlik link berikut untuk melihat:\n:linkvideo\n\nTerima kasih!";
+        return "Halo :name!\n\nKami punya video spesial untuk Anda.\n\nTerima kasih!";
     }
 
     /**
@@ -504,39 +503,36 @@ public class VideoReportService {
         
         logger.info("[WA BLAST VIDEO] Marked {} items as PROCESSING", readyItems.size());
         
-        // STEP 3: Build bulk message items
-        List<WhatsAppService.BulkMessageItem> bulkItems = new ArrayList<>();
+        // STEP 3: Build bulk video items
+        List<WhatsAppService.BulkVideoItem> bulkItems = new ArrayList<>();
         Map<Long, VideoReportItem> itemMap = new HashMap<>();
         
         for (VideoReportItem item : readyItems) {
-            // Generate video share link
-            String token = VideoLinkEncryptor.encryptVideoLink(reportId, item.getId());
-            String videoLink = frontendUrl + "/v/" + token;
-            
-            // Build WA message
+            // Build WA caption
             String waTemplate = report.getWaMessageTemplate();
             if (waTemplate == null || waTemplate.isEmpty()) {
                 waTemplate = getDefaultWaMessageTemplate();
             }
-            
-            String waMessage = waTemplate
-                    .replace(":name", item.getName())
-                    .replace(":linkvideo", videoLink);
-            
-            bulkItems.add(new WhatsAppService.BulkMessageItem(item.getPhone(), waMessage, String.valueOf(item.getId())));
+
+            String caption = waTemplate
+                    .replace(":name", item.getName() == null ? "" : item.getName())
+                    .replace(":linkvideo", "");
+
+            // Send as WhatsApp VIDEO message (media), not text link.
+            bulkItems.add(new WhatsAppService.BulkVideoItem(item.getPhone(), caption, item.getVideoUrl(), String.valueOf(item.getId())));
             itemMap.put(item.getId(), item);
         }
         
-        logger.info("[WA BLAST VIDEO] Sending {} messages via Wablas bulk API...", bulkItems.size());
-        
-        // STEP 4: Send bulk messages
-        List<WhatsAppService.BulkMessageResult> results = whatsAppService.sendBulkMessages(bulkItems);
+        logger.info("[WA BLAST VIDEO] Sending {} videos via Wablas bulk API...", bulkItems.size());
+
+        // STEP 4: Send bulk videos
+        List<WhatsAppService.BulkVideoResult> results = whatsAppService.sendBulkVideos(bulkItems);
         
         // STEP 5: Process results and update status to SENT/FAILED
         int successCount = 0;
         int failCount = 0;
         
-        for (WhatsAppService.BulkMessageResult result : results) {
+        for (WhatsAppService.BulkVideoResult result : results) {
             VideoReportItem item = null;
             
             // Try to find item by originalId first
@@ -570,8 +566,12 @@ public class VideoReportService {
         }
         
         // STEP 6: Update report counters
-        report.setWaSentCount((report.getWaSentCount() == null ? 0 : report.getWaSentCount()) + successCount);
-        report.setWaFailedCount((report.getWaFailedCount() == null ? 0 : report.getWaFailedCount()) + failCount);
+        Integer currentWaSentCountObj = java.util.Objects.requireNonNullElse(report.getWaSentCount(), 0);
+        Integer currentWaFailedCountObj = java.util.Objects.requireNonNullElse(report.getWaFailedCount(), 0);
+        int currentWaSentCount = currentWaSentCountObj.intValue();
+        int currentWaFailedCount = currentWaFailedCountObj.intValue();
+        report.setWaSentCount(currentWaSentCount + successCount);
+        report.setWaFailedCount(currentWaFailedCount + failCount);
         videoReportRepository.save(report);
         
         logger.info("[WA BLAST VIDEO] ========================================");
@@ -606,39 +606,36 @@ public class VideoReportService {
             throw new RuntimeException("Report not found");
         }
         
-        // Generate video share link
-        String token = VideoLinkEncryptor.encryptVideoLink(reportId, item.getId());
-        String videoLink = frontendUrl + "/v/" + token;
-        
-        // Build WA message
+        // Build WA caption
         String waTemplate = report.getWaMessageTemplate();
         if (waTemplate == null || waTemplate.isEmpty()) {
             waTemplate = getDefaultWaMessageTemplate();
         }
-        
-        String waMessage = waTemplate
-                .replace(":name", item.getName())
-                .replace(":linkvideo", videoLink);
+
+        String caption = waTemplate
+            .replace(":name", item.getName() == null ? "" : item.getName())
+            .replace(":linkvideo", "");
         
         String previousStatus = item.getWaStatus();
-        Map<String, Object> waResult = null;
+        Map<String, Object> waResult = new java.util.HashMap<>();
         boolean success = false;
         String lastError = null;
         
         // Retry loop
         for (int attempt = 1; attempt <= maxRetries; attempt++) {
             logger.info("[WA RESEND] Item {} - Attempt {}/{} to {}", itemId, attempt, maxRetries, item.getPhone());
-            
-            // Send WhatsApp message with detailed response
-            waResult = whatsAppService.sendMessageWithDetails(item.getPhone(), waMessage);
-            
-            success = (Boolean) waResult.getOrDefault("success", false);
+
+            // Send WhatsApp VIDEO message with detailed response
+            Map<String, Object> attemptResult = whatsAppService.sendVideoUrlWithDetails(item.getPhone(), caption, item.getVideoUrl());
+            waResult = attemptResult == null ? new java.util.HashMap<>() : attemptResult;
+
+            success = Boolean.TRUE.equals(waResult.get("success"));
             
             if (success) {
                 break;
             }
             
-            lastError = (String) waResult.get("error");
+            lastError = java.util.Objects.toString(waResult.get("error"), null);
             
             // Check if error is retryable
             if (lastError != null && (
@@ -659,16 +656,21 @@ public class VideoReportService {
             }
         }
         
-        String messageId = (String) waResult.get("messageId");
+        String messageId = java.util.Objects.toString(waResult.get("messageId"), null);
         String error = lastError;
         
         if (success) {
             // Update stats based on previous status
             if ("FAILED".equals(previousStatus)) {
-                report.setWaFailedCount(Math.max(0, (report.getWaFailedCount() == null ? 0 : report.getWaFailedCount()) - 1));
-                report.setWaSentCount((report.getWaSentCount() == null ? 0 : report.getWaSentCount()) + 1);
+                Integer currentSentCountObj = java.util.Objects.requireNonNullElse(report.getWaSentCount(), 0);
+                Integer currentFailedCountObj = java.util.Objects.requireNonNullElse(report.getWaFailedCount(), 0);
+                int currentSentCount = currentSentCountObj.intValue();
+                int currentFailedCount = currentFailedCountObj.intValue();
+                report.setWaFailedCount(Math.max(0, currentFailedCount - 1));
+                report.setWaSentCount(currentSentCount + 1);
             } else if ("PENDING".equals(previousStatus)) {
-                report.setWaSentCount((report.getWaSentCount() == null ? 0 : report.getWaSentCount()) + 1);
+                Integer currentSentCountObj = java.util.Objects.requireNonNullElse(report.getWaSentCount(), 0);
+                report.setWaSentCount(currentSentCountObj.intValue() + 1);
             }
             
             item.setWaStatus("SENT");
@@ -692,10 +694,15 @@ public class VideoReportService {
             
             // Update stats if was previously sent (unlikely but handle it)
             if ("SENT".equals(previousStatus)) {
-                report.setWaSentCount(Math.max(0, (report.getWaSentCount() == null ? 0 : report.getWaSentCount()) - 1));
-                report.setWaFailedCount((report.getWaFailedCount() == null ? 0 : report.getWaFailedCount()) + 1);
+                Integer currentSentCountObj = java.util.Objects.requireNonNullElse(report.getWaSentCount(), 0);
+                Integer currentFailedCountObj = java.util.Objects.requireNonNullElse(report.getWaFailedCount(), 0);
+                int currentSentCount = currentSentCountObj.intValue();
+                int currentFailedCount = currentFailedCountObj.intValue();
+                report.setWaSentCount(Math.max(0, currentSentCount - 1));
+                report.setWaFailedCount(currentFailedCount + 1);
             } else if ("PENDING".equals(previousStatus)) {
-                report.setWaFailedCount((report.getWaFailedCount() == null ? 0 : report.getWaFailedCount()) + 1);
+                Integer currentFailedCountObj = java.util.Objects.requireNonNullElse(report.getWaFailedCount(), 0);
+                report.setWaFailedCount(currentFailedCountObj.intValue() + 1);
             }
             
             item.setWaStatus("FAILED");
@@ -753,7 +760,7 @@ public class VideoReportService {
                 itemUpdate.put("oldStatus", item.getWaStatus());
                 itemUpdate.put("messageId", item.getWaMessageId());
                 
-                if ((Boolean) waResult.getOrDefault("success", false)) {
+                if (Boolean.TRUE.equals(waResult.get("success"))) {
                     String wablasStatus = (String) waResult.get("status");
                     itemUpdate.put("wablasStatus", wablasStatus);
                     itemUpdate.put("rawResponse", waResult.get("rawResponse"));
@@ -780,8 +787,10 @@ public class VideoReportService {
                         failed++;
                         
                         // Update report counters
-                        report.setWaSentCount(Math.max(0, (report.getWaSentCount() == null ? 0 : report.getWaSentCount()) - 1));
-                        report.setWaFailedCount((report.getWaFailedCount() == null ? 0 : report.getWaFailedCount()) + 1);
+                        int currentSentCount = java.util.Objects.requireNonNullElse(report.getWaSentCount(), 0);
+                        int currentFailedCount = java.util.Objects.requireNonNullElse(report.getWaFailedCount(), 0);
+                        report.setWaSentCount(Math.max(0, currentSentCount - 1));
+                        report.setWaFailedCount(currentFailedCount + 1);
                         
                         logger.warn("[WA SYNC] Item {} failed: {}", item.getId(), wablasStatus);
                     } else if ("pending".equalsIgnoreCase(wablasStatus)) {
@@ -994,7 +1003,7 @@ public class VideoReportService {
         }
         
         // Update report failed count (subtract items being retried)
-        int currentFailedCount = report.getWaFailedCount() == null ? 0 : report.getWaFailedCount();
+        int currentFailedCount = java.util.Objects.requireNonNullElse(report.getWaFailedCount(), 0);
         report.setWaFailedCount(Math.max(0, currentFailedCount - failedItems.size()));
         videoReportRepository.save(report);
         

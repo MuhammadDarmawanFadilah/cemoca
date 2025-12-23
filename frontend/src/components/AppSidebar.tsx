@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, type CSSProperties, type ReactNode } from "react";
 import {
   Home,
   ChevronUp,
@@ -17,7 +17,19 @@ import {
   Image as ImageIcon,
   FileText,
   Mail,
+  CalendarClock,
 } from "lucide-react";
+import {
+  DndContext,
+  PointerSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import { SortableContext, arrayMove, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import { restrictToParentElement, restrictToVerticalAxis } from "@dnd-kit/modifiers";
 import {
   Sidebar,
   SidebarContent,
@@ -30,6 +42,9 @@ import {
   SidebarMenuBadge,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarMenuSub,
+  SidebarMenuSubButton,
+  SidebarMenuSubItem,
   SidebarSeparator,
   useSidebar,
 } from "./ui/sidebar";
@@ -52,40 +67,126 @@ import { useLanguage } from "@/contexts/LanguageContext";
 import { useMobile } from "@/hooks/useMobile";
 import { imageAPI } from "@/lib/api";
 
+type SectionId =
+  | "main"
+  | "admin"
+  | "masterData"
+  | "reportVideo"
+  | "reportPdf"
+  | "learningModule"
+  | "learningSchedule"
+  | "profile";
+
+function getOrderStorageKey(userId?: number | string | null) {
+  if (!userId) return null;
+  return `sidebar-section-order:v1:${String(userId)}`;
+}
+
+function normalizeOrder(order: string[] | null | undefined, all: string[]) {
+  const seen = new Set<string>();
+  const cleaned: string[] = [];
+  for (const id of order || []) {
+    if (typeof id !== "string") continue;
+    if (!all.includes(id)) continue;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    cleaned.push(id);
+  }
+  for (const id of all) {
+    if (!seen.has(id)) cleaned.push(id);
+  }
+  return cleaned;
+}
+
+function SortableSection({
+  id,
+  children,
+}: {
+  id: string;
+  children: (args: { dragAttributes: any; dragListeners: any }) => ReactNode;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+
+  const safeTransform = transform
+    ? {
+        ...transform,
+        x: 0,
+      }
+    : null;
+
+  const style: CSSProperties = {
+    transform: CSS.Transform.toString(safeTransform),
+    transition,
+    opacity: isDragging ? 0.7 : 1,
+  };
+
+  return (
+    <div ref={setNodeRef} style={style}>
+      {children({ dragAttributes: attributes, dragListeners: listeners })}
+    </div>
+  );
+}
+
 const AppSidebar = () => {
   const { user, isAuthenticated, logout } = useAuth();
   const { t } = useLanguage();
   const isMobile = useMobile();
   const { setOpenMobile } = useSidebar();
-  // State untuk mengatur open/close status setiap section
-  const [isMainMenuOpen, setIsMainMenuOpen] = useState(!isMobile);
-  const [isAdminMenuOpen, setIsAdminMenuOpen] = useState(!isMobile);
-  const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(!isMobile);
-  const [isReportVideoMenuOpen, setIsReportVideoMenuOpen] = useState(!isMobile);
-  const [isReportPdfMenuOpen, setIsReportPdfMenuOpen] = useState(!isMobile);
-  const [isLearningModuleMenuOpen, setIsLearningModuleMenuOpen] = useState(!isMobile);
-  const [isMasterDataMenuOpen, setIsMasterDataMenuOpen] = useState(!isMobile);
+
+  const SECTION_IDS: SectionId[] = [
+    "main",
+    "admin",
+    "masterData",
+    "reportVideo",
+    "reportPdf",
+    "learningModule",
+    "learningSchedule",
+    "profile",
+  ];
+
+  const [sectionOrder, setSectionOrder] = useState<SectionId[]>(SECTION_IDS);
+  const [sectionOpen, setSectionOpen] = useState<Record<SectionId, boolean>>(() => {
+    const init = {} as Record<SectionId, boolean>;
+    for (const id of SECTION_IDS) init[id] = !isMobile;
+    return init;
+  });
+
+  const [learningVideosOpen, setLearningVideosOpen] = useState<boolean>(() => !isMobile);
   
   // Update state ketika device berubah dari desktop ke mobile atau sebaliknya
   useEffect(() => {
-    if (isMobile) {
-      setIsMainMenuOpen(false);
-      setIsAdminMenuOpen(false);
-      setIsProfileMenuOpen(false);
-      setIsReportVideoMenuOpen(false);
-      setIsReportPdfMenuOpen(false);
-      setIsLearningModuleMenuOpen(false);
-      setIsMasterDataMenuOpen(false);
-    } else {
-      setIsMainMenuOpen(true);
-      setIsAdminMenuOpen(true);
-      setIsProfileMenuOpen(true);
-      setIsReportVideoMenuOpen(true);
-      setIsReportPdfMenuOpen(true);
-      setIsLearningModuleMenuOpen(true);
-      setIsMasterDataMenuOpen(true);
-    }
+    setSectionOpen((prev) => {
+      const next = { ...prev };
+      for (const id of SECTION_IDS) next[id] = !isMobile;
+      return next;
+    });
+
+    setLearningVideosOpen(!isMobile);
   }, [isMobile]);
+
+  useEffect(() => {
+    const key = getOrderStorageKey(user?.id);
+    if (!key) return;
+    try {
+      const raw = localStorage.getItem(key);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      const normalized = normalizeOrder(Array.isArray(parsed) ? parsed : [], SECTION_IDS);
+      setSectionOrder(normalized as SectionId[]);
+    } catch {
+      // ignore
+    }
+  }, [user?.id]);
+
+  useEffect(() => {
+    const key = getOrderStorageKey(user?.id);
+    if (!key) return;
+    try {
+      localStorage.setItem(key, JSON.stringify(sectionOrder));
+    } catch {
+      // ignore
+    }
+  }, [sectionOrder, user?.id]);
 
   // Helper function untuk menutup sidebar pada mobile ketika menu diklik
   const handleMenuClick = useCallback(() => {
@@ -148,13 +249,26 @@ const AppSidebar = () => {
     },
   ];
 
-  // Learning Module items
-  const learningModuleItems = [
+  const learningModuleVideoSubItems = [
     {
-      title: t('nav.learningModuleVideos'),
+      title: "Video 1",
       url: "/learning-module/videos",
-      icon: FileVideo,
     },
+    {
+      title: "Video 2",
+      url: "/learning-module/videos-2",
+    },
+    {
+      title: "Video 3",
+      url: "/learning-module/videos-3",
+    },
+    {
+      title: "Video 4",
+      url: "/learning-module/videos-4",
+    },
+  ];
+
+  const learningModuleOtherItems = [
     {
       title: t('nav.learningModuleImages'),
       url: "/learning-module/images",
@@ -172,7 +286,296 @@ const AppSidebar = () => {
     },
   ];
 
+  const learningScheduleItems = [
+    {
+      title: t('nav.learningScheduleConfig'),
+      url: "/learning-schedule/configuration",
+      icon: CalendarClock,
+    },
+    {
+      title: t('nav.learningScheduleHistory'),
+      url: "/learning-schedule/history",
+      icon: CalendarClock,
+    },
+  ];
+
   const isAdmin = user?.role?.roleName === 'ADMIN' || user?.role?.roleName === 'MODERATOR';
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: { distance: 6 },
+    })
+  );
+
+  const onDragEnd = useCallback((event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over) return;
+    if (active.id === over.id) return;
+    setSectionOrder((prev) => {
+      const oldIndex = prev.indexOf(active.id as SectionId);
+      const newIndex = prev.indexOf(over.id as SectionId);
+      if (oldIndex < 0 || newIndex < 0) return prev;
+      return arrayMove(prev, oldIndex, newIndex);
+    });
+  }, []);
+
+  const sectionTriggerClass =
+    "w-full flex items-center justify-between hover:bg-sidebar-accent hover:text-sidebar-accent-foreground px-2 py-1 text-[13px] font-medium transition-colors rounded-md";
+  const menuListClass = "space-y-0.5";
+  const menuLinkClass =
+    "flex items-center gap-2 px-3 py-1.5 text-[13px] font-medium leading-tight transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground rounded-md group";
+  const menuIconClass = "h-4 w-4 flex-shrink-0";
+  const menuTextDesktopClass = "hidden md:inline truncate";
+  const menuTextMobileClass = "md:hidden text-[11px] truncate max-w-[92px]";
+
+  const sections: Array<{
+    id: SectionId;
+    visible: boolean;
+    label: string;
+    icon: any;
+    content: React.ReactNode;
+  }> = [
+    {
+      id: "main",
+      visible: isAuthenticated,
+      label: t("nav.mainMenu"),
+      icon: Home,
+      content: (
+        <SidebarMenu className={menuListClass}>
+          {mainItems.map((item) => (
+            <SidebarMenuItem key={item.title}>
+              <SidebarMenuButton asChild className="w-full">
+                <Link
+                  href={item.url}
+                  onClick={handleMenuClick}
+                  className={menuLinkClass}
+                >
+                  <item.icon className={menuIconClass} />
+                  <span className={menuTextDesktopClass}>{item.title}</span>
+                  <span className={menuTextMobileClass}>{item.title}</span>
+                </Link>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          ))}
+        </SidebarMenu>
+      ),
+    },
+    {
+      id: "admin",
+      visible: isAuthenticated && isAdmin,
+      label: t("nav.administration"),
+      icon: Shield,
+      content: (
+        <SidebarMenu className={menuListClass}>
+          {adminItems.map((item) => (
+            <SidebarMenuItem key={item.title}>
+              <SidebarMenuButton asChild className="w-full">
+                <Link
+                  href={item.url}
+                  onClick={handleMenuClick}
+                  className={menuLinkClass}
+                >
+                  <item.icon className={menuIconClass} />
+                  <span className={menuTextDesktopClass}>{item.title}</span>
+                  <span className={menuTextMobileClass}>{item.title}</span>
+                </Link>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          ))}
+        </SidebarMenu>
+      ),
+    },
+    {
+      id: "masterData",
+      visible: isAuthenticated,
+      label: t("nav.masterData"),
+      icon: Building,
+      content: (
+        <SidebarMenu className={menuListClass}>
+          {masterDataItems.map((item) => (
+            <SidebarMenuItem key={item.title}>
+              <SidebarMenuButton asChild className="w-full">
+                <Link
+                  href={item.url}
+                  onClick={handleMenuClick}
+                  className={menuLinkClass}
+                >
+                  <item.icon className={menuIconClass} />
+                  <span className={menuTextDesktopClass}>{item.title}</span>
+                  <span className={menuTextMobileClass}>{item.title}</span>
+                </Link>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          ))}
+        </SidebarMenu>
+      ),
+    },
+    {
+      id: "reportVideo",
+      visible: isAuthenticated,
+      label: t("nav.reportVideo"),
+      icon: Video,
+      content: (
+        <SidebarMenu className={menuListClass}>
+          {reportVideoItems.map((item) => (
+            <SidebarMenuItem key={item.title}>
+              <SidebarMenuButton asChild className="w-full">
+                <Link
+                  href={item.url}
+                  onClick={handleMenuClick}
+                  className={menuLinkClass}
+                >
+                  <item.icon className={menuIconClass} />
+                  <span className={menuTextDesktopClass}>{item.title}</span>
+                  <span className={menuTextMobileClass}>{item.title}</span>
+                </Link>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          ))}
+        </SidebarMenu>
+      ),
+    },
+    {
+      id: "reportPdf",
+      visible: isAuthenticated,
+      label: t("nav.reportPdf"),
+      icon: FileText,
+      content: (
+        <SidebarMenu className={menuListClass}>
+          {reportPdfItems.map((item) => (
+            <SidebarMenuItem key={item.title}>
+              <SidebarMenuButton asChild className="w-full">
+                <Link
+                  href={item.url}
+                  onClick={handleMenuClick}
+                  className={menuLinkClass}
+                >
+                  <item.icon className={menuIconClass} />
+                  <span className={menuTextDesktopClass}>{item.title}</span>
+                  <span className={menuTextMobileClass}>{item.title}</span>
+                </Link>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          ))}
+        </SidebarMenu>
+      ),
+    },
+    {
+      id: "learningModule",
+      visible: isAuthenticated,
+      label: t("nav.learningModule"),
+      icon: Video,
+      content: (
+        <SidebarMenu className={menuListClass}>
+          <Collapsible
+            open={learningVideosOpen}
+            onOpenChange={setLearningVideosOpen}
+            className="group/collapsible"
+          >
+            <SidebarMenuItem>
+              <CollapsibleTrigger asChild>
+                <SidebarMenuButton className={menuLinkClass}>
+                  <FileVideo className={menuIconClass} />
+                  <span className={menuTextDesktopClass}>{t('nav.learningModuleVideos')}</span>
+                  <span className={menuTextMobileClass}>{t('nav.learningModuleVideos')}</span>
+                  <ChevronDown className="ml-auto h-4 w-4 transition-transform group-data-[state=open]/collapsible:rotate-180" />
+                </SidebarMenuButton>
+              </CollapsibleTrigger>
+              <CollapsibleContent>
+                <SidebarMenuSub>
+                  {learningModuleVideoSubItems.map((sub) => (
+                    <SidebarMenuSubItem key={sub.url}>
+                      <SidebarMenuSubButton asChild>
+                        <Link href={sub.url} onClick={handleMenuClick}>
+                          <span>{sub.title}</span>
+                        </Link>
+                      </SidebarMenuSubButton>
+                    </SidebarMenuSubItem>
+                  ))}
+                </SidebarMenuSub>
+              </CollapsibleContent>
+            </SidebarMenuItem>
+          </Collapsible>
+
+          {learningModuleOtherItems.map((item) => (
+            <SidebarMenuItem key={item.title}>
+              <SidebarMenuButton asChild className="w-full">
+                <Link href={item.url} onClick={handleMenuClick} className={menuLinkClass}>
+                  <item.icon className={menuIconClass} />
+                  <span className={menuTextDesktopClass}>{item.title}</span>
+                  <span className={menuTextMobileClass}>{item.title}</span>
+                </Link>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          ))}
+        </SidebarMenu>
+      ),
+    },
+    {
+      id: "learningSchedule",
+      visible: isAuthenticated,
+      label: t("nav.learningSchedule"),
+      icon: CalendarClock,
+      content: (
+        <SidebarMenu className={menuListClass}>
+          {learningScheduleItems.map((item) => (
+            <SidebarMenuItem key={item.title}>
+              <SidebarMenuButton asChild className="w-full">
+                <Link
+                  href={item.url}
+                  onClick={handleMenuClick}
+                  className={menuLinkClass}
+                >
+                  <item.icon className={menuIconClass} />
+                  <span className={menuTextDesktopClass}>{item.title}</span>
+                  <span className={menuTextMobileClass}>{item.title}</span>
+                </Link>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          ))}
+        </SidebarMenu>
+      ),
+    },
+    {
+      id: "profile",
+      visible: isAuthenticated,
+      label: t("nav.myProfile"),
+      icon: UserCircle,
+      content: (
+        <SidebarMenu className={menuListClass}>
+          <SidebarMenuItem>
+            <SidebarMenuButton asChild className="w-full">
+              <Link
+                href="/profile"
+                onClick={handleMenuClick}
+                className={menuLinkClass}
+              >
+                <Building className={menuIconClass} />
+                <span className={menuTextDesktopClass}>{t("profile.companyProfile")}</span>
+                <span className={menuTextMobileClass}>{t("profile.companyProfile")}</span>
+              </Link>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+          <SidebarMenuItem>
+            <SidebarMenuButton asChild className="w-full">
+              <Link
+                href="/reset-password"
+                target="_blank"
+                onClick={handleMenuClick}
+                className={menuLinkClass}
+              >
+                <Key className={menuIconClass} />
+                <span className={menuTextDesktopClass}>{t("profile.changePassword")}</span>
+                <span className={menuTextMobileClass}>{t("profile.changePassword")}</span>
+              </Link>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        </SidebarMenu>
+      ),
+    },
+  ];
+
+  const visibleSectionIds = sectionOrder.filter((id) => sections.find((s) => s.id === id)?.visible);
 
   return (
     <Sidebar 
@@ -194,289 +597,53 @@ const AppSidebar = () => {
       <SidebarSeparator />
       
       <SidebarContent>
-        {/* MAIN MENU SECTION - Only visible when authenticated */}
         {isAuthenticated && (
-          <Collapsible open={isMainMenuOpen} onOpenChange={setIsMainMenuOpen} className="group/collapsible">
-            <SidebarGroup>
-              <SidebarGroupLabel asChild>
-                <CollapsibleTrigger className="w-full flex items-center justify-between hover:bg-sidebar-accent hover:text-sidebar-accent-foreground px-2 py-1.5 text-sm font-medium transition-colors rounded-md">
-                  <span className="flex items-center gap-2">
-                    <Home className="h-4 w-4" />
-                    <span className="hidden md:inline">{t('nav.mainMenu')}</span>
-                    <span className="md:hidden">{t('nav.mainMenu')}</span>
-                  </span>
-                  <ChevronDown className="h-4 w-4 transition-transform group-data-[state=open]/collapsible:rotate-180" />
-                </CollapsibleTrigger>
-              </SidebarGroupLabel>
-              <CollapsibleContent>
-                <SidebarGroupContent>
-                  <SidebarMenu className="space-y-1">
-                    {mainItems.map((item) => (
-                      <SidebarMenuItem key={item.title}>
-                        <SidebarMenuButton asChild className="w-full">
-                          <Link 
-                            href={item.url}
-                            onClick={handleMenuClick}
-                            className="flex items-center gap-3 px-3 py-2 text-sm font-medium transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground rounded-md group"
-                          >
-                            <item.icon className="h-4 w-4 flex-shrink-0" />
-                            <span className="hidden md:inline truncate">{item.title}</span>
-                            <span className="md:hidden text-xs truncate max-w-[80px]">{item.title}</span>
-                          </Link>
-                        </SidebarMenuButton>
-                      </SidebarMenuItem>
-                    ))}
-                  </SidebarMenu>
-                </SidebarGroupContent>
-              </CollapsibleContent>
-            </SidebarGroup>
-          </Collapsible>
-        )}
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragEnd={onDragEnd}
+            modifiers={[restrictToVerticalAxis, restrictToParentElement]}
+          >
+            <SortableContext items={visibleSectionIds} strategy={verticalListSortingStrategy}>
+              {visibleSectionIds.map((id) => {
+                const sec = sections.find((s) => s.id === id);
+                if (!sec || !sec.visible) return null;
 
-        {/* ADMIN SECTION - Only visible for admin/moderator */}
-        {isAuthenticated && isAdmin && (
-          <Collapsible open={isAdminMenuOpen} onOpenChange={setIsAdminMenuOpen} className="group/collapsible">
-            <SidebarGroup>
-              <SidebarGroupLabel asChild>
-                <CollapsibleTrigger className="w-full flex items-center justify-between hover:bg-sidebar-accent hover:text-sidebar-accent-foreground px-2 py-1.5 text-sm font-medium transition-colors rounded-md">
-                  <span className="flex items-center gap-2">
-                    <Shield className="h-4 w-4" />
-                    <span className="hidden md:inline">{t('nav.administration')}</span>
-                    <span className="md:hidden">{t('nav.administration')}</span>
-                  </span>
-                  <ChevronDown className="h-4 w-4 transition-transform group-data-[state=open]/collapsible:rotate-180" />
-                </CollapsibleTrigger>
-              </SidebarGroupLabel>
-              <CollapsibleContent>
-                <SidebarGroupContent>
-                  <SidebarMenu className="space-y-1">
-                    {adminItems.map((item) => (
-                      <SidebarMenuItem key={item.title}>
-                        <SidebarMenuButton asChild className="w-full">
-                          <Link 
-                            href={item.url}
-                            onClick={handleMenuClick}
-                            className="flex items-center gap-3 px-3 py-2 text-sm font-medium transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground rounded-md group"
-                          >
-                            <item.icon className="h-4 w-4 flex-shrink-0" />
-                            <span className="hidden md:inline truncate">{item.title}</span>
-                            <span className="md:hidden text-xs truncate max-w-[80px]">{item.title}</span>
-                          </Link>
-                        </SidebarMenuButton>
-                      </SidebarMenuItem>
-                    ))}
-                  </SidebarMenu>
-                </SidebarGroupContent>
-              </CollapsibleContent>
-            </SidebarGroup>
-          </Collapsible>
-        )}
-
-        {/* MASTER DATA SECTION - Visible when authenticated */}
-        {isAuthenticated && (
-          <Collapsible open={isMasterDataMenuOpen} onOpenChange={setIsMasterDataMenuOpen} className="group/collapsible">
-            <SidebarGroup>
-              <SidebarGroupLabel asChild>
-                <CollapsibleTrigger className="w-full flex items-center justify-between hover:bg-sidebar-accent hover:text-sidebar-accent-foreground px-2 py-1.5 text-sm font-medium transition-colors rounded-md">
-                  <span className="flex items-center gap-2">
-                    <Building className="h-4 w-4" />
-                    <span className="hidden md:inline">{t('nav.masterData')}</span>
-                    <span className="md:hidden">{t('nav.masterData')}</span>
-                  </span>
-                  <ChevronDown className="h-4 w-4 transition-transform group-data-[state=open]/collapsible:rotate-180" />
-                </CollapsibleTrigger>
-              </SidebarGroupLabel>
-              <CollapsibleContent>
-                <SidebarGroupContent>
-                  <SidebarMenu className="space-y-1">
-                    {masterDataItems.map((item) => (
-                      <SidebarMenuItem key={item.title}>
-                        <SidebarMenuButton asChild className="w-full">
-                          <Link
-                            href={item.url}
-                            onClick={handleMenuClick}
-                            className="flex items-center gap-3 px-3 py-2 text-sm font-medium transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground rounded-md group"
-                          >
-                            <item.icon className="h-4 w-4 flex-shrink-0" />
-                            <span className="hidden md:inline truncate">{item.title}</span>
-                            <span className="md:hidden text-xs truncate max-w-[80px]">{item.title}</span>
-                          </Link>
-                        </SidebarMenuButton>
-                      </SidebarMenuItem>
-                    ))}
-                  </SidebarMenu>
-                </SidebarGroupContent>
-              </CollapsibleContent>
-            </SidebarGroup>
-          </Collapsible>
-        )}
-
-        {/* REPORT VIDEO SECTION - Only visible when authenticated */}
-        {isAuthenticated && (
-          <Collapsible open={isReportVideoMenuOpen} onOpenChange={setIsReportVideoMenuOpen} className="group/collapsible">
-            <SidebarGroup>
-              <SidebarGroupLabel asChild>
-                <CollapsibleTrigger className="w-full flex items-center justify-between hover:bg-sidebar-accent hover:text-sidebar-accent-foreground px-2 py-1.5 text-sm font-medium transition-colors rounded-md">
-                  <span className="flex items-center gap-2">
-                    <Video className="h-4 w-4" />
-                    <span className="hidden md:inline">{t('nav.reportVideo')}</span>
-                    <span className="md:hidden">{t('nav.reportVideo')}</span>
-                  </span>
-                  <ChevronDown className="h-4 w-4 transition-transform group-data-[state=open]/collapsible:rotate-180" />
-                </CollapsibleTrigger>
-              </SidebarGroupLabel>
-              <CollapsibleContent>
-                <SidebarGroupContent>
-                  <SidebarMenu className="space-y-1">
-                    {reportVideoItems.map((item) => (
-                      <SidebarMenuItem key={item.title}>
-                        <SidebarMenuButton asChild className="w-full">
-                          <Link 
-                            href={item.url}
-                            onClick={handleMenuClick}
-                            className="flex items-center gap-3 px-3 py-2 text-sm font-medium transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground rounded-md group"
-                          >
-                            <item.icon className="h-4 w-4 flex-shrink-0" />
-                            <span className="hidden md:inline truncate">{item.title}</span>
-                            <span className="md:hidden text-xs truncate max-w-[80px]">{item.title}</span>
-                          </Link>
-                        </SidebarMenuButton>
-                      </SidebarMenuItem>
-                    ))}
-                  </SidebarMenu>
-                </SidebarGroupContent>
-              </CollapsibleContent>
-            </SidebarGroup>
-          </Collapsible>
-        )}
-
-        {/* REPORT PDF SECTION - Only visible when authenticated */}
-        {isAuthenticated && (
-          <Collapsible open={isReportPdfMenuOpen} onOpenChange={setIsReportPdfMenuOpen} className="group/collapsible">
-            <SidebarGroup>
-              <SidebarGroupLabel asChild>
-                <CollapsibleTrigger className="w-full flex items-center justify-between hover:bg-sidebar-accent hover:text-sidebar-accent-foreground px-2 py-1.5 text-sm font-medium transition-colors rounded-md">
-                  <span className="flex items-center gap-2">
-                    <FileText className="h-4 w-4" />
-                    <span className="hidden md:inline">{t('nav.reportPdf')}</span>
-                    <span className="md:hidden">{t('nav.reportPdf')}</span>
-                  </span>
-                  <ChevronDown className="h-4 w-4 transition-transform group-data-[state=open]/collapsible:rotate-180" />
-                </CollapsibleTrigger>
-              </SidebarGroupLabel>
-              <CollapsibleContent>
-                <SidebarGroupContent>
-                  <SidebarMenu className="space-y-1">
-                    {reportPdfItems.map((item) => (
-                      <SidebarMenuItem key={item.title}>
-                        <SidebarMenuButton asChild className="w-full">
-                          <Link 
-                            href={item.url}
-                            onClick={handleMenuClick}
-                            className="flex items-center gap-3 px-3 py-2 text-sm font-medium transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground rounded-md group"
-                          >
-                            <item.icon className="h-4 w-4 flex-shrink-0" />
-                            <span className="hidden md:inline truncate">{item.title}</span>
-                            <span className="md:hidden text-xs truncate max-w-[80px]">{item.title}</span>
-                          </Link>
-                        </SidebarMenuButton>
-                      </SidebarMenuItem>
-                    ))}
-                  </SidebarMenu>
-                </SidebarGroupContent>
-              </CollapsibleContent>
-            </SidebarGroup>
-          </Collapsible>
-        )}
-
-        {/* LEARNING MODULE SECTION - Only visible when authenticated */}
-        {isAuthenticated && (
-          <Collapsible open={isLearningModuleMenuOpen} onOpenChange={setIsLearningModuleMenuOpen} className="group/collapsible">
-            <SidebarGroup>
-              <SidebarGroupLabel asChild>
-                <CollapsibleTrigger className="w-full flex items-center justify-between hover:bg-sidebar-accent hover:text-sidebar-accent-foreground px-2 py-1.5 text-sm font-medium transition-colors rounded-md">
-                  <span className="flex items-center gap-2">
-                    <Video className="h-4 w-4" />
-                    <span className="hidden md:inline">{t('nav.learningModule')}</span>
-                    <span className="md:hidden">{t('nav.learningModule')}</span>
-                  </span>
-                  <ChevronDown className="h-4 w-4 transition-transform group-data-[state=open]/collapsible:rotate-180" />
-                </CollapsibleTrigger>
-              </SidebarGroupLabel>
-              <CollapsibleContent>
-                <SidebarGroupContent>
-                  <SidebarMenu className="space-y-1">
-                    {learningModuleItems.map((item) => (
-                      <SidebarMenuItem key={item.title}>
-                        <SidebarMenuButton asChild className="w-full">
-                          <Link
-                            href={item.url}
-                            onClick={handleMenuClick}
-                            className="flex items-center gap-3 px-3 py-2 text-sm font-medium transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground rounded-md group"
-                          >
-                            <item.icon className="h-4 w-4 flex-shrink-0" />
-                            <span className="hidden md:inline truncate">{item.title}</span>
-                            <span className="md:hidden text-xs truncate max-w-[80px]">{item.title}</span>
-                          </Link>
-                        </SidebarMenuButton>
-                      </SidebarMenuItem>
-                    ))}
-                  </SidebarMenu>
-                </SidebarGroupContent>
-              </CollapsibleContent>
-            </SidebarGroup>
-          </Collapsible>
-        )}
-
-        {/* USER PROFILE SECTION - Only visible when authenticated */}
-        {isAuthenticated && (
-          <Collapsible open={isProfileMenuOpen} onOpenChange={setIsProfileMenuOpen} className="group/collapsible">
-            <SidebarGroup>
-              <SidebarGroupLabel asChild>
-                <CollapsibleTrigger className="w-full flex items-center justify-between hover:bg-sidebar-accent hover:text-sidebar-accent-foreground px-2 py-1.5 text-sm font-medium transition-colors rounded-md">
-                  <span className="flex items-center gap-2">
-                    <UserCircle className="h-4 w-4" />
-                    <span className="hidden md:inline">{t('nav.myProfile')}</span>
-                    <span className="md:hidden">{t('nav.profile')}</span>
-                  </span>
-                  <ChevronDown className="h-4 w-4 transition-transform group-data-[state=open]/collapsible:rotate-180" />
-                </CollapsibleTrigger>
-              </SidebarGroupLabel>
-              <CollapsibleContent>
-                <SidebarGroupContent>
-                  <SidebarMenu className="space-y-1">
-                    <SidebarMenuItem>
-                      <SidebarMenuButton asChild className="w-full">
-                        <Link 
-                          href="/profile"
-                          onClick={handleMenuClick}
-                          className="flex items-center gap-3 px-3 py-2 text-sm font-medium transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground rounded-md group"
-                        >
-                          <Building className="h-4 w-4 flex-shrink-0" />
-                          <span className="hidden md:inline truncate">{t('profile.companyProfile')}</span>
-                          <span className="md:hidden text-xs truncate">{t('profile.companyProfile')}</span>
-                        </Link>
-                      </SidebarMenuButton>
-                    </SidebarMenuItem>
-                    <SidebarMenuItem>
-                      <SidebarMenuButton asChild className="w-full">
-                        <Link 
-                          href="/reset-password" 
-                          target="_blank"
-                          onClick={handleMenuClick}
-                          className="flex items-center gap-3 px-3 py-2 text-sm font-medium transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground rounded-md group"
-                        >
-                          <Key className="h-4 w-4 flex-shrink-0" />
-                          <span className="hidden md:inline truncate">{t('profile.changePassword')}</span>
-                          <span className="md:hidden text-xs truncate">{t('profile.changePassword')}</span>
-                        </Link>
-                      </SidebarMenuButton>
-                    </SidebarMenuItem>
-                  </SidebarMenu>
-                </SidebarGroupContent>
-              </CollapsibleContent>
-            </SidebarGroup>
-          </Collapsible>
+                const Icon = sec.icon;
+                return (
+                  <SortableSection key={sec.id} id={sec.id}>
+                    {({ dragAttributes, dragListeners }) => (
+                      <Collapsible
+                        open={sectionOpen[sec.id]}
+                        onOpenChange={(open) => setSectionOpen((p) => ({ ...p, [sec.id]: open }))}
+                        className="group/collapsible"
+                      >
+                        <SidebarGroup>
+                          <SidebarGroupLabel asChild>
+                            <CollapsibleTrigger
+                              {...dragAttributes}
+                              {...dragListeners}
+                              className={sectionTriggerClass}
+                            >
+                              <span className="flex items-center gap-2">
+                                <Icon className="h-4 w-4" />
+                                <span className="hidden md:inline">{sec.label}</span>
+                                <span className="md:hidden">{sec.label}</span>
+                              </span>
+                              <ChevronDown className="h-4 w-4 transition-transform group-data-[state=open]/collapsible:rotate-180" />
+                            </CollapsibleTrigger>
+                          </SidebarGroupLabel>
+                          <CollapsibleContent>
+                            <SidebarGroupContent>{sec.content}</SidebarGroupContent>
+                          </CollapsibleContent>
+                        </SidebarGroup>
+                      </Collapsible>
+                    )}
+                  </SortableSection>
+                );
+              })}
+            </SortableContext>
+          </DndContext>
         )}
       </SidebarContent>      <SidebarFooter className="p-2 md:p-4">
         <SidebarMenu>

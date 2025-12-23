@@ -1,16 +1,19 @@
 package com.shadcn.backend.repository;
 
-import com.shadcn.backend.model.LearningModulePdf;
+import java.util.Optional;
+
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
-import java.util.Optional;
+import com.shadcn.backend.model.LearningModulePdf;
 
 public interface LearningModulePdfRepository extends JpaRepository<LearningModulePdf, Long> {
     boolean existsByCode(String code);
+
+        Optional<LearningModulePdf> findByCodeIgnoreCase(String code);
 
     @Query("select p from LearningModulePdf p where coalesce(p.shareScope, 'GENERAL') = 'GENERAL'")
     Page<LearningModulePdf> findGeneralVisible(Pageable pageable);

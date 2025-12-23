@@ -12,11 +12,14 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
-import reactor.core.publisher.Mono;
+import org.springframework.web.reactive.function.client.WebClientResponseException;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.time.Duration;
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
+import java.util.stream.Collectors;
 
 @Service
 public class DIDService {
@@ -27,7 +30,6 @@ public class DIDService {
     private static final Duration RETRY_DELAY = Duration.ofSeconds(2);
     
     // Timeout configuration
-    private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(10);
     private static final Duration READ_TIMEOUT = Duration.ofSeconds(60); // Video generation can take time
     
     private final WebClient webClient;
@@ -40,8 +42,14 @@ public class DIDService {
     private long cacheExpiry = 0;
     private static final long CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
     
-    @Value("${did.api.token:bmRha3RhdTU1NTM4QGdtYWlsLmNvbQ:oLHQ0qx4fsii1d3z8ikQA}")
+    @Value("${did.api.token:}")
     private String apiToken;
+
+    @Value("${did.presenter.id:}")
+    private String forcedPresenterId;
+
+    @Value("${did.fallback.presenter.id:}")
+    private String fallbackPresenterId;
 
     public DIDService(ObjectMapper objectMapper, DIDAvatarRepository avatarRepository) {
         this.objectMapper = objectMapper;
@@ -54,7 +62,29 @@ public class DIDService {
     }
 
     private String getAuthHeader() {
-        return "Basic " + apiToken;
+        String token = apiToken == null ? "" : apiToken.trim();
+        if (token.endsWith(".")) {
+            token = token.substring(0, token.length() - 1).trim();
+        }
+
+        if (token.regionMatches(true, 0, "Basic ", 0, "Basic ".length())) {
+            return token;
+        }
+
+        if (token.isBlank()) {
+            throw new IllegalStateException("D-ID API token is not configured");
+        }
+
+        // D-ID uses HTTP Basic auth. Many accounts use API key as username with empty password.
+        // Support both formats:
+        // - "API_KEY" (we send as "API_KEY:")
+        // - "API_USERNAME:API_PASSWORD"
+        if (!token.contains(":")) {
+            token = token + ":";
+        }
+
+        String basicToken = Base64.getEncoder().encodeToString(token.getBytes(StandardCharsets.UTF_8));
+        return "Basic " + basicToken;
     }
 
     /**
@@ -65,27 +95,168 @@ public class DIDService {
      * Also syncs with database for persistent storage
      */
     public List<DIDPresenter> getPresenters() {
+        String forcedId = normalize(forcedPresenterId);
+        if (forcedId != null) {
+            DIDPresenter forcedPresenter = getPresenterByIdPreferDbThenApi(forcedId);
+            if (forcedPresenter == null) {
+                forcedPresenter = createPlaceholderPresenter(forcedId);
+            }
+
+            List<DIDPresenter> only = List.of(forcedPresenter);
+            syncAvatarsToDatabase(only);
+
+            cachedPresenterList = new ArrayList<>(only);
+            cacheExpiry = System.currentTimeMillis() + CACHE_TTL_MS;
+            presenterCache.put(forcedPresenter.getPresenter_id(), forcedPresenter);
+            logger.info("Using forced D-ID presenter_id: {}", forcedId);
+            return new ArrayList<>(only);
+        }
+
+        return fetchAndCacheCustomPresenters();
+    }
+
+    /**
+     * Get list of available custom avatars for UI selection.
+     * This ignores did.presenter.id so the UI can always see the real list from D-ID.
+     */
+    public List<DIDPresenter> getPresentersForListing() {
+        return fetchAndCacheCustomPresenters();
+    }
+
+    public List<DIDPresenter> getPresentersForListing(boolean includeNotReadyExpress) {
+        // Always fetch Express Avatars fresh so newly-created avatars show up immediately,
+        // while still using cache for Clips presenters to avoid repeated large API calls.
+        List<DIDPresenter> cached = fetchAndCacheCustomPresenters();
+
+        Map<String, DIDPresenter> byId = new LinkedHashMap<>();
+
+        for (DIDPresenter p : getExpressAvatars(includeNotReadyExpress)) {
+            if (p == null) continue;
+            String id = p.getPresenter_id();
+            if (id == null || id.isBlank()) continue;
+            byId.put(id, p);
+        }
+
+        if (cached != null && !cached.isEmpty()) {
+            for (DIDPresenter p : cached) {
+                if (p == null) continue;
+                if ("express".equalsIgnoreCase(p.getAvatar_type())) continue;
+
+                String id = p.getPresenter_id();
+                if (id == null || id.isBlank()) continue;
+                byId.putIfAbsent(id, p);
+            }
+        }
+
+        return new ArrayList<>(byId.values());
+    }
+
+    public Map<String, Object> diagnosePresenterAccess() {
+        Map<String, Object> out = new LinkedHashMap<>();
+
+        Map<String, Object> scenes = new LinkedHashMap<>();
+        try {
+            String response = webClient.get()
+                    .uri("/scenes/avatars")
+                    .header(HttpHeaders.AUTHORIZATION, getAuthHeader())
+                    .retrieve()
+                    .bodyToMono(String.class)
+                    .timeout(READ_TIMEOUT)
+                    .block();
+
+            int count = 0;
+            List<Map<String, Object>> sample = new ArrayList<>();
+            List<String> topLevelKeys = new ArrayList<>();
+            if (response != null && !response.isBlank()) {
+                JsonNode root = objectMapper.readTree(response);
+
+                if (root != null && root.isObject()) {
+                    root.fieldNames().forEachRemaining(topLevelKeys::add);
+                }
+
+                JsonNode avatarsArray = null;
+                if (root != null) {
+                    if (root.isArray()) {
+                        avatarsArray = root;
+                    } else if (root.has("avatars")) {
+                        JsonNode avatars = root.get("avatars");
+                        if (avatars != null && avatars.isArray()) {
+                            avatarsArray = avatars;
+                        } else if (avatars != null && avatars.isObject() && avatars.has("items") && avatars.get("items").isArray()) {
+                            avatarsArray = avatars.get("items");
+                        }
+                    } else if (root.has("items") && root.get("items").isArray()) {
+                        avatarsArray = root.get("items");
+                    } else if (root.has("data") && root.get("data").isArray()) {
+                        avatarsArray = root.get("data");
+                    }
+                }
+
+                if (avatarsArray != null && avatarsArray.isArray()) {
+                    count = avatarsArray.size();
+                    for (int i = 0; i < Math.min(3, avatarsArray.size()); i++) {
+                        JsonNode node = avatarsArray.get(i);
+                        Map<String, Object> item = new LinkedHashMap<>();
+                        item.put("id", node.has("id") ? node.get("id").asText() : "");
+                        item.put("name", node.has("name") ? node.get("name").asText() : "");
+                        item.put("status", node.has("status") ? node.get("status").asText() : "");
+                        sample.add(item);
+                    }
+                }
+            }
+
+            scenes.put("ok", true);
+            scenes.put("count", count);
+            scenes.put("topLevelKeys", topLevelKeys);
+            scenes.put("sample", sample);
+        } catch (WebClientResponseException wce) {
+            scenes.put("ok", false);
+            scenes.put("status", wce.getStatusCode().value());
+            scenes.put("body", truncate(wce.getResponseBodyAsString(), 1000));
+        } catch (Exception e) {
+            scenes.put("ok", false);
+            scenes.put("error", truncate(String.valueOf(e.getMessage()), 300));
+        }
+        out.put("expressAvatars", scenes);
+
+        Map<String, Object> clips = new LinkedHashMap<>();
+        List<DIDPresenter> all = getClipsPresentersFromApi(true);
+        List<DIDPresenter> custom = all.stream()
+                .filter(p -> p != null && p.getPresenter_id() != null && !p.getPresenter_id().startsWith("v2_public_"))
+                .collect(Collectors.toList());
+        clips.put("ok", true);
+        clips.put("total", all.size());
+        clips.put("custom", custom.size());
+        out.put("clipsPresenters", clips);
+
+        return out;
+    }
+
+    private List<DIDPresenter> fetchAndCacheCustomPresenters() {
         // Return cached list if still valid
         if (cachedPresenterList != null && System.currentTimeMillis() < cacheExpiry) {
-            logger.info("Returning cached presenter list ({} items)", cachedPresenterList.size());
-            return new ArrayList<>(cachedPresenterList);
+            // Do not keep serving an empty cache forever (e.g. transient D-ID outage)
+            if (!cachedPresenterList.isEmpty()) {
+                logger.info("Returning cached presenter list ({} items)", cachedPresenterList.size());
+                return new ArrayList<>(cachedPresenterList);
+            }
         }
-        
+
         List<DIDPresenter> allAvatars = new ArrayList<>();
-        
-        // 1. Fetch Express Avatars from /scenes/avatars (like AFAN)
-        allAvatars.addAll(getExpressAvatars());
-        
-        // 2. Fetch custom Clips Presenters (non-public)
-        allAvatars.addAll(getCustomClipsPresenters());
-        
+
+        // 1. Fetch Express Avatars from /scenes/avatars (custom avatars created in Studio)
+        allAvatars.addAll(getExpressAvatars(true));
+
+        // 2. Fetch Clips Presenters (include public library for UI listing)
+        allAvatars.addAll(getClipsPresentersFromApi(true));
+
         // 3. Sync with database
         syncAvatarsToDatabase(allAvatars);
-        
+
         // Cache the result
         cachedPresenterList = new ArrayList<>(allAvatars);
-        cacheExpiry = System.currentTimeMillis() + CACHE_TTL_MS;
-        
+        cacheExpiry = System.currentTimeMillis() + (allAvatars.isEmpty() ? 30_000L : CACHE_TTL_MS);
+
         logger.info("Fetched and cached {} total custom avatars (Express + Clips)", allAvatars.size());
         return allAvatars;
     }
@@ -99,6 +270,75 @@ public class DIDService {
         cacheExpiry = 0;
         return getPresenters();
     }
+
+    public List<DIDPresenter> getClipsPresentersFromApi(boolean includePublic) {
+        try {
+            String response = webClient.get()
+                    .uri(uriBuilder -> uriBuilder.path("/clips/presenters")
+                            .queryParam("limit", 1000)
+                            .build())
+                    .header(HttpHeaders.AUTHORIZATION, getAuthHeader())
+                    .retrieve()
+                    .bodyToMono(String.class)
+                    .timeout(READ_TIMEOUT)
+                    .block();
+
+            if (response == null || response.isBlank()) {
+                return List.of();
+            }
+
+            JsonNode root = objectMapper.readTree(response);
+            JsonNode presentersNode = root.get("presenters");
+            if (presentersNode == null || !presentersNode.isArray()) {
+                return List.of();
+            }
+
+            List<DIDPresenter> presenters = new ArrayList<>();
+            for (JsonNode node : presentersNode) {
+                String presenterId = node.has("presenter_id") ? node.get("presenter_id").asText() : "";
+                if (presenterId.isBlank()) {
+                    continue;
+                }
+
+                DIDPresenter presenter = new DIDPresenter();
+                presenter.setPresenter_id(presenterId);
+                presenter.setPresenter_name(node.has("presenter_name")
+                        ? node.get("presenter_name").asText()
+                        : (node.has("name") ? node.get("name").asText() : "Presenter"));
+                presenter.setGender(node.has("gender") ? node.get("gender").asText() : "");
+                presenter.setThumbnail_url(node.has("thumbnail_url") ? node.get("thumbnail_url").asText() : "");
+                presenter.setPreview_url(node.has("preview_url") ? node.get("preview_url").asText() : "");
+                presenter.set_premium(node.has("is_premium") && node.get("is_premium").asBoolean());
+                presenter.setAvatar_type("clips");
+
+                String voiceId = null;
+                String voiceType = null;
+                if (node.has("voice") && node.get("voice").isObject() && node.get("voice").has("voice_id")) {
+                    voiceId = node.get("voice").get("voice_id").asText();
+                    if (node.get("voice").has("type")) {
+                        voiceType = node.get("voice").get("type").asText();
+                    }
+                } else if (node.has("voice_id")) {
+                    voiceId = node.get("voice_id").asText();
+                }
+                presenter.setVoice_id(voiceId == null ? "" : voiceId);
+                presenter.setVoice_type(voiceType == null ? "" : voiceType);
+
+                presenters.add(presenter);
+            }
+
+            if (!includePublic) {
+                presenters = presenters.stream()
+                        .filter(p -> p.getPresenter_id() != null && !p.getPresenter_id().startsWith("v2_public_"))
+                        .collect(Collectors.toList());
+            }
+
+            return presenters;
+        } catch (Exception e) {
+            logger.error("Error fetching Clips Presenters from D-ID API: {}", e.getMessage());
+            return List.of();
+        }
+    }
     
     /**
      * Sync avatars from D-ID API to database
@@ -106,6 +346,15 @@ public class DIDService {
     private void syncAvatarsToDatabase(List<DIDPresenter> avatars) {
         try {
             for (DIDPresenter presenter : avatars) {
+                if (presenter == null || presenter.getPresenter_id() == null || presenter.getPresenter_id().isBlank()) {
+                    continue;
+                }
+
+                // Avoid syncing public clips presenters into DB (too many; they’re already available via API).
+                if (presenter.getPresenter_id().startsWith("v2_public_")) {
+                    continue;
+                }
+
                 Optional<DIDAvatar> existing = avatarRepository.findByPresenterId(presenter.getPresenter_id());
                 
                 if (existing.isPresent()) {
@@ -176,7 +425,24 @@ public class DIDService {
             return false;
         }
         
+        String forcedId = normalize(forcedPresenterId);
         String trimmedName = name.trim();
+
+        if (forcedId != null) {
+            if (forcedId.equalsIgnoreCase(trimmedName)) {
+                return true;
+            }
+
+            Optional<DIDAvatar> forced = avatarRepository.findByPresenterId(forcedId);
+            if (forced.isEmpty()) {
+                getPresenters();
+                forced = avatarRepository.findByPresenterId(forcedId);
+            }
+
+            return forced.isPresent()
+                    && forced.get().getPresenterName() != null
+                    && forced.get().getPresenterName().trim().equalsIgnoreCase(trimmedName);
+        }
         
         // 1. Check database first
         if (avatarRepository.existsByPresenterNameTrimmedIgnoreCase(trimmedName)) {
@@ -201,6 +467,31 @@ public class DIDService {
         if (name == null || name.trim().isEmpty()) {
             return Optional.empty();
         }
+
+        String forcedId = normalize(forcedPresenterId);
+        String trimmedName = name.trim();
+
+        if (forcedId != null) {
+            if (forcedId.equalsIgnoreCase(trimmedName)) {
+                Optional<DIDAvatar> byId = avatarRepository.findByPresenterId(forcedId);
+                if (byId.isEmpty()) {
+                    getPresenters();
+                    byId = avatarRepository.findByPresenterId(forcedId);
+                }
+                return byId;
+            }
+
+            Optional<DIDAvatar> forced = avatarRepository.findByPresenterId(forcedId);
+            if (forced.isEmpty()) {
+                getPresenters();
+                forced = avatarRepository.findByPresenterId(forcedId);
+            }
+            if (forced.isPresent() && forced.get().getPresenterName() != null
+                    && forced.get().getPresenterName().trim().equalsIgnoreCase(trimmedName)) {
+                return forced;
+            }
+            return Optional.empty();
+        }
         return avatarRepository.findByPresenterNameTrimmedIgnoreCase(name.trim());
     }
     
@@ -208,7 +499,7 @@ public class DIDService {
      * Get Express Avatars created in D-ID Studio
      * These are avatars like "AFAN" created via the Studio interface
      */
-    private List<DIDPresenter> getExpressAvatars() {
+    private List<DIDPresenter> getExpressAvatars(boolean includeNotReady) {
         List<DIDPresenter> expressAvatars = new ArrayList<>();
         
         try {
@@ -221,30 +512,54 @@ public class DIDService {
 
             if (response != null) {
                 JsonNode root = objectMapper.readTree(response);
-                JsonNode avatarsNode = root.has("avatars") ? root.get("avatars") : root;
-                
-                // Handle if response is array directly or has "avatars" field
-                if (avatarsNode.isArray()) {
-                    for (JsonNode node : avatarsNode) {
+
+                JsonNode avatarsArray = null;
+                if (root != null) {
+                    if (root.isArray()) {
+                        avatarsArray = root;
+                    } else if (root.has("avatars")) {
+                        JsonNode avatars = root.get("avatars");
+                        if (avatars != null && avatars.isArray()) {
+                            avatarsArray = avatars;
+                        } else if (avatars != null && avatars.isObject() && avatars.has("items") && avatars.get("items").isArray()) {
+                            avatarsArray = avatars.get("items");
+                        }
+                    } else if (root.has("items") && root.get("items").isArray()) {
+                        avatarsArray = root.get("items");
+                    } else if (root.has("data") && root.get("data").isArray()) {
+                        avatarsArray = root.get("data");
+                    }
+                }
+
+                if (avatarsArray != null && avatarsArray.isArray()) {
+                    for (JsonNode node : avatarsArray) {
                         String avatarId = node.has("id") ? node.get("id").asText() : "";
                         String status = node.has("status") ? node.get("status").asText() : "";
-                        
-                        // Only include avatars that are ready (status = done)
-                        if (!avatarId.isEmpty() && "done".equals(status)) {
-                            DIDPresenter presenter = new DIDPresenter();
-                            presenter.setPresenter_id(avatarId);
-                            presenter.setPresenter_name(node.has("name") ? node.get("name").asText() : "Express Avatar");
-                            presenter.setGender("");
-                            presenter.setThumbnail_url(node.has("thumbnail_url") ? node.get("thumbnail_url").asText() : "");
-                            presenter.setPreview_url(node.has("talking_preview_url") ? node.get("talking_preview_url").asText() : "");
-                            presenter.set_premium(false);
-                            presenter.setAvatar_type("express"); // Mark as express avatar
-                            presenter.setVoice_id(node.has("voice_id") ? node.get("voice_id").asText() : ""); // Cloned voice
-                            
-                            expressAvatars.add(presenter);
-                            presenterCache.put(avatarId, presenter);
-                            logger.debug("Added Express Avatar: {} ({})", presenter.getPresenter_name(), avatarId);
+
+                        boolean include = !avatarId.isEmpty() && (includeNotReady || "done".equalsIgnoreCase(status));
+                        if (!include) {
+                            continue;
                         }
+
+                        DIDPresenter presenter = new DIDPresenter();
+                        presenter.setPresenter_id(avatarId);
+                        presenter.setPresenter_name(node.has("name") ? node.get("name").asText() : "Express Avatar");
+                        presenter.setGender("");
+                        presenter.setThumbnail_url(node.has("thumbnail_url") ? node.get("thumbnail_url").asText() : "");
+                        if (node.has("talking_preview_url")) {
+                            presenter.setPreview_url(node.get("talking_preview_url").asText());
+                        } else if (node.has("preview_url")) {
+                            presenter.setPreview_url(node.get("preview_url").asText());
+                        } else {
+                            presenter.setPreview_url("");
+                        }
+                        presenter.set_premium(false);
+                        presenter.setAvatar_type("express");
+                        presenter.setVoice_id(node.has("voice_id") ? node.get("voice_id").asText() : "");
+
+                        expressAvatars.add(presenter);
+                        presenterCache.put(avatarId, presenter);
+                        logger.debug("Added Express Avatar: {} ({}) status={}", presenter.getPresenter_name(), avatarId, status);
                     }
                 }
                 
@@ -256,67 +571,15 @@ public class DIDService {
         
         return expressAvatars;
     }
-    
-    /**
-     * Get custom Clips Presenters (non-public Premium+ avatars)
-     */
-    private List<DIDPresenter> getCustomClipsPresenters() {
-        List<DIDPresenter> customPresenters = new ArrayList<>();
-        
-        try {
-            String response = webClient.get()
-                    .uri("/clips/presenters")
-                    .header(HttpHeaders.AUTHORIZATION, getAuthHeader())
-                    .retrieve()
-                    .bodyToMono(String.class)
-                    .block();
-
-            if (response != null) {
-                JsonNode root = objectMapper.readTree(response);
-                JsonNode presentersNode = root.get("presenters");
-                
-                if (presentersNode != null && presentersNode.isArray()) {
-                    for (JsonNode node : presentersNode) {
-                        String presenterId = node.get("presenter_id").asText();
-                        
-                        // Filter: Only include custom presenters (non-public)
-                        // Public presenters start with "v2_public_" (e.g., v2_public_Amber@0zSz8kflCN)
-                        boolean isPublicPresenter = presenterId.startsWith("v2_public_") || 
-                                                    presenterId.contains("_public_");
-                        
-                        // Skip public presenters - only show custom ones
-                        if (isPublicPresenter) {
-                            continue;
-                        }
-                        
-                        DIDPresenter presenter = new DIDPresenter();
-                        presenter.setPresenter_id(presenterId);
-                        presenter.setPresenter_name(node.has("presenter_name") ? node.get("presenter_name").asText() : "Custom Presenter");
-                        presenter.setGender(node.has("gender") ? node.get("gender").asText() : "");
-                        presenter.setThumbnail_url(node.has("thumbnail_url") ? node.get("thumbnail_url").asText() : "");
-                        presenter.setPreview_url(node.has("preview_url") ? node.get("preview_url").asText() : "");
-                        presenter.set_premium(node.has("is_premium") && node.get("is_premium").asBoolean());
-                        presenter.setAvatar_type("clips"); // Mark as clips presenter
-                        
-                        customPresenters.add(presenter);
-                        presenterCache.put(presenterId, presenter);
-                        logger.debug("Added custom Clips Presenter: {} ({})", presenter.getPresenter_name(), presenterId);
-                    }
-                }
-                
-                logger.info("Found {} custom Clips Presenters from D-ID", customPresenters.size());
-            }
-        } catch (Exception e) {
-            logger.error("Error fetching Clips Presenters from D-ID: {}", e.getMessage());
-        }
-        
-        return customPresenters;
-    }
 
     /**
      * Validate if a presenter ID exists (works for both Express Avatars and Clips Presenters)
      */
     public boolean isValidPresenter(String presenterId) {
+        String forcedId = normalize(forcedPresenterId);
+        if (forcedId != null) {
+            return presenterId != null && !presenterId.isBlank() && forcedId.equalsIgnoreCase(presenterId.trim());
+        }
         if (presenterCache.containsKey(presenterId)) {
             return true;
         }
@@ -330,6 +593,9 @@ public class DIDService {
      * Fetch all clips presenters (including public) for validation purposes only
      */
     private void fetchAllClipsPresentersForValidation() {
+        if (normalize(forcedPresenterId) != null) {
+            return;
+        }
         try {
             String response = webClient.get()
                     .uri("/clips/presenters")
@@ -348,7 +614,9 @@ public class DIDService {
                         if (!presenterCache.containsKey(presenterId)) {
                             DIDPresenter presenter = new DIDPresenter();
                             presenter.setPresenter_id(presenterId);
-                            presenter.setPresenter_name(node.has("presenter_name") ? node.get("presenter_name").asText() : "");
+                                presenter.setPresenter_name(node.has("presenter_name")
+                                    ? node.get("presenter_name").asText()
+                                    : (node.has("name") ? node.get("name").asText() : ""));
                             presenter.setGender(node.has("gender") ? node.get("gender").asText() : "");
                             presenter.setThumbnail_url(node.has("thumbnail_url") ? node.get("thumbnail_url").asText() : "");
                             presenter.setPreview_url(node.has("preview_url") ? node.get("preview_url").asText() : "");
@@ -370,11 +638,103 @@ public class DIDService {
      * For Clips Presenters: uses /clips endpoint
      */
     public Map<String, Object> createClip(String avatarId, String script) {
-        // Check if this is an Express Avatar (starts with "avt_")
+        // Check if this is an Express Avatar
         if (avatarId.startsWith("avt_")) {
-            return createScene(avatarId, script);
-        } else {
-            return createClipsVideo(avatarId, script);
+            return createSceneWithClipsFallback(avatarId, script);
+        }
+
+        Optional<DIDAvatar> dbAvatar = avatarRepository.findByPresenterId(avatarId);
+        if (dbAvatar.isPresent() && "express".equalsIgnoreCase(dbAvatar.get().getAvatarType())) {
+            return createSceneWithClipsFallback(avatarId, script);
+        }
+
+        DIDPresenter cached = presenterCache.get(avatarId);
+        if (cached != null && "express".equalsIgnoreCase(cached.getAvatar_type())) {
+            return createSceneWithClipsFallback(avatarId, script);
+        }
+
+        Map<String, Object> clips = createClipsVideo(avatarId, script);
+        boolean ok = Boolean.TRUE.equals(clips.get("success"));
+        if (ok) {
+            return clips;
+        }
+
+        String err = clips.get("error") == null ? "" : clips.get("error").toString();
+
+        String errLower = err.toLowerCase(Locale.ROOT);
+        if (!errLower.isBlank() && (errLower.contains("avatar not found") || errLower.contains("notfounderror"))) {
+            DIDPresenter express = fetchExpressAvatarById(avatarId);
+            if (express != null) {
+                presenterCache.put(avatarId, express);
+                logger.warn("Clips presenter_id not found. Using Express Avatar via Scenes for avatar_id={}", avatarId);
+                Map<String, Object> scene = createScene(avatarId, script);
+                if (Boolean.TRUE.equals(scene.get("success"))) {
+                    return scene;
+                }
+                logger.warn("Scenes creation failed after presenter_id not found. Falling back to Clips public presenter.");
+            }
+
+            String fallback = resolveFallbackClipsPresenterId();
+            if (fallback != null && !fallback.equalsIgnoreCase(avatarId)) {
+                logger.warn("Clips presenter_id not found ({}). Falling back to presenter_id={}", truncate(err, 300), fallback);
+                return createClipsVideo(fallback, script);
+            }
+        }
+
+        if (!err.isBlank() && (err.contains("UnknownError") || err.startsWith("500") || err.contains(" 500 ") || err.contains("500 Internal Server Error"))) {
+            logger.warn("Clips creation failed ({}). Falling back to Scenes for avatar_id={}", truncate(err, 500), avatarId);
+            Map<String, Object> scene = createSceneWithClipsFallback(avatarId, script);
+            if (Boolean.TRUE.equals(scene.get("success"))) {
+                return scene;
+            }
+            return scene;
+        }
+
+        return clips;
+    }
+
+    private Map<String, Object> createSceneWithClipsFallback(String avatarId, String script) {
+        Map<String, Object> scene = createScene(avatarId, script);
+        if (Boolean.TRUE.equals(scene.get("success"))) {
+            return scene;
+        }
+
+        Object errObj = scene.get("error");
+        String err = errObj == null ? "" : errObj.toString();
+        String errLower = err.toLowerCase(Locale.ROOT);
+        if (errLower.contains("avatar not found") || errLower.contains("notfounderror")) {
+            String fallback = resolveFallbackClipsPresenterId();
+            if (fallback != null && !fallback.equalsIgnoreCase(avatarId)) {
+                logger.warn("Scenes avatar_id not found ({}). Falling back to presenter_id={}", truncate(err, 300), fallback);
+                return createClipsVideo(fallback, script);
+            }
+        }
+
+        return scene;
+    }
+
+    private String resolveFallbackClipsPresenterId() {
+        String configured = normalize(fallbackPresenterId);
+        if (configured != null) {
+            return configured;
+        }
+
+        try {
+            List<DIDPresenter> presenters = getClipsPresentersFromApi(true);
+            if (presenters == null || presenters.isEmpty()) {
+                return null;
+            }
+
+            for (DIDPresenter p : presenters) {
+                if (p != null && p.getPresenter_id() != null && p.getPresenter_id().startsWith("v2_public_")) {
+                    return p.getPresenter_id();
+                }
+            }
+
+            DIDPresenter first = presenters.get(0);
+            return first == null ? null : normalize(first.getPresenter_id());
+        } catch (Exception e) {
+            return null;
         }
     }
     
@@ -455,6 +815,26 @@ public class DIDService {
                     logger.info("Created D-ID scene: {} (attempt {})", result.get("id"), attempt);
                     return result;
                 }
+            } catch (WebClientResponseException wce) {
+                String body = truncate(wce.getResponseBodyAsString(), 4000);
+                logger.error(
+                    "Error creating D-ID scene (attempt {}/{}): status={} body={}",
+                    attempt, MAX_RETRIES, wce.getStatusCode().value(), body
+                );
+
+                if (attempt < MAX_RETRIES) {
+                    try {
+                        Thread.sleep(RETRY_DELAY.toMillis() * attempt); // Exponential backoff
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        result.put("success", false);
+                        result.put("error", "Interrupted while waiting to retry D-ID scene");
+                        return result;
+                    }
+                } else {
+                    result.put("success", false);
+                    result.put("error", wce.getStatusCode().value() + " " + wce.getStatusText() + ": " + body);
+                }
             } catch (Exception e) {
                 logger.error("Error creating D-ID scene (attempt {}/{}): {}", attempt, MAX_RETRIES, e.getMessage());
                 
@@ -463,6 +843,9 @@ public class DIDService {
                         Thread.sleep(RETRY_DELAY.toMillis() * attempt); // Exponential backoff
                     } catch (InterruptedException ie) {
                         Thread.currentThread().interrupt();
+                        result.put("success", false);
+                        result.put("error", "Interrupted while waiting to retry D-ID scene");
+                        return result;
                     }
                 } else {
                     result.put("success", false);
@@ -486,19 +869,42 @@ public class DIDService {
                 Map<String, Object> requestBody = new HashMap<>();
                 requestBody.put("presenter_id", presenterId);
                 
-                Map<String, String> scriptObj = new HashMap<>();
+                Map<String, Object> scriptObj = new HashMap<>();
                 scriptObj.put("type", "text");
                 scriptObj.put("input", script);
-                requestBody.put("script", scriptObj);
 
-                String response = webClient.post()
-                        .uri("/clips")
-                        .header(HttpHeaders.AUTHORIZATION, getAuthHeader())
-                        .bodyValue(requestBody)
-                        .retrieve()
-                        .bodyToMono(String.class)
-                        .timeout(READ_TIMEOUT)
-                        .block();
+                Map<String, Object> provider = resolveClipsVoiceProvider(presenterId);
+
+                Map<String, Object> requestBodyWithProvider = new HashMap<>(requestBody);
+                Map<String, Object> scriptWithProvider = new HashMap<>(scriptObj);
+                if (provider != null) {
+                    scriptWithProvider.put("provider", provider);
+                    logger.debug(
+                            "Creating clip with provider type={} voice_id={} for presenter: {}",
+                            provider.get("type"),
+                            provider.get("voice_id"),
+                            presenterId
+                    );
+                }
+                requestBodyWithProvider.put("script", scriptWithProvider);
+
+                Map<String, Object> requestBodyWithoutProvider = new HashMap<>(requestBody);
+                requestBodyWithoutProvider.put("script", new HashMap<>(scriptObj));
+
+                String response;
+                try {
+                    response = postClip(requestBodyWithProvider);
+                } catch (WebClientResponseException wce) {
+                    if (provider != null && wce.getStatusCode().is5xxServerError()) {
+                        logger.warn(
+                                "D-ID clip creation 5xx with provider for presenter {}. Retrying without provider.",
+                                presenterId
+                        );
+                        response = postClip(requestBodyWithoutProvider);
+                    } else {
+                        throw wce;
+                    }
+                }
 
                 if (response != null) {
                     JsonNode root = objectMapper.readTree(response);
@@ -509,6 +915,26 @@ public class DIDService {
                     logger.info("Created D-ID clip: {} (attempt {})", result.get("id"), attempt);
                     return result;
                 }
+            } catch (WebClientResponseException wce) {
+                String body = truncate(wce.getResponseBodyAsString(), 4000);
+                logger.error(
+                    "Error creating D-ID clip (attempt {}/{}): status={} body={}",
+                    attempt, MAX_RETRIES, wce.getStatusCode().value(), body
+                );
+
+                if (attempt < MAX_RETRIES) {
+                    try {
+                        Thread.sleep(RETRY_DELAY.toMillis() * attempt); // Exponential backoff
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        result.put("success", false);
+                        result.put("error", "Interrupted while waiting to retry D-ID clip");
+                        return result;
+                    }
+                } else {
+                    result.put("success", false);
+                    result.put("error", wce.getStatusCode().value() + " " + wce.getStatusText() + ": " + body);
+                }
             } catch (Exception e) {
                 logger.error("Error creating D-ID clip (attempt {}/{}): {}", attempt, MAX_RETRIES, e.getMessage());
                 
@@ -517,6 +943,9 @@ public class DIDService {
                         Thread.sleep(RETRY_DELAY.toMillis() * attempt); // Exponential backoff
                     } catch (InterruptedException ie) {
                         Thread.currentThread().interrupt();
+                        result.put("success", false);
+                        result.put("error", "Interrupted while waiting to retry D-ID clip");
+                        return result;
                     }
                 } else {
                     result.put("success", false);
@@ -526,6 +955,79 @@ public class DIDService {
         }
         
         return result;
+    }
+
+    private String postClip(Map<String, Object> requestBody) {
+        return webClient.post()
+                .uri("/clips")
+                .header(HttpHeaders.AUTHORIZATION, getAuthHeader())
+                .bodyValue(requestBody)
+                .retrieve()
+                .bodyToMono(String.class)
+                .timeout(READ_TIMEOUT)
+                .block();
+    }
+
+    private Map<String, Object> resolveClipsVoiceProvider(String presenterId) {
+        if (presenterId == null || presenterId.isBlank()) {
+            return null;
+        }
+
+        Optional<DIDAvatar> dbAvatar = avatarRepository.findByPresenterId(presenterId);
+        if (dbAvatar.isPresent()
+                && dbAvatar.get().getVoiceId() != null
+                && !dbAvatar.get().getVoiceId().isBlank()) {
+            Map<String, Object> provider = new HashMap<>();
+            provider.put("type", guessVoiceTypeFromVoiceId(dbAvatar.get().getVoiceId()));
+            provider.put("voice_id", dbAvatar.get().getVoiceId().trim());
+            return provider;
+        }
+
+        DIDPresenter cached = presenterCache.get(presenterId);
+        if (cached != null && cached.getVoice_id() != null && !cached.getVoice_id().isBlank()) {
+            Map<String, Object> provider = new HashMap<>();
+            provider.put("type", normalizeVoiceType(cached.getVoice_type()));
+            provider.put("voice_id", cached.getVoice_id().trim());
+            return provider;
+        }
+
+        DIDPresenter fetched = fetchClipsPresenterById(presenterId);
+        if (fetched != null) {
+            presenterCache.put(presenterId, fetched);
+            if (fetched.getVoice_id() != null && !fetched.getVoice_id().isBlank()) {
+                Map<String, Object> provider = new HashMap<>();
+                provider.put("type", normalizeVoiceType(fetched.getVoice_type()));
+                provider.put("voice_id", fetched.getVoice_id().trim());
+                return provider;
+            }
+        }
+
+        return null;
+    }
+
+    private String normalizeVoiceType(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return "elevenlabs";
+        }
+        return raw.trim();
+    }
+
+    private String guessVoiceTypeFromVoiceId(String voiceId) {
+        if (voiceId == null) {
+            return "elevenlabs";
+        }
+
+        String v = voiceId.trim();
+        if (v.isEmpty()) {
+            return "elevenlabs";
+        }
+
+        // D-ID docs example for Microsoft: en-US-JennyNeural
+        if (v.contains("Neural") || v.matches("^[a-z]{2}-[A-Z]{2}-.*")) {
+            return "microsoft";
+        }
+
+        return "elevenlabs";
     }
 
     /**
@@ -556,7 +1058,8 @@ public class DIDService {
                 result.put("success", true);
                 result.put("id", sceneId);
                 result.put("status", root.has("status") ? root.get("status").asText() : "unknown");
-                result.put("result_url", root.has("result_url") ? root.get("result_url").asText() : null);
+                result.put("result_url", extractResultUrl(root));
+                result.put("pending_url", root.has("pending_url") ? root.get("pending_url").asText() : null);
                 result.put("type", "scene");
                 
                 if (root.has("error")) {
@@ -588,7 +1091,7 @@ public class DIDService {
                 result.put("success", true);
                 result.put("id", clipId);
                 result.put("status", root.has("status") ? root.get("status").asText() : "unknown");
-                result.put("result_url", root.has("result_url") ? root.get("result_url").asText() : null);
+                result.put("result_url", extractResultUrl(root));
                 result.put("type", "clip");
                 
                 if (root.has("error")) {
@@ -604,10 +1107,39 @@ public class DIDService {
         return result;
     }
 
+    private String extractResultUrl(JsonNode root) {
+        if (root == null) return null;
+
+        String[] directKeys = new String[] { "result_url", "resultUrl", "url", "video_url" };
+        for (String k : directKeys) {
+            if (root.has(k) && !root.get(k).isNull()) {
+                String v = root.get(k).asText();
+                if (v != null && !v.isBlank()) return v;
+            }
+        }
+
+        JsonNode result = root.get("result");
+        if (result != null && result.isObject()) {
+            String[] nestedKeys = new String[] { "result_url", "url", "video_url", "mp4_url" };
+            for (String k : nestedKeys) {
+                if (result.has(k) && !result.get(k).isNull()) {
+                    String v = result.get(k).asText();
+                    if (v != null && !v.isBlank()) return v;
+                }
+            }
+        }
+
+        return null;
+    }
+
     /**
      * Get presenter details by ID
      */
     public DIDPresenter getPresenterById(String presenterId) {
+        String forcedId = normalize(forcedPresenterId);
+        if (forcedId != null) {
+            return presenterCache.get(forcedId);
+        }
         if (presenterCache.isEmpty()) {
             getPresenters();
         }
@@ -619,6 +1151,10 @@ public class DIDService {
      * Returns the first matching presenter
      */
     public DIDPresenter getPresenterByName(String name) {
+        String forcedId = normalize(forcedPresenterId);
+        if (forcedId != null) {
+            return getPresenterByIdPreferDbThenApi(forcedId);
+        }
         if (presenterCache.isEmpty()) {
             getPresenters();
         }
@@ -644,7 +1180,178 @@ public class DIDService {
      * Get presenter ID from name (for video generation)
      */
     public String getPresenterIdByName(String name) {
+        String forcedId = normalize(forcedPresenterId);
+        if (forcedId != null) {
+            return forcedId;
+        }
         DIDPresenter presenter = getPresenterByName(name);
         return presenter != null ? presenter.getPresenter_id() : null;
+    }
+
+    private DIDPresenter getPresenterByIdPreferDbThenApi(String presenterId) {
+        if (presenterId == null || presenterId.isBlank()) {
+            return null;
+        }
+
+        DIDPresenter cached = presenterCache.get(presenterId);
+        if (cached != null) {
+            return cached;
+        }
+
+        Optional<DIDAvatar> db = avatarRepository.findByPresenterId(presenterId);
+        if (db.isPresent()) {
+            DIDAvatar a = db.get();
+            DIDPresenter presenter = new DIDPresenter();
+            presenter.setPresenter_id(a.getPresenterId());
+            presenter.setPresenter_name(a.getPresenterName());
+            presenter.setAvatar_type(a.getAvatarType());
+            presenter.setThumbnail_url(a.getThumbnailUrl());
+            presenter.setPreview_url(a.getPreviewUrl());
+            presenter.setVoice_id(a.getVoiceId());
+            presenter.setGender(a.getGender());
+            presenter.set_premium(a.getIsPremium() != null && a.getIsPremium());
+            presenterCache.put(presenterId, presenter);
+            return presenter;
+        }
+
+        DIDPresenter fetched = fetchClipsPresenterById(presenterId);
+        if (fetched == null) {
+            fetched = fetchExpressAvatarById(presenterId);
+        }
+
+        if (fetched != null) {
+            presenterCache.put(presenterId, fetched);
+        }
+        return fetched;
+    }
+
+    private DIDPresenter fetchClipsPresenterById(String presenterId) {
+        try {
+            String response = webClient.get()
+                    .uri("/clips/presenters/{id}", presenterId)
+                    .header(HttpHeaders.AUTHORIZATION, getAuthHeader())
+                    .retrieve()
+                    .bodyToMono(String.class)
+                    .block();
+
+            if (response == null) {
+                return null;
+            }
+
+            JsonNode root = objectMapper.readTree(response);
+
+            JsonNode node = root;
+            if (root.has("presenters") && root.get("presenters").isArray() && !root.get("presenters").isEmpty()) {
+                node = root.get("presenters").get(0);
+            }
+
+            String id = node.has("presenter_id") ? node.get("presenter_id").asText() : "";
+            if (id.isBlank()) {
+                return null;
+            }
+
+            DIDPresenter presenter = new DIDPresenter();
+            presenter.setPresenter_id(id);
+            presenter.setPresenter_name(node.has("presenter_name")
+                    ? node.get("presenter_name").asText()
+                    : (node.has("name") ? node.get("name").asText() : "Presenter"));
+            presenter.setGender(node.has("gender") ? node.get("gender").asText() : "");
+            presenter.setThumbnail_url(node.has("thumbnail_url") ? node.get("thumbnail_url").asText() : "");
+            presenter.setPreview_url(node.has("preview_url") ? node.get("preview_url").asText() : "");
+            presenter.set_premium(node.has("is_premium") && node.get("is_premium").asBoolean());
+            presenter.setAvatar_type("clips");
+
+            String voiceId = null;
+            String voiceType = null;
+            if (node.has("voice") && node.get("voice").isObject() && node.get("voice").has("voice_id")) {
+                voiceId = node.get("voice").get("voice_id").asText();
+                if (node.get("voice").has("type")) {
+                    voiceType = node.get("voice").get("type").asText();
+                }
+            } else if (node.has("voice_id")) {
+                voiceId = node.get("voice_id").asText();
+            }
+            presenter.setVoice_id(voiceId == null ? "" : voiceId);
+            presenter.setVoice_type(voiceType == null ? "" : voiceType);
+            return presenter;
+        } catch (WebClientResponseException wce) {
+            if (wce.getStatusCode().value() == 404) {
+                return null;
+            }
+            logger.error(
+                    "Error fetching Clips Presenter by id (status={}): {}",
+                    wce.getStatusCode().value(),
+                    truncate(wce.getResponseBodyAsString(), 2000)
+            );
+        } catch (Exception e) {
+            logger.error("Error fetching Clips Presenter by id: {}", e.getMessage());
+        }
+
+        return null;
+    }
+
+    private DIDPresenter fetchExpressAvatarById(String avatarId) {
+        try {
+            String response = webClient.get()
+                    .uri("/scenes/avatars")
+                    .header(HttpHeaders.AUTHORIZATION, getAuthHeader())
+                    .retrieve()
+                    .bodyToMono(String.class)
+                    .block();
+
+            if (response == null) {
+                return null;
+            }
+
+            JsonNode root = objectMapper.readTree(response);
+            JsonNode avatarsNode = root.has("avatars") ? root.get("avatars") : root;
+            if (avatarsNode != null && avatarsNode.isArray()) {
+                for (JsonNode node : avatarsNode) {
+                    String id = node.has("id") ? node.get("id").asText() : "";
+                    if (avatarId.equalsIgnoreCase(id)) {
+                        DIDPresenter presenter = new DIDPresenter();
+                        presenter.setPresenter_id(id);
+                        presenter.setPresenter_name(node.has("name") ? node.get("name").asText() : "Express Avatar");
+                        presenter.setGender("");
+                        presenter.setThumbnail_url(node.has("thumbnail_url") ? node.get("thumbnail_url").asText() : "");
+                        presenter.setPreview_url(node.has("talking_preview_url") ? node.get("talking_preview_url").asText() : "");
+                        presenter.set_premium(false);
+                        presenter.setAvatar_type("express");
+                        presenter.setVoice_id(node.has("voice_id") ? node.get("voice_id").asText() : "");
+                        return presenter;
+                    }
+                }
+            }
+        } catch (Exception e) {
+            logger.error("Error fetching Express Avatar by id: {}", e.getMessage());
+        }
+
+        return null;
+    }
+
+    private DIDPresenter createPlaceholderPresenter(String presenterId) {
+        DIDPresenter presenter = new DIDPresenter();
+        presenter.setPresenter_id(presenterId);
+        presenter.setPresenter_name("Custom Presenter");
+        presenter.setAvatar_type(presenterId != null && presenterId.startsWith("avt_") ? "express" : "clips");
+        presenter.setGender("");
+        presenter.setThumbnail_url("");
+        presenter.setPreview_url("");
+        presenter.set_premium(false);
+        presenter.setVoice_id("");
+        return presenter;
+    }
+
+    private String normalize(String raw) {
+        if (raw == null) return null;
+        String v = raw.trim();
+        return v.isEmpty() ? null : v;
+    }
+
+    private String truncate(String s, int max) {
+        if (s == null) return "";
+        if (max <= 0) return "";
+        if (s.length() <= max) return s;
+        return s.substring(0, max);
     }
 }

@@ -4,7 +4,7 @@ Backend REST API untuk aplikasi Shadcn Dashboard menggunakan Spring Boot dan MyS
 
 ## Prerequisites
 
-- Java 17 atau lebih tinggi
+- Java 25
 - Maven 3.6 atau lebih tinggi
 - MySQL 8.0 atau lebih tinggi
 - IDE (IntelliJ IDEA, Eclipse, atau VS Code dengan Java Extension Pack)

@@ -9,6 +9,7 @@ public record LearningModuleVideoRequest(
         List<String> intendedAudience,
         List<String> contentTypes,
         String text,
-        String createdByCompanyName
+        String createdByCompanyName,
+        String videoCategory
 ) {
 }

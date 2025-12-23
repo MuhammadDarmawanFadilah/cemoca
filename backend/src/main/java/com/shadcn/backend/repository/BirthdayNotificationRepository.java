@@ -1,9 +1,9 @@
 package com.shadcn.backend.repository;
 
-import com.shadcn.backend.dto.BirthdayNotificationDTO;
-import com.shadcn.backend.model.BirthdayNotification;
+import java.time.LocalDate;
+import java.util.List;
+
 import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
@@ -11,8 +11,8 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
-import java.time.LocalDate;
-import java.util.List;
+import com.shadcn.backend.dto.BirthdayNotificationDTO;
+import com.shadcn.backend.model.BirthdayNotification;
 
 @Repository
 public interface BirthdayNotificationRepository extends JpaRepository<BirthdayNotification, Long> {
@@ -190,7 +190,7 @@ public interface BirthdayNotificationRepository extends JpaRepository<BirthdayNo
            "     WHEN bn.status = 'PENDING' THEN 'Menunggu' " +
            "     WHEN bn.status = 'EXCLUDED' THEN 'Dikecualikan' " +
            "     WHEN bn.status = 'RESENT' THEN 'Dikirim Ulang' " +
-           "     ELSE bn.status END, " +
+           "     ELSE CAST(bn.status AS string) END, " +
            "bn.message, bn.sentAt, bn.errorMessage, bn.isExcluded, " +
            "bn.createdAt, bn.updatedAt, " +
            "(YEAR(CURRENT_DATE) - YEAR(b.tanggalLahir))) " +
@@ -209,7 +209,7 @@ public interface BirthdayNotificationRepository extends JpaRepository<BirthdayNo
            "     WHEN bn.status = 'PENDING' THEN 'Menunggu' " +
            "     WHEN bn.status = 'EXCLUDED' THEN 'Dikecualikan' " +
            "     WHEN bn.status = 'RESENT' THEN 'Dikirim Ulang' " +
-           "     ELSE bn.status END, " +
+           "     ELSE CAST(bn.status AS string) END, " +
            "bn.message, bn.sentAt, bn.errorMessage, bn.isExcluded, " +
            "bn.createdAt, bn.updatedAt, " +
            "(YEAR(CURRENT_DATE) - YEAR(b.tanggalLahir))) " +

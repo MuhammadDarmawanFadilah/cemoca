@@ -677,7 +677,17 @@ export const getRecipientsForSelection = async (filterRequest: BiografiFilterReq
     });
 
     if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
+      const text = await response.text().catch(() => '')
+      let msg = text ? `HTTP ${response.status}: ${text}` : `HTTP error! status: ${response.status}`
+      try {
+        const parsed = text ? JSON.parse(text) : null
+        if (parsed && typeof parsed === 'object') {
+          msg = (parsed.message || parsed.error || msg) as string
+        }
+      } catch {
+        // keep msg
+      }
+      throw new Error(msg)
     }
 
     return response.json();
@@ -1851,7 +1861,7 @@ export interface MasterAgencyAgentListFilters {
 export interface MasterPolicySalesRequest {
   agentCode: string;
   policyDate: string;
-  policyCode: string;
+  policyFyp: number;
   policyApe: number;
 }
 
@@ -1859,7 +1869,7 @@ export interface MasterPolicySalesResponse {
   id: number;
   agentCode: string;
   policyDate: string;
-  policyCode: string;
+  policyFyp: number;
   policyApe: number;
   createdBy?: string;
   createdAt: string;
@@ -1890,7 +1900,6 @@ export interface MasterPolicySalesApiImportRequest {
 export interface MasterPolicySalesListFilters {
   search?: string;
   agentCode?: string;
-  policyCode?: string;
   createdBy?: string;
 }
 
@@ -2094,7 +2103,6 @@ export const masterDataAPI = {
         const f = filters;
         if (f?.search) params.append('search', f.search);
         if (f?.agentCode) params.append('agentCode', f.agentCode);
-        if (f?.policyCode) params.append('policyCode', f.policyCode);
         if (f?.createdBy) params.append('createdBy', f.createdBy);
       }
 

@@ -1,21 +1,26 @@
 package com.shadcn.backend.repository;
 
-import com.shadcn.backend.model.MasterAgencyAgent;
+import java.time.LocalDate;
+import java.util.Optional;
+
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
-
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.Optional;
+import com.shadcn.backend.model.MasterAgencyAgent;
 
 @Repository
 public interface MasterAgencyAgentRepository extends JpaRepository<MasterAgencyAgent, Long> {
 
+        long countByCompanyCode(String companyCode);
+
         Optional<MasterAgencyAgent> findByCompanyCodeAndAgentCodeIgnoreCase(String companyCode, String agentCode);
+
+        java.util.List<MasterAgencyAgent> findByCompanyCodeAndAppointmentDateAndIsActiveTrue(String companyCode, LocalDate appointmentDate);
 
         boolean existsByCompanyCodeAndAgentCodeIgnoreCase(String companyCode, String agentCode);
 
@@ -56,5 +61,17 @@ public interface MasterAgencyAgentRepository extends JpaRepository<MasterAgencyA
             @Param("createdBy") String createdBy,
             @Param("isActive") Boolean isActive,
             Pageable pageable
+    );
+
+    @Query("SELECT a FROM MasterAgencyAgent a " +
+            "WHERE a.companyCode = :companyCode " +
+            "AND a.isActive = true " +
+            "AND a.birthday IS NOT NULL " +
+            "AND function('month', a.birthday) = :month " +
+            "AND function('day', a.birthday) = :day")
+    java.util.List<MasterAgencyAgent> findActiveByCompanyCodeAndBirthdayMonthDay(
+            @Param("companyCode") String companyCode,
+            @Param("month") int month,
+            @Param("day") int day
     );
 }

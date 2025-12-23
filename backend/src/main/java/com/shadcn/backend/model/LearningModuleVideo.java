@@ -25,6 +25,9 @@ public class LearningModuleVideo {
     @Column(nullable = false, unique = true, length = 160)
     private String code;
 
+    @Column(name = "video_category", length = 16)
+    private String videoCategory;
+
     @Column(length = 255)
     private String title;
 
@@ -83,6 +86,14 @@ public class LearningModuleVideo {
 
     public void setCode(String code) {
         this.code = code;
+    }
+
+    public String getVideoCategory() {
+        return videoCategory;
+    }
+
+    public void setVideoCategory(String videoCategory) {
+        this.videoCategory = videoCategory;
     }
 
     public String getTitle() {

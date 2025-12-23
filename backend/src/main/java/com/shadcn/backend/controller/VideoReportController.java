@@ -62,8 +62,22 @@ public class VideoReportController {
      * Get available D-ID presenters
      */
     @GetMapping("/presenters")
-    public ResponseEntity<List<DIDPresenter>> getPresenters() {
-        return ResponseEntity.ok(didService.getPresenters());
+    public ResponseEntity<List<DIDPresenter>> getPresenters(
+            @RequestParam(defaultValue = "true") boolean includeNotReadyExpress
+    ) {
+        return ResponseEntity.ok(didService.getPresentersForListing(includeNotReadyExpress));
+    }
+
+    @GetMapping("/presenters/clips")
+    public ResponseEntity<List<DIDPresenter>> getClipsPresenters(
+            @RequestParam(defaultValue = "false") boolean includePublic
+    ) {
+        return ResponseEntity.ok(didService.getClipsPresentersFromApi(includePublic));
+    }
+
+    @GetMapping("/presenters/diagnostics")
+    public ResponseEntity<Map<String, Object>> presentersDiagnostics() {
+        return ResponseEntity.ok(didService.diagnosePresenterAccess());
     }
 
     /**

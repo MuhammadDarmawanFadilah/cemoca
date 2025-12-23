@@ -27,6 +27,7 @@ public class LearningModuleVideoController {
             @RequestParam(defaultValue = "10") int size,
             @RequestParam(defaultValue = "createdAt") String sortBy,
             @RequestParam(defaultValue = "desc") String direction,
+            @RequestParam(required = false) String category,
             @RequestParam(required = false) String companyName,
             @RequestParam(required = false) String title,
             @RequestParam(required = false) String duration,
@@ -37,7 +38,7 @@ public class LearningModuleVideoController {
         Sort.Direction dir = "asc".equalsIgnoreCase(direction) ? Sort.Direction.ASC : Sort.Direction.DESC;
         String sortProp = mapSortProperty(sortBy);
         Pageable pageable = PageRequest.of(page, size, Sort.by(dir, sortProp));
-        return ResponseEntity.ok(service.list(pageable, companyName, title, duration, creator, audience, contentType));
+        return ResponseEntity.ok(service.list(pageable, category, companyName, title, duration, creator, audience, contentType));
     }
 
     private String mapSortProperty(String property) {

@@ -4,6 +4,8 @@ export type LearningModuleVideoDuration = "D1" | "D2" | "D3";
 
 export type LearningModuleVideoShareScope = "GENERAL" | "COMPANY_ONLY";
 
+export type LearningModuleVideoCategory = "VIDEO_1" | "VIDEO_2" | "VIDEO_3" | "VIDEO_4";
+
 export type LearningModuleAudience =
   | "GENERAL"
   | "TOP_LEADER"
@@ -31,11 +33,13 @@ export interface LearningModuleVideoRequest {
   contentTypes: LearningModuleContentType[];
   text: string;
   createdByCompanyName?: string | null;
+  videoCategory?: LearningModuleVideoCategory;
 }
 
 export interface LearningModuleVideoResponse {
   id: number;
   code: string;
+  videoCategory?: LearningModuleVideoCategory | null;
   title?: string | null;
   duration: LearningModuleVideoDuration;
   shareScope?: LearningModuleVideoShareScope | null;
@@ -66,6 +70,7 @@ export const learningModuleVideoApi = {
     size: number;
     sortBy?: string;
     direction?: "asc" | "desc";
+    category?: LearningModuleVideoCategory;
     companyName?: string;
     title?: string;
     duration?: string;
@@ -79,6 +84,7 @@ export const learningModuleVideoApi = {
       sortBy: params.sortBy ?? "createdAt",
       direction: params.direction ?? "desc",
     });
+    if (params.category) qs.set("category", params.category);
     if (params.companyName) qs.set("companyName", params.companyName);
     if (params.title) qs.set("title", params.title);
     if (params.duration) qs.set("duration", params.duration);

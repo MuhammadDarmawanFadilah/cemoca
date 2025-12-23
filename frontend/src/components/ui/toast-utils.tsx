@@ -51,26 +51,41 @@ export const showErrorToast = (error: any) => {
   } else if (isImportResultLike(error?.response?.data)) {
     title = 'Import Gagal'
     message = formatImportErrorsForToast(error.response.data)
-  } else if (error?.response?.data) {
-    const apiError: ApiError = error.response.data
-    message = apiError.message || message
-    
-    // Customize title based on error type
-    switch (apiError.type) {
-      case "DUPLICATE_RESOURCE":
-        title = "Data Sudah Ada"
-        break
-      case "RESOURCE_NOT_FOUND":
-        title = "Data Tidak Ditemukan"
-        break
-      case "VALIDATION_ERROR":
-        title = "Data Tidak Valid"
-        break
-      case "INTERNAL_ERROR":
-        title = "Kesalahan Server"
-        break
-      default:
-        title = "Error"
+  } else if (error?.response) {
+    const status: number | undefined = error.response.status
+    const data = error.response.data
+
+    if (typeof data === 'string') {
+      message = data || message
+    } else if (data && typeof data === 'object') {
+      const apiError: ApiError = data
+      message = apiError.message || message
+
+      // Customize title based on error type
+      switch (apiError.type) {
+        case "DUPLICATE_RESOURCE":
+          title = "Data Sudah Ada"
+          break
+        case "RESOURCE_NOT_FOUND":
+          title = "Data Tidak Ditemukan"
+          break
+        case "VALIDATION_ERROR":
+          title = "Data Tidak Valid"
+          break
+        case "INTERNAL_ERROR":
+          title = "Kesalahan Server"
+          break
+        default:
+          title = "Error"
+      }
+    }
+
+    if (title === 'Error' && typeof status === 'number') {
+      if (status === 400) title = 'Data Tidak Valid'
+      else if (status === 401) title = 'Tidak Diizinkan'
+      else if (status === 403) title = 'Akses Ditolak'
+      else if (status === 404) title = 'Data Tidak Ditemukan'
+      else if (status >= 500) title = 'Kesalahan Server'
     }
   } else if (error?.message) {
     message = error.message

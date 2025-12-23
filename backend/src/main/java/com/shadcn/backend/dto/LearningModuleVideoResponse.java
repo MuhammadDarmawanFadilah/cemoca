@@ -6,6 +6,7 @@ import java.util.List;
 public record LearningModuleVideoResponse(
         Long id,
         String code,
+        String videoCategory,
         String title,
         String duration,
         String shareScope,

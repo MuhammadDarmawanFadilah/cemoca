@@ -4,7 +4,6 @@ import com.shadcn.backend.dto.MasterPolicySalesImportError;
 import com.shadcn.backend.dto.MasterPolicySalesImportResult;
 import com.shadcn.backend.dto.MasterPolicySalesRequest;
 import com.shadcn.backend.dto.MasterPolicySalesResponse;
-import com.shadcn.backend.exception.DuplicateResourceException;
 import com.shadcn.backend.exception.ResourceNotFoundException;
 import com.shadcn.backend.exception.ValidationException;
 import com.shadcn.backend.model.MasterPolicySales;
@@ -14,7 +13,6 @@ import com.shadcn.backend.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.poi.ss.usermodel.*;
-import org.apache.poi.ss.usermodel.DateUtil;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -32,9 +30,7 @@ import java.io.InputStreamReader;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.nio.charset.StandardCharsets;
-import java.time.Instant;
 import java.time.LocalDate;
-import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeFormatterBuilder;
 import java.time.format.DateTimeParseException;
@@ -42,7 +38,6 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
-import java.util.Optional;
 import java.util.Set;
 
 @Service
@@ -58,7 +53,6 @@ public class MasterPolicySalesService {
             String companyCode,
             String search,
             String agentCode,
-            String policyCode,
             String createdBy,
             int page,
             int size,
@@ -75,12 +69,11 @@ public class MasterPolicySalesService {
         Pageable pageable = PageRequest.of(page, size, sort);
 
         String fAgentCode = normalizeSearch(agentCode);
-        String fPolicyCode = normalizeSearch(policyCode);
         String fCreatedBy = normalizeSearch(createdBy);
 
-        boolean hasColumnFilters = fAgentCode != null || fPolicyCode != null || fCreatedBy != null;
+        boolean hasColumnFilters = fAgentCode != null || fCreatedBy != null;
         if (hasColumnFilters) {
-            return repository.findWithColumnFilters(normalizedCompanyCode, fAgentCode, fPolicyCode, fCreatedBy, pageable)
+            return repository.findWithColumnFilters(normalizedCompanyCode, fAgentCode, fCreatedBy, pageable)
                     .map(this::toResponse);
         }
 
@@ -117,14 +110,6 @@ public class MasterPolicySalesService {
         entity.setCompanyCode(normalizedCompanyCode);
         entity.setCreatedBy(resolveCreatedByForCompany(normalizedCompanyCode, createdBy));
 
-        if (repository.existsByCompanyCodeAndAgentCodeIgnoreCaseAndPolicyCodeIgnoreCase(
-                normalizedCompanyCode,
-                entity.getAgentCode(),
-                entity.getPolicyCode()
-        )) {
-            throw new DuplicateResourceException("Data policy sales duplikat untuk Company Code + Agent Code + Policy Code");
-        }
-
         MasterPolicySales saved = repository.save(entity);
         return toResponse(saved);
     }
@@ -145,15 +130,6 @@ public class MasterPolicySalesService {
 
         applyRequest(existing, request);
         existing.setCompanyCode(normalizedCompanyCode);
-
-        if (repository.existsByCompanyCodeAndAgentCodeIgnoreCaseAndPolicyCodeIgnoreCaseAndIdNot(
-                normalizedCompanyCode,
-                existing.getAgentCode(),
-                existing.getPolicyCode(),
-                id
-        )) {
-            throw new DuplicateResourceException("Data policy sales duplikat untuk Company Code + Agent Code + Policy Code");
-        }
 
         MasterPolicySales saved = repository.save(existing);
         return toResponse(saved);
@@ -221,7 +197,7 @@ public class MasterPolicySalesService {
                 repository.flush();
             }
 
-            Set<String> seenKeys = new HashSet<>();
+            Set<String> seenRowHashes = new HashSet<>();
 
             for (int r = 1; r <= lastRow; r++) {
                 Row row = sheet.getRow(r);
@@ -230,11 +206,11 @@ public class MasterPolicySalesService {
                 int rowNumber = r + 1;
 
                 String agentCode = readString(formatter, row.getCell(1));
-                LocalDate policyDate = readDate(row.getCell(2), formatter, errors, rowNumber, "Policy Date");
-                String policyCode = readString(formatter, row.getCell(3));
+                LocalDate policyDate = readLocalDate(row.getCell(2), formatter, errors, rowNumber, "Policy Date");
+                BigDecimal policyFyp = readDecimal(row.getCell(3), formatter, errors, rowNumber, "Policy FYP");
                 BigDecimal policyApe = readDecimal(row.getCell(4), formatter, errors, rowNumber, "Policy APE");
 
-                if (isAllBlank(agentCode, policyCode) && policyDate == null && policyApe == null) {
+                if (isAllBlank(agentCode) && policyDate == null && policyFyp == null && policyApe == null) {
                     continue;
                 }
 
@@ -246,8 +222,8 @@ public class MasterPolicySalesService {
                     errors.add(new MasterPolicySalesImportError(rowNumber, "Policy Date", "Wajib diisi", null));
                     continue;
                 }
-                if (isBlank(policyCode)) {
-                    errors.add(new MasterPolicySalesImportError(rowNumber, "Policy Code", "Wajib diisi", null));
+                if (policyFyp == null) {
+                    errors.add(new MasterPolicySalesImportError(rowNumber, "Policy FYP", "Wajib diisi", null));
                     continue;
                 }
                 if (policyApe == null) {
@@ -255,38 +231,21 @@ public class MasterPolicySalesService {
                     continue;
                 }
 
-                String key = (agentCode.trim().toLowerCase(Locale.ROOT) + "|" + policyCode.trim().toLowerCase(Locale.ROOT));
-                if (!seenKeys.add(key)) {
-                    errors.add(new MasterPolicySalesImportError(rowNumber, "Agent Code + Policy Code", "Duplikat dalam file", agentCode + " / " + policyCode));
+                String rowHash = (agentCode.trim().toLowerCase(Locale.ROOT) + "|" + policyDate + "|" + policyFyp + "|" + policyApe);
+                if (!seenRowHashes.add(rowHash)) {
+                    errors.add(new MasterPolicySalesImportError(rowNumber, "Row", "Duplikat dalam file", agentCode));
                     continue;
                 }
 
-                Optional<MasterPolicySales> existingOpt = repository.findByCompanyCodeAndAgentCodeIgnoreCaseAndPolicyCodeIgnoreCase(
-                        normalizedCompanyCode,
-                        agentCode,
-                        policyCode
-                );
-
-                if (existingOpt.isPresent()) {
-                    MasterPolicySales existing = existingOpt.get();
-                    existing.setPolicyDate(policyDate);
-                    existing.setPolicyApe(policyApe);
-                    if (existing.getCreatedBy() == null) {
-                        existing.setCreatedBy(normalizedCreatedBy);
-                    }
-                    repository.save(existing);
-                    updated++;
-                } else {
-                    MasterPolicySales entity = new MasterPolicySales();
-                    entity.setCompanyCode(normalizedCompanyCode);
-                    entity.setCreatedBy(normalizedCreatedBy);
-                    entity.setAgentCode(agentCode.trim());
-                    entity.setPolicyDate(policyDate);
-                    entity.setPolicyCode(policyCode.trim());
-                    entity.setPolicyApe(policyApe);
-                    repository.save(entity);
-                    created++;
-                }
+                MasterPolicySales entity = new MasterPolicySales();
+                entity.setCompanyCode(normalizedCompanyCode);
+                entity.setCreatedBy(normalizedCreatedBy);
+                entity.setAgentCode(agentCode.trim());
+                entity.setPolicyDate(policyDate);
+                entity.setPolicyFyp(policyFyp);
+                entity.setPolicyApe(policyApe);
+                repository.save(entity);
+                created++;
             }
         } catch (Exception e) {
             log.error("Error import excel policy sales", e);
@@ -324,7 +283,7 @@ public class MasterPolicySalesService {
                 repository.flush();
             }
 
-            Set<String> seenKeys = new HashSet<>();
+            Set<String> seenRowHashes = new HashSet<>();
 
             try (BufferedReader br = new BufferedReader(new InputStreamReader(file.getInputStream(), StandardCharsets.UTF_8))) {
                 String line;
@@ -343,13 +302,15 @@ public class MasterPolicySalesService {
 
                     String agentCode = getCsv(cols, 1);
                     String policyDateRaw = getCsv(cols, 2);
-                    String policyCode = getCsv(cols, 3);
+                    String policyFypRaw = getCsv(cols, 3);
                     String policyApeRaw = getCsv(cols, 4);
 
                     LocalDate policyDate = parseCsvDate(policyDateRaw, errors, rowNumber, "Policy Date");
+
+                    BigDecimal policyFyp = parseCsvDecimal(policyFypRaw, errors, rowNumber, "Policy FYP");
                     BigDecimal policyApe = parseCsvDecimal(policyApeRaw, errors, rowNumber, "Policy APE");
 
-                    if (isAllBlank(agentCode, policyCode, policyDateRaw, policyApeRaw)) {
+                    if (isAllBlank(agentCode, policyDateRaw, policyFypRaw, policyApeRaw)) {
                         continue;
                     }
 
@@ -361,8 +322,8 @@ public class MasterPolicySalesService {
                         errors.add(new MasterPolicySalesImportError(rowNumber, "Policy Date", "Wajib diisi", policyDateRaw));
                         continue;
                     }
-                    if (isBlank(policyCode)) {
-                        errors.add(new MasterPolicySalesImportError(rowNumber, "Policy Code", "Wajib diisi", policyCode));
+                    if (policyFyp == null) {
+                        errors.add(new MasterPolicySalesImportError(rowNumber, "Policy FYP", "Wajib diisi", policyFypRaw));
                         continue;
                     }
                     if (policyApe == null) {
@@ -370,38 +331,21 @@ public class MasterPolicySalesService {
                         continue;
                     }
 
-                    String key = (agentCode.trim().toLowerCase(Locale.ROOT) + "|" + policyCode.trim().toLowerCase(Locale.ROOT));
-                    if (!seenKeys.add(key)) {
-                        errors.add(new MasterPolicySalesImportError(rowNumber, "Agent Code + Policy Code", "Duplikat dalam file", agentCode + " / " + policyCode));
+                    String rowHash = (agentCode.trim().toLowerCase(Locale.ROOT) + "|" + policyDate + "|" + policyFyp + "|" + policyApe);
+                    if (!seenRowHashes.add(rowHash)) {
+                        errors.add(new MasterPolicySalesImportError(rowNumber, "Row", "Duplikat dalam file", agentCode));
                         continue;
                     }
 
-                    Optional<MasterPolicySales> existingOpt = repository.findByCompanyCodeAndAgentCodeIgnoreCaseAndPolicyCodeIgnoreCase(
-                            normalizedCompanyCode,
-                            agentCode,
-                            policyCode
-                    );
-
-                    if (existingOpt.isPresent()) {
-                        MasterPolicySales existing = existingOpt.get();
-                        existing.setPolicyDate(policyDate);
-                        existing.setPolicyApe(policyApe);
-                        if (existing.getCreatedBy() == null) {
-                            existing.setCreatedBy(normalizedCreatedBy);
-                        }
-                        repository.save(existing);
-                        updated++;
-                    } else {
-                        MasterPolicySales entity = new MasterPolicySales();
-                        entity.setCompanyCode(normalizedCompanyCode);
-                        entity.setCreatedBy(normalizedCreatedBy);
-                        entity.setAgentCode(agentCode);
-                        entity.setPolicyDate(policyDate);
-                        entity.setPolicyCode(policyCode);
-                        entity.setPolicyApe(policyApe);
-                        repository.save(entity);
-                        created++;
-                    }
+                    MasterPolicySales entity = new MasterPolicySales();
+                    entity.setCompanyCode(normalizedCompanyCode);
+                    entity.setCreatedBy(normalizedCreatedBy);
+                    entity.setAgentCode(agentCode);
+                    entity.setPolicyDate(policyDate);
+                    entity.setPolicyFyp(policyFyp);
+                    entity.setPolicyApe(policyApe);
+                    repository.save(entity);
+                    created++;
                 }
             }
         } catch (IOException e) {
@@ -442,7 +386,7 @@ public class MasterPolicySalesService {
         int created = 0;
         int updated = 0;
 
-        Set<String> seenKeys = new HashSet<>();
+        Set<String> seenRowHashes = new HashSet<>();
 
         for (int i = 0; i < items.size(); i++) {
             MasterPolicySalesRequest item = items.get(i);
@@ -450,7 +394,7 @@ public class MasterPolicySalesService {
 
             String agentCode = item == null ? null : normalizeString(item.getAgentCode());
             LocalDate policyDate = item == null ? null : item.getPolicyDate();
-            String policyCode = item == null ? null : normalizeString(item.getPolicyCode());
+            BigDecimal policyFyp = item == null ? null : item.getPolicyFyp();
             BigDecimal policyApe = item == null ? null : item.getPolicyApe();
 
             if (agentCode == null || agentCode.isBlank()) {
@@ -461,8 +405,8 @@ public class MasterPolicySalesService {
                 errors.add(new MasterPolicySalesImportError(rowNumber, "Policy Date", "Wajib diisi", null));
                 continue;
             }
-            if (policyCode == null || policyCode.isBlank()) {
-                errors.add(new MasterPolicySalesImportError(rowNumber, "Policy Code", "Wajib diisi", null));
+            if (policyFyp == null) {
+                errors.add(new MasterPolicySalesImportError(rowNumber, "Policy FYP", "Wajib diisi", null));
                 continue;
             }
             if (policyApe == null) {
@@ -471,39 +415,21 @@ public class MasterPolicySalesService {
             }
 
             String agentCodeKey = java.util.Objects.requireNonNull(agentCode);
-            String policyCodeKey = java.util.Objects.requireNonNull(policyCode);
-            String key = (agentCodeKey.toLowerCase(Locale.ROOT) + "|" + policyCodeKey.toLowerCase(Locale.ROOT));
-            if (!seenKeys.add(key)) {
-                errors.add(new MasterPolicySalesImportError(rowNumber, "Agent Code + Policy Code", "Duplikat dalam request", agentCodeKey + " / " + policyCodeKey));
+            String rowHash = (agentCodeKey.toLowerCase(Locale.ROOT) + "|" + policyDate + "|" + policyFyp + "|" + policyApe);
+            if (!seenRowHashes.add(rowHash)) {
+                errors.add(new MasterPolicySalesImportError(rowNumber, "Row", "Duplikat dalam request", agentCodeKey));
                 continue;
             }
 
-            Optional<MasterPolicySales> existingOpt = repository.findByCompanyCodeAndAgentCodeIgnoreCaseAndPolicyCodeIgnoreCase(
-                    normalizedCompanyCode,
-                    agentCodeKey,
-                    policyCodeKey
-            );
-
-            if (existingOpt.isPresent()) {
-                MasterPolicySales existing = existingOpt.get();
-                existing.setPolicyDate(policyDate);
-                existing.setPolicyApe(policyApe);
-                if (existing.getCreatedBy() == null) {
-                    existing.setCreatedBy(normalizedCreatedBy);
-                }
-                repository.save(existing);
-                updated++;
-            } else {
-                MasterPolicySales entity = new MasterPolicySales();
-                entity.setCompanyCode(normalizedCompanyCode);
-                entity.setCreatedBy(normalizedCreatedBy);
-                entity.setAgentCode(agentCodeKey);
-                entity.setPolicyDate(policyDate);
-                entity.setPolicyCode(policyCodeKey);
-                entity.setPolicyApe(policyApe);
-                repository.save(entity);
-                created++;
-            }
+            MasterPolicySales entity = new MasterPolicySales();
+            entity.setCompanyCode(normalizedCompanyCode);
+            entity.setCreatedBy(normalizedCreatedBy);
+            entity.setAgentCode(agentCodeKey);
+            entity.setPolicyDate(policyDate);
+            entity.setPolicyFyp(policyFyp);
+            entity.setPolicyApe(policyApe);
+            repository.save(entity);
+            created++;
         }
 
         boolean success = errors.isEmpty();
@@ -522,15 +448,15 @@ public class MasterPolicySalesService {
             Row header = sheet.createRow(0);
             createCell(header, 0, "No", headerStyle);
             createCell(header, 1, "Agent Code*", headerStyle);
-            createCell(header, 2, "Policy Date* (yyyy-MM-dd)", headerStyle);
-            createCell(header, 3, "Policy Code*", headerStyle);
+            createCell(header, 2, "Policy Date*", headerStyle);
+            createCell(header, 3, "Policy FYP*", headerStyle);
             createCell(header, 4, "Policy APE*", headerStyle);
 
             Row example = sheet.createRow(1);
             example.createCell(0).setCellValue(1);
             example.createCell(1).setCellValue("AG-001");
             example.createCell(2).setCellValue("2025-01-15");
-            example.createCell(3).setCellValue("POL-0001");
+            example.createCell(3).setCellValue("12345.67");
             example.createCell(4).setCellValue("12345.67");
 
             for (int i = 0; i <= 4; i++) {
@@ -547,8 +473,8 @@ public class MasterPolicySalesService {
 
     public String buildCsvTemplate() {
         return String.join("\n",
-                "No,Agent Code*,Policy Date* (yyyy-MM-dd),Policy Code*,Policy APE*",
-                "1,AG-001,2025-01-15,POL-0001,12345.67"
+                "No,Agent Code*,Policy Date*,Policy FYP*,Policy APE*",
+                "1,AG-001,2025-01-15,12345.67,12345.67"
         );
     }
 
@@ -567,7 +493,7 @@ public class MasterPolicySalesService {
 
         String agentCode = normalizeString(request.getAgentCode());
         LocalDate policyDate = request.getPolicyDate();
-        String policyCode = normalizeString(request.getPolicyCode());
+        BigDecimal policyFyp = request.getPolicyFyp();
         BigDecimal policyApe = request.getPolicyApe();
 
         if (agentCode == null) {
@@ -576,8 +502,8 @@ public class MasterPolicySalesService {
         if (policyDate == null) {
             throw new ValidationException("Policy Date wajib diisi");
         }
-        if (policyCode == null) {
-            throw new ValidationException("Policy Code wajib diisi");
+        if (policyFyp == null) {
+            throw new ValidationException("Policy FYP wajib diisi");
         }
         if (policyApe == null) {
             throw new ValidationException("Policy APE wajib diisi");
@@ -585,7 +511,7 @@ public class MasterPolicySalesService {
 
         entity.setAgentCode(agentCode);
         entity.setPolicyDate(policyDate);
-        entity.setPolicyCode(policyCode);
+        entity.setPolicyFyp(policyFyp);
         entity.setPolicyApe(policyApe);
     }
 
@@ -594,12 +520,67 @@ public class MasterPolicySalesService {
                 entity.getId(),
                 entity.getAgentCode(),
                 entity.getPolicyDate(),
-                entity.getPolicyCode(),
+                entity.getPolicyFyp(),
                 entity.getPolicyApe(),
                 entity.getCreatedBy(),
                 entity.getCreatedAt(),
                 entity.getUpdatedAt()
         );
+    }
+
+    private LocalDate readLocalDate(Cell cell, DataFormatter formatter, List<MasterPolicySalesImportError> errors, int rowNumber, String column) {
+        if (cell == null) return null;
+        try {
+            if (cell.getCellType() == CellType.NUMERIC && org.apache.poi.ss.usermodel.DateUtil.isCellDateFormatted(cell)) {
+                return cell.getLocalDateTimeCellValue().toLocalDate();
+            }
+
+            String raw = formatter.formatCellValue(cell);
+            if (raw == null) return null;
+            String v = raw.trim();
+            if (v.isEmpty()) return null;
+            return parseDateFlexible(v);
+        } catch (Exception ex) {
+            String raw = null;
+            try {
+                raw = formatter.formatCellValue(cell);
+            } catch (Exception ignored) {
+            }
+            errors.add(new MasterPolicySalesImportError(rowNumber, column, "Format tanggal tidak valid", raw));
+            return null;
+        }
+    }
+
+    private LocalDate parseCsvDate(String raw, List<MasterPolicySalesImportError> errors, int rowNumber, String column) {
+        String v = normalizeString(raw);
+        if (v == null) return null;
+        try {
+            return parseDateFlexible(v);
+        } catch (Exception ex) {
+            errors.add(new MasterPolicySalesImportError(rowNumber, column, "Format tanggal tidak valid", raw));
+            return null;
+        }
+    }
+
+    private LocalDate parseDateFlexible(String raw) {
+        String v = raw.trim();
+        if (v.isEmpty()) return null;
+
+        List<DateTimeFormatter> formatters = List.of(
+                DateTimeFormatter.ISO_LOCAL_DATE,
+                new DateTimeFormatterBuilder().parseCaseInsensitive().appendPattern("d/M/uuuu").toFormatter(),
+                new DateTimeFormatterBuilder().parseCaseInsensitive().appendPattern("d-M-uuuu").toFormatter(),
+                new DateTimeFormatterBuilder().parseCaseInsensitive().appendPattern("uuuu/M/d").toFormatter(),
+                new DateTimeFormatterBuilder().parseCaseInsensitive().appendPattern("uuuu-M-d").toFormatter()
+        );
+
+        for (DateTimeFormatter f : formatters) {
+            try {
+                return LocalDate.parse(v, f);
+            } catch (DateTimeParseException ignored) {
+            }
+        }
+        throw new DateTimeParseException("Unparseable date", v, 0);
     }
 
     private String normalizeSearch(String raw) {
@@ -655,28 +636,6 @@ public class MasterPolicySalesService {
         return v.isEmpty() ? null : v;
     }
 
-    private LocalDate readDate(Cell cell, DataFormatter formatter, List<MasterPolicySalesImportError> errors, int rowNumber, String column) {
-        if (cell == null) return null;
-        try {
-            if (cell.getCellType() == CellType.NUMERIC && DateUtil.isCellDateFormatted(cell)) {
-                return Instant.ofEpochMilli(cell.getDateCellValue().getTime()).atZone(ZoneId.systemDefault()).toLocalDate();
-            }
-            String raw = formatter.formatCellValue(cell);
-            if (raw == null) return null;
-            String v = raw.trim();
-            if (v.isEmpty()) return null;
-            return parseDateFlexible(v);
-        } catch (DateTimeParseException ex) {
-            String raw = formatter.formatCellValue(cell);
-            errors.add(new MasterPolicySalesImportError(rowNumber, column, "Format tanggal tidak valid", raw));
-            return null;
-        } catch (Exception ex) {
-            String raw = formatter.formatCellValue(cell);
-            errors.add(new MasterPolicySalesImportError(rowNumber, column, ex.getMessage(), raw));
-            return null;
-        }
-    }
-
     private BigDecimal readDecimal(Cell cell, DataFormatter formatter, List<MasterPolicySalesImportError> errors, int rowNumber, String column) {
         if (cell == null) return null;
         String raw = null;
@@ -688,46 +647,6 @@ public class MasterPolicySalesService {
             return parseDecimalFlexible(v);
         } catch (NumberFormatException ex) {
             errors.add(new MasterPolicySalesImportError(rowNumber, column, "Format angka tidak valid", raw));
-            return null;
-        } catch (Exception ex) {
-            errors.add(new MasterPolicySalesImportError(rowNumber, column, ex.getMessage(), raw));
-            return null;
-        }
-    }
-
-    private LocalDate parseDateFlexible(String raw) {
-        String v = raw == null ? null : raw.trim();
-        if (v == null || v.isEmpty()) {
-            return null;
-        }
-
-        List<DateTimeFormatter> fmts = List.of(
-                new DateTimeFormatterBuilder().parseCaseInsensitive().appendPattern("yyyy-MM-dd").toFormatter(Locale.ROOT),
-                new DateTimeFormatterBuilder().parseCaseInsensitive().appendPattern("dd-MM-yyyy").toFormatter(Locale.ROOT),
-                new DateTimeFormatterBuilder().parseCaseInsensitive().appendPattern("d-M-yyyy").toFormatter(Locale.ROOT),
-                new DateTimeFormatterBuilder().parseCaseInsensitive().appendPattern("dd/MM/yyyy").toFormatter(Locale.ROOT),
-                new DateTimeFormatterBuilder().parseCaseInsensitive().appendPattern("d/M/yyyy").toFormatter(Locale.ROOT),
-                new DateTimeFormatterBuilder().parseCaseInsensitive().appendPattern("dd-MMM-yyyy").toFormatter(Locale.ROOT),
-                new DateTimeFormatterBuilder().parseCaseInsensitive().appendPattern("d-MMM-yyyy").toFormatter(Locale.ROOT)
-        );
-
-        for (DateTimeFormatter fmt : fmts) {
-            try {
-                return LocalDate.parse(v, fmt);
-            } catch (DateTimeParseException ignored) {
-            }
-        }
-
-        throw new DateTimeParseException("Invalid date", v, 0);
-    }
-
-    private LocalDate parseCsvDate(String raw, List<MasterPolicySalesImportError> errors, int rowNumber, String column) {
-        String v = normalizeString(raw);
-        if (v == null) return null;
-        try {
-            return parseDateFlexible(v);
-        } catch (DateTimeParseException ex) {
-            errors.add(new MasterPolicySalesImportError(rowNumber, column, "Format tanggal tidak valid", raw));
             return null;
         } catch (Exception ex) {
             errors.add(new MasterPolicySalesImportError(rowNumber, column, ex.getMessage(), raw));

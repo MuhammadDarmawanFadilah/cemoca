@@ -1,16 +1,19 @@
 package com.shadcn.backend.repository;
 
-import com.shadcn.backend.model.LearningModuleImage;
+import java.util.Optional;
+
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
-import java.util.Optional;
+import com.shadcn.backend.model.LearningModuleImage;
 
 public interface LearningModuleImageRepository extends JpaRepository<LearningModuleImage, Long> {
     boolean existsByCode(String code);
+
+        Optional<LearningModuleImage> findByCodeIgnoreCase(String code);
 
     @Query("select i from LearningModuleImage i where coalesce(i.shareScope, 'GENERAL') = 'GENERAL'")
     Page<LearningModuleImage> findGeneralVisible(Pageable pageable);

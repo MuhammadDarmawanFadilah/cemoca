@@ -27,6 +27,7 @@ public class LearningModuleVideoService {
 
     private static final Set<String> ALLOWED_DURATIONS = Set.of("D1", "D2", "D3");
     private static final Set<String> ALLOWED_SHARE_SCOPES = Set.of("GENERAL", "COMPANY_ONLY");
+    private static final Set<String> ALLOWED_VIDEO_CATEGORIES = Set.of("VIDEO_1", "VIDEO_2", "VIDEO_3", "VIDEO_4");
 
     private static final List<String> AUDIENCE_ORDER = List.of(
             "GENERAL",
@@ -77,6 +78,7 @@ public class LearningModuleVideoService {
 
     public Page<LearningModuleVideoResponse> list(
             Pageable pageable,
+            String category,
             String requesterCompanyName,
             String title,
             String duration,
@@ -85,6 +87,7 @@ public class LearningModuleVideoService {
             String contentType
     ) {
         String requester = normalizeCompanyName(requesterCompanyName);
+        String cat = normalizeVideoCategory(category);
         String t = normalizeString(title);
         String d = normalizeString(duration);
         String c = normalizeString(creator);
@@ -92,9 +95,9 @@ public class LearningModuleVideoService {
         String ct = buildJsonArrayRegexFromCsv(contentType);
 
         if (requester == null) {
-            return repository.searchGeneral(t, d, c, a, ct, pageable).map(v -> toResponseSummary(v, null));
+            return repository.searchGeneral(cat, t, d, c, a, ct, pageable).map(v -> toResponseSummary(v, null));
         }
-        return repository.search(requester, t, d, c, a, ct, pageable).map(v -> toResponseSummary(v, requester));
+        return repository.search(requester, cat, t, d, c, a, ct, pageable).map(v -> toResponseSummary(v, requester));
     }
 
     public Optional<LearningModuleVideoResponse> getById(Long id, String requesterCompanyName) {
@@ -110,6 +113,9 @@ public class LearningModuleVideoService {
     public LearningModuleVideoResponse create(LearningModuleVideoRequest request) {
         LearningModuleVideo entity = new LearningModuleVideo();
         applyRequest(entity, request);
+
+        String category = normalizeVideoCategory(request.videoCategory());
+        entity.setVideoCategory(category);
 
         String createdByCompanyName = normalizeCompanyName(request.createdByCompanyName());
         if ("COMPANY_ONLY".equalsIgnoreCase(entity.getShareScope()) && createdByCompanyName == null) {
@@ -135,6 +141,11 @@ public class LearningModuleVideoService {
         }
 
         applyRequest(entity, request);
+
+        String categoryRaw = request.videoCategory();
+        if (categoryRaw != null && !categoryRaw.trim().isEmpty()) {
+            entity.setVideoCategory(normalizeVideoCategory(categoryRaw));
+        }
 
         if (normalizeCompanyName(entity.getCreatedByCompanyName()) == null) {
             String fromRequest = normalizeCompanyName(request.createdByCompanyName());
@@ -207,6 +218,20 @@ public class LearningModuleVideoService {
         entity.setIntendedAudience(audience);
         entity.setContentTypes(content);
         entity.setText(text);
+    }
+
+    private String normalizeVideoCategory(String raw) {
+        if (raw == null) {
+            return "VIDEO_1";
+        }
+        String v = raw.trim().toUpperCase(Locale.ROOT);
+        if (v.isEmpty()) {
+            return "VIDEO_1";
+        }
+        if (!ALLOWED_VIDEO_CATEGORIES.contains(v)) {
+            throw new IllegalArgumentException("Invalid video category");
+        }
+        return v;
     }
 
     private String defaultShareScope(String raw) {
@@ -359,6 +384,7 @@ public class LearningModuleVideoService {
         return new LearningModuleVideoResponse(
                 entity.getId(),
                 entity.getCode(),
+                normalizeVideoCategory(entity.getVideoCategory()),
                 entity.getTitle(),
                 entity.getDuration(),
                 defaultShareScope(entity.getShareScope()),
@@ -378,6 +404,7 @@ public class LearningModuleVideoService {
         return new LearningModuleVideoResponse(
                 entity.getId(),
                 entity.getCode(),
+                normalizeVideoCategory(entity.getVideoCategory()),
                 entity.getTitle(),
                 entity.getDuration(),
                 defaultShareScope(entity.getShareScope()),

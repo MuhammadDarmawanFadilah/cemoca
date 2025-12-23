@@ -15,17 +15,11 @@ import java.time.LocalDateTime;
 @Entity
 @Table(
         name = "master_policy_sales",
-        uniqueConstraints = {
-                @UniqueConstraint(
-                        name = "uk_master_policy_sales_company_agent_policy",
-                        columnNames = {"company_code", "agent_code", "policy_code"}
-                )
-        },
         indexes = {
                 @Index(name = "idx_master_policy_sales_company_code", columnList = "company_code"),
                 @Index(name = "idx_master_policy_sales_agent_code", columnList = "agent_code"),
-                @Index(name = "idx_master_policy_sales_policy_code", columnList = "policy_code"),
-                @Index(name = "idx_master_policy_sales_policy_date", columnList = "policy_date"),
+            @Index(name = "idx_master_policy_sales_policy_date", columnList = "policy_date"),
+                @Index(name = "idx_master_policy_sales_policy_fyp", columnList = "policy_fyp"),
                 @Index(name = "idx_master_policy_sales_created_by", columnList = "created_by"),
                 @Index(name = "idx_master_policy_sales_created_at", columnList = "created_at")
         }
@@ -52,10 +46,9 @@ public class MasterPolicySales {
     @Column(name = "policy_date", nullable = false)
     private LocalDate policyDate;
 
-    @NotBlank(message = "Policy Code tidak boleh kosong")
-    @Size(max = 80, message = "Policy Code maksimal 80 karakter")
-    @Column(name = "policy_code", nullable = false, length = 80)
-    private String policyCode;
+    @NotNull(message = "Policy FYP tidak boleh kosong")
+    @Column(name = "policy_fyp", nullable = false, precision = 19, scale = 2)
+    private BigDecimal policyFyp;
 
     @NotNull(message = "Policy APE tidak boleh kosong")
     @Column(name = "policy_ape", nullable = false, precision = 19, scale = 2)
@@ -73,8 +66,13 @@ public class MasterPolicySales {
 
     @PrePersist
     protected void onCreate() {
-        createdAt = LocalDateTime.now();
-        updatedAt = LocalDateTime.now();
+        LocalDateTime now = LocalDateTime.now();
+        if (createdAt == null) {
+            createdAt = now;
+        }
+        if (updatedAt == null) {
+            updatedAt = now;
+        }
     }
 
     @PreUpdate

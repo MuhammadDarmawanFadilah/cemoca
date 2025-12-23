@@ -60,6 +60,22 @@ function formatDateTime(value?: string | null) {
   return `${day}-${month}-${year} ${hours}:${minutes}`
 }
 
+function formatPolicyDate(value?: string | null) {
+  const v = (value || '').trim()
+  if (!v) return '-'
+
+  // Prefer safe parsing for date-only values to avoid timezone shifts.
+  const m = /^([0-9]{4})-([0-9]{2})-([0-9]{2})$/.exec(v)
+  const d = m
+    ? new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])))
+    : new Date(v)
+
+  if (Number.isNaN(d.getTime())) return '-'
+
+  const s = new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'UTC' }).format(d)
+  return s.replace(/\s+/g, '-')
+}
+
 function formatImportWarning(result: MasterPolicySalesImportResult, fallback: string) {
   const count = result.errors?.length || 0
   if (count <= 0) return fallback
@@ -79,6 +95,12 @@ function formatApe(value?: number | null) {
   return Number(value).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
+function formatMoney(value?: number | null) {
+  if (value === null || value === undefined) return '-'
+  if (Number.isNaN(Number(value))) return '-'
+  return Number(value).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
 export default function PolicySalesPage() {
   const { user } = useAuth()
   const userId = user?.id ?? null
@@ -92,11 +114,9 @@ export default function PolicySalesPage() {
 
   const [filtersOpen, setFiltersOpen] = useState(false)
   const [draftAgentCode, setDraftAgentCode] = useState('')
-  const [draftPolicyCode, setDraftPolicyCode] = useState('')
   const [draftCreatedBy, setDraftCreatedBy] = useState('')
 
   const [appliedAgentCode, setAppliedAgentCode] = useState('')
-  const [appliedPolicyCode, setAppliedPolicyCode] = useState('')
   const [appliedCreatedBy, setAppliedCreatedBy] = useState('')
 
   const [currentPage, setCurrentPage] = useState(0)
@@ -135,7 +155,7 @@ export default function PolicySalesPage() {
   const [formData, setFormData] = useState<MasterPolicySalesRequest>({
     agentCode: '',
     policyDate: '',
-    policyCode: '',
+    policyFyp: 0,
     policyApe: 0,
   })
 
@@ -152,7 +172,7 @@ export default function PolicySalesPage() {
 
   useEffect(() => {
     if (mounted) void loadData()
-  }, [mounted, currentPage, pageSize, appliedAgentCode, appliedPolicyCode, appliedCreatedBy, companyCode])
+  }, [mounted, currentPage, pageSize, appliedAgentCode, appliedCreatedBy, companyCode])
 
   const loadData = async () => {
     const cc = (companyCode || getCompanyCodeFromLocalStorage(userId)).trim()
@@ -167,7 +187,6 @@ export default function PolicySalesPage() {
       setTableLoading(true)
       const filters: MasterPolicySalesListFilters = {
         agentCode: appliedAgentCode || undefined,
-        policyCode: appliedPolicyCode || undefined,
         createdBy: appliedCreatedBy || undefined,
       }
 
@@ -189,24 +208,20 @@ export default function PolicySalesPage() {
   const onSearch = (e?: FormEvent) => {
     e?.preventDefault()
     setAppliedAgentCode(draftAgentCode.trim())
-    setAppliedPolicyCode(draftPolicyCode.trim())
     setAppliedCreatedBy(draftCreatedBy.trim())
     setCurrentPage(0)
   }
 
   const onReset = () => {
     setDraftAgentCode('')
-    setDraftPolicyCode('')
     setDraftCreatedBy('')
     setAppliedAgentCode('')
-    setAppliedPolicyCode('')
     setAppliedCreatedBy('')
     setCurrentPage(0)
   }
 
   const activeFilterCount =
     (appliedAgentCode ? 1 : 0) +
-    (appliedPolicyCode ? 1 : 0) +
     (appliedCreatedBy ? 1 : 0)
 
   const persistCompanyCode = (cc: string) => {
@@ -220,7 +235,7 @@ export default function PolicySalesPage() {
 
   const resetForm = () => {
     setSelected(null)
-    setFormData({ agentCode: '', policyDate: '', policyCode: '', policyApe: 0 })
+    setFormData({ agentCode: '', policyDate: '', policyFyp: 0, policyApe: 0 })
   }
 
   const openCreate = () => {
@@ -233,7 +248,7 @@ export default function PolicySalesPage() {
     setFormData({
       agentCode: item.agentCode || '',
       policyDate: item.policyDate || '',
-      policyCode: item.policyCode || '',
+      policyFyp: Number(item.policyFyp ?? 0),
       policyApe: Number(item.policyApe ?? 0),
     })
     setIsEditOpen(true)
@@ -242,12 +257,12 @@ export default function PolicySalesPage() {
   const validateForm = () => {
     const agentCode = (formData.agentCode || '').trim()
     const policyDate = (formData.policyDate || '').trim()
-    const policyCode = (formData.policyCode || '').trim()
+    const policyFyp = Number(formData.policyFyp)
     const policyApe = Number(formData.policyApe)
 
     if (!agentCode) return 'Agent Code wajib diisi'
     if (!policyDate) return 'Policy Date wajib diisi'
-    if (!policyCode) return 'Policy Code wajib diisi'
+    if (Number.isNaN(policyFyp)) return 'Policy FYP wajib diisi'
     if (Number.isNaN(policyApe)) return 'Policy APE wajib diisi'
 
     return null
@@ -271,7 +286,7 @@ export default function PolicySalesPage() {
       const payload: MasterPolicySalesRequest = {
         agentCode: formData.agentCode.trim(),
         policyDate: formData.policyDate.trim(),
-        policyCode: formData.policyCode.trim(),
+        policyFyp: Number(formData.policyFyp),
         policyApe: Number(formData.policyApe),
       }
 
@@ -306,7 +321,7 @@ export default function PolicySalesPage() {
       const payload: MasterPolicySalesRequest = {
         agentCode: formData.agentCode.trim(),
         policyDate: formData.policyDate.trim(),
-        policyCode: formData.policyCode.trim(),
+        policyFyp: Number(formData.policyFyp),
         policyApe: Number(formData.policyApe),
       }
 
@@ -745,16 +760,6 @@ export default function PolicySalesPage() {
                     </div>
 
                     <div className="space-y-1">
-                      <div className="text-[11px] text-muted-foreground">Policy Code</div>
-                      <Input
-                        placeholder="Cari policy code..."
-                        value={draftPolicyCode}
-                        onChange={(e) => setDraftPolicyCode(e.target.value)}
-                        className="h-8 text-sm"
-                      />
-                    </div>
-
-                    <div className="space-y-1">
                       <div className="text-[11px] text-muted-foreground">Created By</div>
                       <Input
                         placeholder="Cari created by..."
@@ -764,7 +769,7 @@ export default function PolicySalesPage() {
                       />
                     </div>
 
-                    <div className="flex items-end justify-end gap-2 sm:col-span-2 lg:col-span-5">
+                    <div className="flex items-end justify-end gap-2 sm:col-span-2 lg:col-span-3">
                       <Button type="submit" size="sm" className="w-full sm:w-auto">
                         Search
                       </Button>
@@ -788,7 +793,7 @@ export default function PolicySalesPage() {
                     <TableRow>
                       <TableHead>Agent Code</TableHead>
                       <TableHead>Policy Date</TableHead>
-                      <TableHead>Policy Code</TableHead>
+                      <TableHead className="text-right">Policy FYP</TableHead>
                       <TableHead className="text-right">Policy APE</TableHead>
                       <TableHead>Created By</TableHead>
                       <TableHead className="w-[80px]">Action</TableHead>
@@ -805,9 +810,9 @@ export default function PolicySalesPage() {
                       items.map((it) => (
                         <TableRow key={it.id}>
                           <TableCell className="font-mono text-xs">{it.agentCode}</TableCell>
-                          <TableCell>{it.policyDate}</TableCell>
-                          <TableCell>{it.policyCode}</TableCell>
-                          <TableCell className="text-right">{formatApe(it.policyApe)}</TableCell>
+                          <TableCell>{formatPolicyDate(it.policyDate)}</TableCell>
+                          <TableCell className="text-right">{formatMoney(it.policyFyp)}</TableCell>
+                          <TableCell className="text-right">{formatMoney(it.policyApe)}</TableCell>
                           <TableCell>
                             <div className="text-sm font-medium">{it.createdBy || '-'}</div>
                             <div className="text-xs text-muted-foreground">{formatDateTime(it.createdAt)}</div>
@@ -873,8 +878,16 @@ export default function PolicySalesPage() {
               <Input type="date" value={formData.policyDate} onChange={(e) => setFormData((p) => ({ ...p, policyDate: e.target.value }))} />
             </div>
             <div className="space-y-2">
-              <Label>Policy Code</Label>
-              <Input value={formData.policyCode} onChange={(e) => setFormData((p) => ({ ...p, policyCode: e.target.value }))} />
+              <Label>Policy FYP</Label>
+              <Input
+                type="number"
+                step="0.01"
+                value={Number.isNaN(Number(formData.policyFyp)) ? '' : String(formData.policyFyp ?? '')}
+                onChange={(e) => {
+                  const v = e.target.value
+                  setFormData((p) => ({ ...p, policyFyp: v === '' ? Number.NaN : Number(v) }))
+                }}
+              />
             </div>
             <div className="space-y-2">
               <Label>Policy APE</Label>
@@ -915,8 +928,16 @@ export default function PolicySalesPage() {
               <Input type="date" value={formData.policyDate} onChange={(e) => setFormData((p) => ({ ...p, policyDate: e.target.value }))} />
             </div>
             <div className="space-y-2">
-              <Label>Policy Code</Label>
-              <Input value={formData.policyCode} onChange={(e) => setFormData((p) => ({ ...p, policyCode: e.target.value }))} />
+              <Label>Policy FYP</Label>
+              <Input
+                type="number"
+                step="0.01"
+                value={Number.isNaN(Number(formData.policyFyp)) ? '' : String(formData.policyFyp ?? '')}
+                onChange={(e) => {
+                  const v = e.target.value
+                  setFormData((p) => ({ ...p, policyFyp: v === '' ? Number.NaN : Number(v) }))
+                }}
+              />
             </div>
             <div className="space-y-2">
               <Label>Policy APE</Label>
@@ -947,7 +968,7 @@ export default function PolicySalesPage() {
           if (!open) setSelected(null)
         }}
         title="Hapus Policy Sales"
-        description={`Hapus policy sales: ${selected?.policyCode || '-'}?`}
+        description={`Hapus policy sales: ${selected?.agentCode || '-'}?`}
         confirmText="Hapus"
         cancelText="Batal"
         variant="destructive"
@@ -1277,7 +1298,7 @@ export default function PolicySalesPage() {
     {
       "agent_code": "AG-001",
       "policy_date": "2025-01-15",
-      "policy_code": "POL-0001",
+      "policy_fyp": 10000.00,
       "policy_ape": 12345.67
     }
   ]

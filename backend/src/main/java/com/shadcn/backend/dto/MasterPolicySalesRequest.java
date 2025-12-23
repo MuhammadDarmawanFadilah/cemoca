@@ -17,14 +17,13 @@ public class MasterPolicySalesRequest {
     @JsonAlias({"agent_code", "agentCode"})
     private String agentCode;
 
+    @NotNull(message = "Policy FYP wajib diisi")
+    @JsonAlias({"policy_fyp", "policyFyp"})
+    private BigDecimal policyFyp;
+
     @NotNull(message = "Policy Date wajib diisi")
     @JsonAlias({"policy_date", "policyDate"})
     private LocalDate policyDate;
-
-    @NotBlank(message = "Policy Code wajib diisi")
-    @Size(max = 80, message = "Policy Code maksimal 80 karakter")
-    @JsonAlias({"policy_code", "policyCode"})
-    private String policyCode;
 
     @NotNull(message = "Policy APE wajib diisi")
     @JsonAlias({"policy_ape", "policyApe"})

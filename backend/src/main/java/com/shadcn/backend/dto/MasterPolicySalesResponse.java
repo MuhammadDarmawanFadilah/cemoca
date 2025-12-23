@@ -8,7 +8,7 @@ public record MasterPolicySalesResponse(
         Long id,
         String agentCode,
         LocalDate policyDate,
-        String policyCode,
+        BigDecimal policyFyp,
         BigDecimal policyApe,
         String createdBy,
         LocalDateTime createdAt,

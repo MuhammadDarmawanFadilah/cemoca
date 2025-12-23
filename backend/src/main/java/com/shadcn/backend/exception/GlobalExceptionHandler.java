@@ -7,6 +7,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotWritableException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
@@ -89,6 +90,25 @@ public class GlobalExceptionHandler {
                 .details(Map.copyOf(fieldErrors))
                 .build();
                 
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(error);
+    }
+
+    @ExceptionHandler(MissingServletRequestParameterException.class)
+    public ResponseEntity<ErrorResponse> handleMissingServletRequestParameter(MissingServletRequestParameterException ex) {
+        log.warn("Missing request parameter: {}", ex.getMessage());
+
+        String message = ex.getParameterName() == null
+                ? "Parameter request wajib diisi."
+                : "Parameter '" + ex.getParameterName() + "' wajib diisi.";
+
+        ErrorResponse error = ErrorResponse.builder()
+                .timestamp(LocalDateTime.now())
+                .status(HttpStatus.BAD_REQUEST.value())
+                .error("Bad Request")
+                .message(message)
+                .type("MISSING_PARAMETER")
+                .build();
+
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(error);
     }
 

@@ -8,6 +8,7 @@ import { reportVideo } from './reportVideo';
 import { reportPdf } from './reportPdf';
 import { profile, settings, errors, confirmation, time, languages } from './misc';
 import { learningModule } from './learningModule';
+import { learningSchedule } from './learningSchedule';
 
 export const en = {
   common,
@@ -18,6 +19,7 @@ export const en = {
   roles,
   reportVideo,
   reportPdf,
+  learningSchedule,
   learningModule,
   profile,
   settings,
