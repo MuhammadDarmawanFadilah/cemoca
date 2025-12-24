@@ -30,6 +30,7 @@ import java.util.Map;
 
 @RestController
 @RequestMapping("/api/video-reports")
+@CrossOrigin(origins = "*", allowedHeaders = "*", methods = {RequestMethod.GET, RequestMethod.POST, RequestMethod.PUT, RequestMethod.DELETE, RequestMethod.OPTIONS})
 public class VideoReportController {
 
     private final VideoReportService videoReportService;
@@ -163,6 +164,10 @@ public class VideoReportController {
      */
     @PostMapping("/validate-excel")
     public ResponseEntity<ExcelValidationResult> validateExcel(@RequestParam("file") MultipartFile file) {
+        System.out.println("=== VALIDATE EXCEL CALLED ===");
+        System.out.println("File name: " + (file != null ? file.getOriginalFilename() : "null"));
+        System.out.println("File size: " + (file != null ? file.getSize() : 0));
+        System.out.println("Content type: " + (file != null ? file.getContentType() : "null"));
         return ResponseEntity.ok(videoReportService.validateExcel(file));
     }
 
@@ -245,7 +250,20 @@ public class VideoReportController {
                     createStyledCell(row, 0, String.valueOf(item.getRowNumber()), dataStyle);
                     createStyledCell(row, 1, item.getName(), dataStyle);
                     createStyledCell(row, 2, item.getPhone(), dataStyle);
-                    createStyledCell(row, 3, item.getAvatar(), dataStyle);
+                    
+                    // Get avatar name (handle both presenter_id and custom names)
+                    String avatarDisplay = item.getAvatar();
+                    // If avatar is a presenter_id, get the display name
+                    if (avatarDisplay != null && avatarDisplay.startsWith("v2_")) {
+                        // This is a presenter_id from API, try to get display name
+                        java.util.Optional<com.shadcn.backend.model.DIDAvatar> avatarOpt = 
+                            didService.getAvatarById(avatarDisplay);
+                        if (avatarOpt.isPresent()) {
+                            avatarDisplay = avatarOpt.get().getPresenterName();
+                        }
+                    }
+                    // Otherwise it's already a custom name, use as-is
+                    createStyledCell(row, 3, avatarDisplay, dataStyle);
                     
                     // Status Video with color
                     CellStyle videoStatusStyle = "DONE".equals(item.getStatus()) ? successStyle : 

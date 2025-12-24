@@ -114,6 +114,9 @@ export function Step2GenerateVideo({
   loadReportItems,
 }: Step2GenerateVideoProps) {
   const { t } = useLanguage();
+
+  const rows = validationResult?.rows ?? [];
+  const errors = validationResult?.errors ?? [];
   
   const getStatusBadge = (status: string, size: "sm" | "md" = "sm") => {
     const base = size === "sm" ? "text-[10px] px-1.5 py-0.5" : "text-xs px-2 py-0.5";
@@ -127,8 +130,8 @@ export function Step2GenerateVideo({
   };
 
   const startVideoGeneration = async () => {
-    if (!validationResult || validationResult.rows.length === 0) { toast.error(t("reportVideo.noData")); return; }
-    const validRows = validationResult.rows.filter(r => r.validPhone && r.validAvatar);
+    if (!validationResult || rows.length === 0) { toast.error(t("reportVideo.noData")); return; }
+    const validRows = rows.filter(r => r.validPhone && r.validAvatar);
     if (validRows.length === 0) { toast.error(t("reportVideo.noValidData")); return; }
     try {
       setGenerating(true);
@@ -205,33 +208,33 @@ export function Step2GenerateVideo({
       {validationResult && validationResult.errors.length > 0 && (
         <div className="bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900 rounded-lg p-3">
           <div className="flex items-center gap-1.5 text-xs font-medium text-red-600 dark:text-red-400 mb-1">
-            <AlertCircle className="h-3.5 w-3.5" /> {validationResult.errors.length} {t("reportVideo.errors")}
+            <AlertCircle className="h-3.5 w-3.5" /> {errors.length} {t("reportVideo.errors")}
           </div>
           <ul className="text-[10px] text-red-600 dark:text-red-400 space-y-0.5 max-h-20 overflow-auto">
-            {validationResult.errors.slice(0, 5).map((e, i) => <li key={i}>• {e}</li>)}
-            {validationResult.errors.length > 5 && <li className="text-slate-400">+{validationResult.errors.length - 5} {t("reportVideo.others")}</li>}
+            {errors.slice(0, 5).map((e, i) => <li key={i}>• {e}</li>)}
+            {errors.length > 5 && <li className="text-slate-400">+{errors.length - 5} {t("reportVideo.others")}</li>}
           </ul>
         </div>
       )}
 
       {/* Data Preview (before report created) */}
-      {validationResult && validationResult.rows.length > 0 && !currentReport && (
+      {validationResult && rows.length > 0 && !currentReport && (
         <>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
             <div className="bg-slate-50 dark:bg-slate-800 rounded p-2 text-center">
-              <div className="text-lg font-semibold text-slate-900 dark:text-slate-100">{validationResult.rows.length.toLocaleString()}</div>
+              <div className="text-lg font-semibold text-slate-900 dark:text-slate-100">{rows.length.toLocaleString()}</div>
               <div className="text-[10px] text-slate-500">{t("reportVideo.total")}</div>
             </div>
             <div className="bg-emerald-50 dark:bg-emerald-950/30 rounded p-2 text-center">
-              <div className="text-lg font-semibold text-emerald-600 dark:text-emerald-400">{validationResult.rows.filter(r => r.validPhone && r.validAvatar).length.toLocaleString()}</div>
+              <div className="text-lg font-semibold text-emerald-600 dark:text-emerald-400">{rows.filter(r => r.validPhone && r.validAvatar).length.toLocaleString()}</div>
               <div className="text-[10px] text-slate-500">{t("reportVideo.valid")}</div>
             </div>
             <div className="bg-red-50 dark:bg-red-950/30 rounded p-2 text-center">
-              <div className="text-lg font-semibold text-red-600 dark:text-red-400">{validationResult.rows.filter(r => !r.validPhone || !r.validAvatar).length.toLocaleString()}</div>
+              <div className="text-lg font-semibold text-red-600 dark:text-red-400">{rows.filter(r => !r.validPhone || !r.validAvatar).length.toLocaleString()}</div>
               <div className="text-[10px] text-slate-500">{t("reportVideo.error")}</div>
             </div>
             <div className="bg-blue-50 dark:bg-blue-950/30 rounded p-2 text-center">
-              <div className="text-lg font-semibold text-blue-600 dark:text-blue-400">{Math.round((validationResult.rows.filter(r => r.validPhone && r.validAvatar).length / validationResult.rows.length) * 100)}%</div>
+              <div className="text-lg font-semibold text-blue-600 dark:text-blue-400">{Math.round((rows.filter(r => r.validPhone && r.validAvatar).length / rows.length) * 100)}%</div>
               <div className="text-[10px] text-slate-500">{t("reportVideo.rate")}</div>
             </div>
           </div>
@@ -252,7 +255,7 @@ export function Step2GenerateVideo({
           </div>
 
           {(() => {
-            let filtered = validationResult.rows;
+            let filtered = rows;
             if (previewFilter === "valid") filtered = filtered.filter(r => r.validPhone && r.validAvatar);
             else if (previewFilter === "error") filtered = filtered.filter(r => !r.validPhone || !r.validAvatar);
             if (previewSearch) {
@@ -469,8 +472,8 @@ export function Step2GenerateVideo({
         </Button>
         <div className="flex gap-2">
           {!currentReport && validationResult && (
-            <Button size="sm" className="h-8 text-xs" onClick={startVideoGeneration} disabled={generating || validationResult.rows.filter(r => r.validPhone && r.validAvatar).length === 0}>
-              {generating ? <><RefreshCw className="h-3.5 w-3.5 mr-1.5 animate-spin" /> {t("reportVideo.process")}...</> : <><Play className="h-3.5 w-3.5 mr-1.5" /> {t("reportVideo.generate")} {validationResult.rows.filter(r => r.validPhone && r.validAvatar).length} {t("reportVideo.video")}</>}
+            <Button size="sm" className="h-8 text-xs" onClick={startVideoGeneration} disabled={generating || rows.filter(r => r.validPhone && r.validAvatar).length === 0}>
+              {generating ? <><RefreshCw className="h-3.5 w-3.5 mr-1.5 animate-spin" /> {t("reportVideo.process")}...</> : <><Play className="h-3.5 w-3.5 mr-1.5" /> {t("reportVideo.generate")} {rows.filter(r => r.validPhone && r.validAvatar).length} {t("reportVideo.video")}</>}
             </Button>
           )}
           {canProceedToStep3 && (

@@ -461,6 +461,16 @@ public class DIDService {
     }
     
     /**
+     * Get avatar by presenter_id
+     */
+    public Optional<DIDAvatar> getAvatarById(String presenterId) {
+        if (presenterId == null || presenterId.trim().isEmpty()) {
+            return Optional.empty();
+        }
+        return avatarRepository.findByPresenterId(presenterId.trim());
+    }
+    
+    /**
      * Get avatar by name from database
      */
     public Optional<DIDAvatar> getAvatarByName(String name) {

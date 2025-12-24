@@ -13,6 +13,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.util.*;
 import java.util.regex.Pattern;
+import java.math.BigDecimal;
 
 @Service
 public class PdfExcelService {
@@ -34,25 +35,26 @@ public class PdfExcelService {
              Workbook workbook = new XSSFWorkbook(is)) {
             
             Sheet sheet = workbook.getSheetAt(0);
-            Row headerRow = sheet.getRow(0);
-            
-            if (headerRow == null) {
+
+            HeaderDetection headerDetection = detectHeader(sheet, Set.of("phone", "name"));
+            if (headerDetection == null || headerDetection.columnMap.isEmpty()) {
                 errors.add("File Excel kosong atau tidak memiliki header");
                 result.setValid(false);
                 result.setErrors(errors);
+                result.setRows(rows);
                 return result;
             }
 
-            // Validate headers
-            Map<String, Integer> columnMap = validateHeaders(headerRow, errors);
+            Map<String, Integer> columnMap = validateHeaders(headerDetection.columnMap, errors);
             if (!errors.isEmpty()) {
                 result.setValid(false);
                 result.setErrors(errors);
+                result.setRows(rows);
                 return result;
             }
 
             // Parse data rows
-            for (int i = 1; i <= sheet.getLastRowNum(); i++) {
+            for (int i = headerDetection.headerRowIndex + 1; i <= sheet.getLastRowNum(); i++) {
                 Row row = sheet.getRow(i);
                 if (row == null) continue;
 
@@ -69,35 +71,96 @@ public class PdfExcelService {
             errors.add("Failed to read Excel file: " + e.getMessage());
             result.setValid(false);
             result.setErrors(errors);
+            result.setRows(rows);
         }
 
         return result;
     }
 
-    private Map<String, Integer> validateHeaders(Row headerRow, List<String> errors) {
-        Map<String, Integer> columnMap = new HashMap<>();
-        Set<String> requiredColumns = new HashSet<>(Arrays.asList("no", "phone", "name"));
-        Set<String> foundColumns = new HashSet<>();
-
-        for (int i = 0; i < headerRow.getLastCellNum(); i++) {
-            Cell cell = headerRow.getCell(i);
-            if (cell != null) {
-                String header = getCellStringValue(cell).toLowerCase().trim();
-                if (requiredColumns.contains(header)) {
-                    columnMap.put(header, i);
-                    foundColumns.add(header);
-                }
-            }
-        }
-
-        // Check missing columns
+    private Map<String, Integer> validateHeaders(Map<String, Integer> detectedColumnMap, List<String> errors) {
+        Set<String> requiredColumns = Set.of("phone", "name");
         for (String required : requiredColumns) {
-            if (!foundColumns.contains(required)) {
+            if (!detectedColumnMap.containsKey(required)) {
                 errors.add("Column '" + required + "' not found");
             }
         }
+        return detectedColumnMap;
+    }
+
+    private static final class HeaderDetection {
+        private final int headerRowIndex;
+        private final Map<String, Integer> columnMap;
+
+        private HeaderDetection(int headerRowIndex, Map<String, Integer> columnMap) {
+            this.headerRowIndex = headerRowIndex;
+            this.columnMap = columnMap;
+        }
+    }
+
+    private HeaderDetection detectHeader(Sheet sheet, Set<String> requiredColumns) {
+        int lastRow = Math.min(sheet.getLastRowNum(), 30);
+        HeaderDetection best = null;
+        int bestScore = -1;
+
+        for (int rowIndex = 0; rowIndex <= lastRow; rowIndex++) {
+            Row row = sheet.getRow(rowIndex);
+            if (row == null) continue;
+
+            Map<String, Integer> columnMap = extractHeaderMap(row);
+            if (columnMap.isEmpty()) continue;
+
+            int score = 0;
+            for (String required : requiredColumns) {
+                if (columnMap.containsKey(required)) score++;
+            }
+
+            if (score > bestScore) {
+                bestScore = score;
+                best = new HeaderDetection(rowIndex, columnMap);
+            }
+
+            if (score == requiredColumns.size()) {
+                return new HeaderDetection(rowIndex, columnMap);
+            }
+        }
+
+        return best;
+    }
+
+    private Map<String, Integer> extractHeaderMap(Row headerRow) {
+        Map<String, Integer> columnMap = new HashMap<>();
+
+        for (int i = 0; i < headerRow.getLastCellNum(); i++) {
+            Cell cell = headerRow.getCell(i);
+            if (cell == null) continue;
+            String raw = getCellStringValue(cell);
+            if (raw == null || raw.isBlank()) continue;
+
+            String normalized = normalizeHeader(raw);
+            if (normalized.isEmpty()) continue;
+
+            String canonical = canonicalHeaderKey(normalized);
+            if (canonical == null) continue;
+
+            columnMap.putIfAbsent(canonical, i);
+        }
 
         return columnMap;
+    }
+
+    private String normalizeHeader(String header) {
+        String s = header.replace("\uFEFF", "").trim().toLowerCase(Locale.ROOT);
+        s = s.replaceAll("[^a-z0-9]+", "");
+        return s;
+    }
+
+    private String canonicalHeaderKey(String normalizedHeader) {
+        return switch (normalizedHeader) {
+            case "no", "nomor", "nomer", "number", "idx", "index" -> "no";
+            case "phone", "telp", "telepon", "hp", "handphone", "nohp", "nohandphone", "nowa", "wa", "whatsapp" -> "phone";
+            case "name", "nama", "fullname", "namalengkap" -> "name";
+            default -> null;
+        };
     }
 
     private PdfExcelRow parseRow(Row row, Map<String, Integer> columnMap, int rowNum) {
@@ -144,9 +207,23 @@ public class PdfExcelService {
 
     private String normalizePhone(String phone) {
         if (phone == null) return "";
-        // Remove spaces, dashes, etc.
-        phone = phone.replaceAll("[\\s\\-\\(\\)\\.]", "");
-        return phone;
+        String s = phone.trim();
+        if (s.isEmpty()) return "";
+
+        if (s.matches(".*[eE].*")) {
+            try {
+                String normalized = s.replace(",", ".");
+                BigDecimal bd = new BigDecimal(normalized);
+                s = bd.toPlainString();
+            } catch (Exception ignored) {
+                // fall through
+            }
+        }
+
+        boolean hasPlus = s.startsWith("+");
+        String digits = s.replaceAll("\\D", "");
+        if (digits.isEmpty()) return "";
+        return hasPlus ? ("+" + digits) : digits;
     }
 
     private boolean isValidPhone(String phone) {
