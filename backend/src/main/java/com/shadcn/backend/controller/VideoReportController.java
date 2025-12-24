@@ -282,10 +282,10 @@ public class VideoReportController {
                     createStyledCell(row, 6, videoUrl, dataStyle);
                     
                     // Status WA with color
-                    CellStyle waStatusStyle = "SENT".equals(item.getWaStatus()) ? successStyle : 
-                                              "FAILED".equals(item.getWaStatus()) ? failedStyle : pendingStyle;
-                    String waStatusText = "SENT".equals(item.getWaStatus()) ? "Terkirim" :
-                                          "FAILED".equals(item.getWaStatus()) ? "Gagal" : "Menunggu";
+                    boolean waOk = "SENT".equals(item.getWaStatus()) || "DELIVERED".equals(item.getWaStatus());
+                    boolean waErr = "FAILED".equals(item.getWaStatus()) || "ERROR".equals(item.getWaStatus());
+                    CellStyle waStatusStyle = waOk ? successStyle : waErr ? failedStyle : pendingStyle;
+                    String waStatusText = waOk ? "Terkirim" : waErr ? "Gagal" : "Menunggu";
                     createStyledCell(row, 7, waStatusText, waStatusStyle);
                     
                     // Waktu WA Terkirim
@@ -772,6 +772,108 @@ public class VideoReportController {
             result.put("messageId", messageId);
             result.put("originalPhone", phone);
             result.put("formattedPhone", formattedPhone);
+        } catch (Exception e) {
+            result.put("success", false);
+            result.put("error", e.getMessage());
+        }
+        return ResponseEntity.ok(result);
+    }
+
+    /**
+     * Test send WA video by URL (for debugging)
+     * Phone format: 62xxx (without + prefix)
+     */
+    @PostMapping("/wa/test-video")
+    public ResponseEntity<Map<String, Object>> testSendWaVideo(@RequestBody Map<String, String> request) {
+        Map<String, Object> result = new HashMap<>();
+        try {
+            User currentUser = getCurrentUser();
+            if (currentUser == null) {
+                result.put("success", false);
+                result.put("error", "Unauthorized");
+                return ResponseEntity.status(401).body(result);
+            }
+
+            String phone = request.get("phone");
+            String caption = request.getOrDefault("caption", "Test video from Video Report System");
+            String videoUrl = request.get("videoUrl");
+            boolean waitUntilDelivered = "true".equalsIgnoreCase(request.getOrDefault("waitUntilDelivered", "false"));
+            int timeoutSeconds;
+            int pollIntervalSeconds;
+            try {
+                timeoutSeconds = Integer.parseInt(request.getOrDefault("timeoutSeconds", "180"));
+            } catch (Exception ignore) {
+                timeoutSeconds = 180;
+            }
+            try {
+                pollIntervalSeconds = Integer.parseInt(request.getOrDefault("pollIntervalSeconds", "5"));
+            } catch (Exception ignore) {
+                pollIntervalSeconds = 5;
+            }
+
+            String formattedPhone = whatsAppService.formatPhoneForDebug(phone);
+            Map<String, Object> sendResult = whatsAppService.sendVideoUrlWithDetails(phone, caption, videoUrl);
+
+            result.putAll(sendResult);
+            result.put("originalPhone", phone);
+            result.put("formattedPhone", formattedPhone);
+            result.put("videoUrl", videoUrl);
+
+            if (waitUntilDelivered && Boolean.TRUE.equals(sendResult.get("success"))) {
+                Object msgIdObj = sendResult.get("messageId");
+                String messageId = msgIdObj == null ? null : String.valueOf(msgIdObj);
+                result.put("waitUntilDelivered", true);
+                result.put("timeoutSeconds", timeoutSeconds);
+                result.put("pollIntervalSeconds", pollIntervalSeconds);
+
+                if (messageId == null || messageId.isBlank()) {
+                    result.put("waitSuccess", false);
+                    result.put("waitError", "Missing messageId from send response");
+                } else {
+                    long deadline = System.currentTimeMillis() + (timeoutSeconds * 1000L);
+                    java.util.List<Map<String, Object>> polls = new java.util.ArrayList<>();
+                    String lastStatus = null;
+
+                    while (System.currentTimeMillis() < deadline) {
+                        Map<String, Object> statusResult = whatsAppService.getMessageStatus(messageId);
+                        Map<String, Object> snapshot = new HashMap<>();
+                        snapshot.put("ts", java.time.LocalDateTime.now().toString());
+                        snapshot.put("success", statusResult.get("success"));
+                        snapshot.put("status", statusResult.get("status"));
+                        snapshot.put("error", statusResult.get("error"));
+                        polls.add(snapshot);
+
+                        if (Boolean.TRUE.equals(statusResult.get("success"))) {
+                            lastStatus = statusResult.get("status") == null ? null : String.valueOf(statusResult.get("status"));
+                            if ("delivered".equalsIgnoreCase(lastStatus) || "read".equalsIgnoreCase(lastStatus)) {
+                                result.put("waitSuccess", true);
+                                result.put("finalWablasStatus", lastStatus);
+                                result.put("polls", polls);
+                                return ResponseEntity.ok(result);
+                            }
+                            if ("failed".equalsIgnoreCase(lastStatus) || "rejected".equalsIgnoreCase(lastStatus) || "cancel".equalsIgnoreCase(lastStatus)) {
+                                result.put("waitSuccess", false);
+                                result.put("finalWablasStatus", lastStatus);
+                                result.put("waitError", "Terminal Wablas status: " + lastStatus);
+                                result.put("polls", polls);
+                                return ResponseEntity.ok(result);
+                            }
+                        }
+
+                        try {
+                            Thread.sleep(Math.max(1, pollIntervalSeconds) * 1000L);
+                        } catch (InterruptedException ie) {
+                            Thread.currentThread().interrupt();
+                            break;
+                        }
+                    }
+
+                    result.put("waitSuccess", false);
+                    result.put("finalWablasStatus", lastStatus);
+                    result.put("waitError", "Timeout waiting for delivered/read");
+                    result.put("polls", polls);
+                }
+            }
         } catch (Exception e) {
             result.put("success", false);
             result.put("error", e.getMessage());

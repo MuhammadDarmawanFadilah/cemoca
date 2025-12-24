@@ -661,10 +661,19 @@ public class WhatsAppService {
                             logger.info("[WABLAS] Message {} status: {}", messageId, result.get("status"));
                         } else {
                             result.put("error", "Message not found in response");
+                            result.put("success", false);
                         }
                     } else if (responseJson.has("message") && responseJson.get("message").isTextual()) {
                         // Sometimes message can be a string error message
                         result.put("error", responseJson.get("message").asText());
+                        result.put("success", false);
+                    }
+
+                    // If status is missing/null, treat as not successful
+                    if (!Boolean.TRUE.equals(result.get("success"))) {
+                        // keep as false
+                    } else if (result.get("status") == null) {
+                        result.put("error", "Missing status in report response");
                         result.put("success", false);
                     }
                 } else {

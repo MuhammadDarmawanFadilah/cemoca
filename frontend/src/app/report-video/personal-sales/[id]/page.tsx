@@ -274,6 +274,11 @@ export default function ReportDetailPage({ params }: { params: Promise<{ id: str
           <span className="flex items-center gap-0.5"><XCircle className="h-2.5 w-2.5" /> {t("reportVideo.failedStatus")}</span>
         </div>
       );
+      case "ERROR": return (
+        <div className={`${base} bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-400`}>
+          <span className="flex items-center gap-0.5"><XCircle className="h-2.5 w-2.5" /> {t("reportVideo.failedStatus")}</span>
+        </div>
+      );
       case "PENDING": return (
         <div className={`${base} bg-yellow-100 dark:bg-yellow-900/40 text-yellow-700 dark:text-yellow-400`}>
           <span className="flex items-center gap-0.5"><Clock className="h-2.5 w-2.5" /> {t("reportVideo.pendingStatus")}</span>
@@ -535,7 +540,7 @@ export default function ReportDetailPage({ params }: { params: Promise<{ id: str
                     </TableHeader>
                     <TableBody>
                       {displayItems.map((item, idx) => (
-                        <TableRow key={item.id} className={item.status === "FAILED" || item.waStatus === "FAILED" ? "bg-red-50/30 dark:bg-red-950/10" : ""}>
+                        <TableRow key={item.id} className={item.status === "FAILED" || item.waStatus === "FAILED" || item.waStatus === "ERROR" ? "bg-red-50/30 dark:bg-red-950/10" : ""}>
                           <TableCell className="text-[10px] text-slate-500 font-mono">{page * ITEMS_PER_PAGE + idx + 1}</TableCell>
                           <TableCell className="text-xs font-medium">{item.name}</TableCell>
                           <TableCell className="text-xs text-slate-600">{item.phone}</TableCell>
@@ -559,7 +564,7 @@ export default function ReportDetailPage({ params }: { params: Promise<{ id: str
                                   </Button>
                                 </>
                               )}
-                              {item.waStatus === "FAILED" && item.videoUrl && (
+                              {(item.waStatus === "FAILED" || item.waStatus === "ERROR") && item.videoUrl && (
                                 <Button variant="ghost" size="sm" className="h-6 px-1.5 text-[10px] text-orange-600" onClick={() => resendWa(item.id)}>
                                   <RefreshCw className="h-3 w-3 mr-0.5" /> {t("reportVideo.resend")}
                                 </Button>

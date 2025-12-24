@@ -88,6 +88,7 @@ export function Step3WaBlast({
       case "QUEUED": return <span className="text-[10px] px-1.5 py-0.5 rounded bg-yellow-100 dark:bg-yellow-900/40 text-yellow-700 dark:text-yellow-400 flex items-center gap-0.5"><Clock className="h-2.5 w-2.5" /> {t("reportVideo.pendingStatus")}</span>;
       case "PROCESSING": return <span className="text-[10px] px-1.5 py-0.5 rounded bg-yellow-100 dark:bg-yellow-900/40 text-yellow-700 dark:text-yellow-400 flex items-center gap-0.5"><Clock className="h-2.5 w-2.5" /> {t("reportVideo.pendingStatus")}</span>;
       case "FAILED": return <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-400 flex items-center gap-0.5"><XCircle className="h-2.5 w-2.5" /> {t("reportVideo.failedStatus")}</span>;
+      case "ERROR": return <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-400 flex items-center gap-0.5"><XCircle className="h-2.5 w-2.5" /> {t("reportVideo.failedStatus")}</span>;
       default: return <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-500">-</span>;
     }
   };
@@ -151,7 +152,7 @@ export function Step3WaBlast({
   let filteredItems = itemsWithVideo;
   if (waFilter === "sent") filteredItems = filteredItems.filter(i => i.waStatus === "SENT" || i.waStatus === "DELIVERED");
   else if (waFilter === "pending") filteredItems = filteredItems.filter(i => !i.waStatus || i.waStatus === "PENDING" || i.waStatus === "QUEUED" || i.waStatus === "PROCESSING");
-  else if (waFilter === "failed") filteredItems = filteredItems.filter(i => i.waStatus === "FAILED");
+  else if (waFilter === "failed") filteredItems = filteredItems.filter(i => i.waStatus === "FAILED" || i.waStatus === "ERROR");
 
   // Search
   if (itemsSearch) {
@@ -160,7 +161,7 @@ export function Step3WaBlast({
   }
 
   const waSentCount = currentReport.waSentCount || itemsWithVideo.filter(i => i.waStatus === "SENT" || i.waStatus === "DELIVERED").length;
-  const waFailedCount = currentReport.waFailedCount || itemsWithVideo.filter(i => i.waStatus === "FAILED").length;
+  const waFailedCount = currentReport.waFailedCount || itemsWithVideo.filter(i => i.waStatus === "FAILED" || i.waStatus === "ERROR").length;
   const waPendingCount = itemsWithVideo.length - waSentCount - waFailedCount;
 
   return (
@@ -259,7 +260,7 @@ export function Step3WaBlast({
                 </TableHeader>
                 <TableBody>
                   {filteredItems.slice(itemsPage * ITEMS_PER_PAGE, (itemsPage + 1) * ITEMS_PER_PAGE).map(item => (
-                    <TableRow key={item.id} className={item.waStatus === "FAILED" ? "bg-red-50/50 dark:bg-red-950/20" : ""}>
+                    <TableRow key={item.id} className={item.waStatus === "FAILED" || item.waStatus === "ERROR" ? "bg-red-50/50 dark:bg-red-950/20" : ""}>
                       <TableCell className="text-[10px] text-slate-500 font-mono">{item.rowNumber}</TableCell>
                       <TableCell className="text-xs font-medium">{item.name}</TableCell>
                       <TableCell className="text-xs text-slate-600">{item.phone}</TableCell>
@@ -275,9 +276,9 @@ export function Step3WaBlast({
                           <Button variant="ghost" size="sm" className="h-6 px-1.5 text-[10px]" onClick={() => previewWaMessage(item)}>
                             <Eye className="h-3 w-3 mr-0.5" /> {t("reportVideo.previewWa")}
                           </Button>
-                          {(item.waStatus === "FAILED" || !item.waStatus || item.waStatus === "PENDING") && (
+                          {((item.waStatus === "FAILED" || item.waStatus === "ERROR") || !item.waStatus || item.waStatus === "PENDING") && (
                             <Button variant="ghost" size="sm" className="h-6 px-1.5 text-[10px]" onClick={() => resendWa(item.id)}>
-                              <RotateCcw className="h-3 w-3 mr-0.5" /> {item.waStatus === "FAILED" ? t("reportVideo.resend") : t("reportVideo.send")}
+                              <RotateCcw className="h-3 w-3 mr-0.5" /> {(item.waStatus === "FAILED" || item.waStatus === "ERROR") ? t("reportVideo.resend") : t("reportVideo.send")}
                             </Button>
                           )}
                         </div>

@@ -563,7 +563,7 @@ public class VideoReportService {
                 item.setWaErrorMessage(null);
                 logger.debug("[WA BLAST VIDEO] Item {} SENT successfully", item.getId());
             } else {
-                item.setWaStatus("FAILED");
+                item.setWaStatus("ERROR");
                 item.setWaMessageId(result.getMessageId());
                 item.setWaErrorMessage(result.getError());
                 failCount++;
@@ -719,7 +719,7 @@ public class VideoReportService {
                 report.setWaFailedCount(currentFailedCountObj.intValue() + 1);
             }
             
-            item.setWaStatus("FAILED");
+            item.setWaStatus("ERROR");
             item.setWaMessageId(messageId); // Still save if available
             item.setWaErrorMessage(finalError);
             
@@ -809,8 +809,8 @@ public class VideoReportService {
                         }
                         logger.info("[WA SYNC] Item {} sent", item.getId());
                     } else if ("cancel".equalsIgnoreCase(wablasStatus) || "rejected".equalsIgnoreCase(wablasStatus) || "failed".equalsIgnoreCase(wablasStatus)) {
-                        if (!"FAILED".equals(oldWaStatus)) {
-                            item.setWaStatus("FAILED");
+                        if (!"FAILED".equals(oldWaStatus) && !"ERROR".equals(oldWaStatus)) {
+                            item.setWaStatus("ERROR");
                             item.setWaErrorMessage("Wablas status: " + wablasStatus);
 
                             if ("SENT".equals(oldWaStatus) || "DELIVERED".equals(oldWaStatus)) {
@@ -840,6 +840,26 @@ public class VideoReportService {
                     videoReportItemRepository.save(item);
                 } else {
                     itemUpdate.put("error", waResult.get("error"));
+                    String oldWaStatus = item.getWaStatus();
+                    int currentSentCount = java.util.Objects.requireNonNullElse(report.getWaSentCount(), 0);
+                    int currentFailedCount = java.util.Objects.requireNonNullElse(report.getWaFailedCount(), 0);
+
+                    String err = waResult.get("error") == null ? null : String.valueOf(waResult.get("error"));
+                    String errorMessage = (err == null || err.isBlank()) ? "WA status check failed" : ("WA status check failed: " + err);
+
+                    if (!"FAILED".equals(oldWaStatus) && !"ERROR".equals(oldWaStatus)) {
+                        if ("SENT".equals(oldWaStatus) || "DELIVERED".equals(oldWaStatus)) {
+                            report.setWaSentCount(Math.max(0, currentSentCount - 1));
+                        }
+                        report.setWaFailedCount(currentFailedCount + 1);
+                        updated++;
+                    }
+
+                    item.setWaStatus("ERROR");
+                    item.setWaErrorMessage(errorMessage);
+                    itemUpdate.put("newStatus", item.getWaStatus());
+                    videoReportItemRepository.save(item);
+                    failed++;
                     logger.warn("[WA SYNC] Failed to get status for item {}: {}", item.getId(), waResult.get("error"));
                 }
                 
@@ -1016,7 +1036,7 @@ public class VideoReportService {
     public void retryFailedWaMessages(Long reportId) {
         List<VideoReportItem> failedItems = videoReportItemRepository.findByVideoReportIdOrderByRowNumberAsc(reportId).stream()
                 .filter(item -> "DONE".equals(item.getStatus())) // Only items with completed videos
-                .filter(item -> "FAILED".equals(item.getWaStatus()))
+                .filter(item -> "FAILED".equals(item.getWaStatus()) || "ERROR".equals(item.getWaStatus()))
                 .collect(Collectors.toList());
         
         logger.info("[WA RETRY VIDEO] Retrying {} failed WA items for report {}", failedItems.size(), reportId);
@@ -1116,6 +1136,14 @@ public class VideoReportService {
                 }
                 case "SENT" -> {
                     java.util.List<String> waStatuses = java.util.Arrays.asList("SENT", "DELIVERED");
+                    if (search != null && !search.isEmpty()) {
+                        itemsPage = videoReportItemRepository.searchByReportIdAndWaStatusIn(id, waStatuses, search, pageable);
+                    } else {
+                        itemsPage = videoReportItemRepository.findByReportIdAndWaStatusInOrderByRowNumberAsc(id, waStatuses, pageable);
+                    }
+                }
+                case "FAILED", "ERROR" -> {
+                    java.util.List<String> waStatuses = java.util.Arrays.asList("FAILED", "ERROR");
                     if (search != null && !search.isEmpty()) {
                         itemsPage = videoReportItemRepository.searchByReportIdAndWaStatusIn(id, waStatuses, search, pageable);
                     } else {
