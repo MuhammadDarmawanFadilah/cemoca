@@ -162,3 +162,6 @@ next-env.d.ts
 
 # Local scripts (do not commit)
 /scripts/
+
+# Runtime scheduler outputs (generated files)
+/scheduler/
