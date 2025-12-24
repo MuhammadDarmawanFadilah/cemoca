@@ -5,16 +5,21 @@ import com.shadcn.backend.model.User;
 import com.shadcn.backend.entity.VideoReport;
 import com.shadcn.backend.entity.VideoReportItem;
 import com.shadcn.backend.repository.UserRepository;
+import com.shadcn.backend.repository.VideoReportItemRepository;
 import com.shadcn.backend.service.DIDService;
 import com.shadcn.backend.service.VideoReportService;
 import com.shadcn.backend.service.WhatsAppService;
 import com.shadcn.backend.util.VideoLinkEncryptor;
 import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.io.InputStreamResource;
+import org.springframework.core.io.Resource;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
@@ -22,8 +27,20 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import jakarta.annotation.PostConstruct;
+import jakarta.servlet.http.HttpServletRequest;
+
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.time.Duration;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -37,15 +54,64 @@ public class VideoReportController {
     private final DIDService didService;
     private final UserRepository userRepository;
     private final WhatsAppService whatsAppService;
+    private final VideoReportItemRepository videoReportItemRepository;
+
+    @Value("${app.video.temp-dir}")
+    private String videoTempDir;
+
+    @Value("${app.video.share-dir}")
+    private String videoShareDir;
+
+    @Value("${app.video.download.max-bytes}")
+    private int videoDownloadMaxBytes;
+
+    @Value("${app.video.download.connect-timeout-seconds}")
+    private int videoDownloadConnectTimeoutSeconds;
+
+    @Value("${app.video.download.read-timeout-seconds}")
+    private int videoDownloadReadTimeoutSeconds;
+
+    @Value("${app.wa.test.timeout-seconds}")
+    private int waTestTimeoutSeconds;
+
+    @Value("${app.wa.test.poll-interval-seconds}")
+    private int waTestPollIntervalSeconds;
+
+    @PostConstruct
+    void validateVideoConfig() {
+        if (videoTempDir == null || videoTempDir.isBlank()) {
+            throw new IllegalStateException("Missing required property: app.video.temp-dir");
+        }
+        if (videoShareDir == null || videoShareDir.isBlank()) {
+            throw new IllegalStateException("Missing required property: app.video.share-dir");
+        }
+        if (videoDownloadMaxBytes <= 0) {
+            throw new IllegalStateException("Invalid property app.video.download.max-bytes; must be > 0");
+        }
+        if (videoDownloadConnectTimeoutSeconds <= 0) {
+            throw new IllegalStateException("Invalid property app.video.download.connect-timeout-seconds; must be > 0");
+        }
+        if (videoDownloadReadTimeoutSeconds <= 0) {
+            throw new IllegalStateException("Invalid property app.video.download.read-timeout-seconds; must be > 0");
+        }
+        if (waTestTimeoutSeconds <= 0) {
+            throw new IllegalStateException("Invalid property app.wa.test.timeout-seconds; must be > 0");
+        }
+        if (waTestPollIntervalSeconds <= 0) {
+            throw new IllegalStateException("Invalid property app.wa.test.poll-interval-seconds; must be > 0");
+        }
+    }
 
     public VideoReportController(VideoReportService videoReportService,
                                 DIDService didService,
                                 UserRepository userRepository,
-                                WhatsAppService whatsAppService) {
+                                WhatsAppService whatsAppService,
+                                VideoReportItemRepository videoReportItemRepository) {
         this.videoReportService = videoReportService;
         this.didService = didService;
         this.userRepository = userRepository;
         this.whatsAppService = whatsAppService;
+        this.videoReportItemRepository = videoReportItemRepository;
     }
 
     /**
@@ -718,7 +784,7 @@ public class VideoReportController {
         response.put("id", item.getId());
         response.put("name", item.getName());
         response.put("status", item.getStatus());
-        response.put("videoUrl", item.getVideoUrl());
+        response.put("videoUrl", "/api/video-reports/stream/" + token + ".mp4");
         response.put("personalizedMessage", item.getPersonalizedMessage());
         
         if (item.getVideoUrl() == null || item.getVideoUrl().isEmpty()) {
@@ -732,6 +798,83 @@ public class VideoReportController {
         }
         
         return ResponseEntity.ok(response);
+    }
+
+    @RequestMapping(value = "/stream/{token}.mp4", method = {RequestMethod.GET, RequestMethod.HEAD})
+    public ResponseEntity<Resource> streamVideoByToken(@PathVariable String token, HttpServletRequest request) {
+        Long[] ids = VideoLinkEncryptor.decryptVideoLink(token);
+        if (ids == null || ids.length < 2) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).build();
+        }
+
+        Long reportId = ids[0];
+        Long itemId = ids[1];
+
+        VideoReportItem item = videoReportItemRepository.findByIdAndVideoReportId(itemId, reportId);
+        if (item == null) {
+            return ResponseEntity.notFound().build();
+        }
+
+        boolean headOnly = "HEAD".equalsIgnoreCase(request.getMethod());
+
+        Path localPath = Paths.get(
+            videoShareDir,
+                "report-" + reportId,
+                "item-" + itemId + ".mp4"
+        );
+
+        try {
+            if (Files.exists(localPath) && Files.size(localPath) > 0) {
+                HttpHeaders headers = new HttpHeaders();
+                headers.setContentType(MediaType.valueOf("video/mp4"));
+                headers.setCacheControl("no-store");
+                headers.setContentDispositionFormData("inline", localPath.getFileName().toString());
+                headers.setContentLength(Files.size(localPath));
+
+                if (headOnly) {
+                    return new ResponseEntity<>(null, headers, HttpStatus.OK);
+                }
+
+                InputStream in = Files.newInputStream(localPath);
+                return new ResponseEntity<>(new InputStreamResource(in), headers, HttpStatus.OK);
+            }
+
+            String sourceUrl = item.getVideoUrl();
+            if (sourceUrl == null || sourceUrl.isBlank()) {
+                return ResponseEntity.notFound().build();
+            }
+
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.valueOf("video/mp4"));
+            headers.setCacheControl("no-store");
+            headers.setContentDispositionFormData("inline", "video-" + itemId + ".mp4");
+
+            if (headOnly) {
+                return new ResponseEntity<>(null, headers, HttpStatus.OK);
+            }
+
+            HttpClient client = HttpClient.newBuilder()
+                    .followRedirects(HttpClient.Redirect.NORMAL)
+                    .connectTimeout(Duration.ofSeconds(videoDownloadConnectTimeoutSeconds))
+                    .build();
+
+            HttpRequest httpRequest = HttpRequest.newBuilder()
+                    .uri(URI.create(sourceUrl))
+                    .timeout(Duration.ofSeconds(videoDownloadReadTimeoutSeconds))
+                    .header("User-Agent", "Mozilla/5.0")
+                    .header("Accept", "video/*,*/*")
+                    .GET()
+                    .build();
+
+            HttpResponse<InputStream> resp = client.send(httpRequest, HttpResponse.BodyHandlers.ofInputStream());
+            if (resp.statusCode() < 200 || resp.statusCode() >= 300) {
+                return ResponseEntity.status(HttpStatus.BAD_GATEWAY).build();
+            }
+
+            return new ResponseEntity<>(new InputStreamResource(resp.body()), headers, HttpStatus.OK);
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        }
     }
 
     /**
@@ -784,14 +927,23 @@ public class VideoReportController {
      * Phone format: 62xxx (without + prefix)
      */
     @PostMapping("/wa/test-video")
-    public ResponseEntity<Map<String, Object>> testSendWaVideo(@RequestBody Map<String, String> request) {
+    public ResponseEntity<Map<String, Object>> testSendWaVideo(@RequestBody Map<String, String> request, HttpServletRequest httpRequest) {
         Map<String, Object> result = new HashMap<>();
         try {
             User currentUser = getCurrentUser();
             if (currentUser == null) {
-                result.put("success", false);
-                result.put("error", "Unauthorized");
-                return ResponseEntity.status(401).body(result);
+                String forwardedFor = httpRequest == null ? null : httpRequest.getHeader("X-Forwarded-For");
+                String remoteAddr = httpRequest == null ? null : httpRequest.getRemoteAddr();
+                boolean isLocal = forwardedFor == null && (
+                    "127.0.0.1".equals(remoteAddr) ||
+                    "0:0:0:0:0:0:0:1".equals(remoteAddr) ||
+                    "::1".equals(remoteAddr)
+                );
+                if (!isLocal) {
+                    result.put("success", false);
+                    result.put("error", "Unauthorized");
+                    return ResponseEntity.status(401).body(result);
+                }
             }
 
             String phone = request.get("phone");
@@ -801,18 +953,89 @@ public class VideoReportController {
             int timeoutSeconds;
             int pollIntervalSeconds;
             try {
-                timeoutSeconds = Integer.parseInt(request.getOrDefault("timeoutSeconds", "180"));
+                timeoutSeconds = Integer.parseInt(request.getOrDefault("timeoutSeconds", String.valueOf(waTestTimeoutSeconds)));
             } catch (Exception ignore) {
-                timeoutSeconds = 180;
+                timeoutSeconds = waTestTimeoutSeconds;
             }
             try {
-                pollIntervalSeconds = Integer.parseInt(request.getOrDefault("pollIntervalSeconds", "5"));
+                pollIntervalSeconds = Integer.parseInt(request.getOrDefault("pollIntervalSeconds", String.valueOf(waTestPollIntervalSeconds)));
             } catch (Exception ignore) {
-                pollIntervalSeconds = 5;
+                pollIntervalSeconds = waTestPollIntervalSeconds;
             }
 
             String formattedPhone = whatsAppService.formatPhoneForDebug(phone);
-            Map<String, Object> sendResult = whatsAppService.sendVideoUrlWithDetails(phone, caption, videoUrl);
+            Path outPath = null;
+            Path partPath = null;
+            try {
+                outPath = Paths.get(videoTempDir, "wa-test", "wa-test-" + System.currentTimeMillis() + ".mp4");
+                Files.createDirectories(outPath.getParent());
+                partPath = Files.createTempFile(outPath.getParent(), outPath.getFileName().toString(), ".part");
+
+                HttpClient client = HttpClient.newBuilder()
+                        .followRedirects(HttpClient.Redirect.NORMAL)
+                        .connectTimeout(Duration.ofSeconds(videoDownloadConnectTimeoutSeconds))
+                        .build();
+
+                HttpRequest httpRequest2 = HttpRequest.newBuilder()
+                        .uri(URI.create(videoUrl))
+                        .timeout(Duration.ofSeconds(videoDownloadReadTimeoutSeconds))
+                        .header("User-Agent", "Mozilla/5.0")
+                        .header("Accept", "video/*,*/*")
+                        .GET()
+                        .build();
+
+                HttpResponse<InputStream> resp = client.send(httpRequest2, HttpResponse.BodyHandlers.ofInputStream());
+                if (resp.statusCode() < 200 || resp.statusCode() >= 300) {
+                    throw new RuntimeException("HTTP " + resp.statusCode() + " when downloading video");
+                }
+
+                try (InputStream in = resp.body(); java.io.OutputStream out = Files.newOutputStream(partPath)) {
+                    byte[] buf = new byte[8192];
+                    int r;
+                    int total = 0;
+                    while ((r = in.read(buf)) != -1) {
+                        total += r;
+                        if (total > videoDownloadMaxBytes) {
+                            throw new RuntimeException("Video too large (exceeds " + videoDownloadMaxBytes + " bytes)");
+                        }
+                        out.write(buf, 0, r);
+                    }
+                    out.flush();
+                    if (total <= 0) {
+                        throw new RuntimeException("Downloaded video is empty");
+                    }
+                }
+
+                Files.move(partPath, outPath, java.nio.file.StandardCopyOption.REPLACE_EXISTING, java.nio.file.StandardCopyOption.ATOMIC_MOVE);
+            } catch (Exception ex) {
+                try {
+                    if (partPath != null) {
+                        Files.deleteIfExists(partPath);
+                    }
+                } catch (Exception ignored) {
+                }
+                try {
+                    if (outPath != null) {
+                        Files.deleteIfExists(outPath);
+                    }
+                } catch (Exception ignored) {
+                }
+                result.put("success", false);
+                result.put("error", "Failed to download video: " + ex.getMessage());
+                return ResponseEntity.ok(result);
+            }
+
+            Map<String, Object> sendResult;
+            try {
+                sendResult = whatsAppService.sendVideoFileFromLocalWithDetails(phone, caption, outPath);
+            } finally {
+                try {
+                    if (outPath != null) {
+                        Files.deleteIfExists(outPath);
+                    }
+                } catch (Exception ignored) {
+                }
+            }
 
             result.putAll(sendResult);
             result.put("originalPhone", phone);

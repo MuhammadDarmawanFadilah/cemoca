@@ -6,12 +6,15 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.nio.file.Files;
+import java.nio.file.Path;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.ByteArrayResource;
+import org.springframework.core.io.FileSystemResource;
 import org.springframework.core.io.Resource;
 import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpEntity;
@@ -1387,6 +1390,17 @@ public class WhatsAppService {
         return sendMediaUrlWithDetails("/api/send-video", "video", phoneNumber, caption, videoUrl);
     }
 
+    public Map<String, Object> sendVideoFileFromLocalWithDetails(String phoneNumber, String caption, Path filePath) {
+        return sendMultipartPathWithDetails(
+                "/api/send-video-from-local",
+                "file",
+                phoneNumber,
+                caption,
+                filePath,
+                MediaType.valueOf("video/mp4")
+        );
+    }
+
     public Map<String, Object> sendTextMessageWithDetails(String phoneNumber, String message) {
         Map<String, Object> result = new HashMap<>();
         result.put("success", false);
@@ -2248,6 +2262,130 @@ public class WhatsAppService {
             return result;
         } catch (Exception e) {
             logger.error("[WABLAS] Attachment send failed: {}", e.getMessage());
+            result.put("error", e.getMessage());
+            return result;
+        }
+    }
+
+    private Map<String, Object> sendMultipartPathWithDetails(
+            String endpoint,
+            String fileFieldName,
+            String phoneNumber,
+            String caption,
+            Path filePath,
+            MediaType contentType
+    ) {
+        Map<String, Object> result = new HashMap<>();
+        result.put("success", false);
+        result.put("phone", phoneNumber);
+        result.put("endpoint", endpoint);
+
+        try {
+            String cleanPhone = formatPhoneNumberForWhatsApp(phoneNumber);
+            result.put("formattedPhone", cleanPhone);
+
+            if (cleanPhone == null || cleanPhone.length() < 10) {
+                result.put("error", "Invalid phone number format: " + phoneNumber);
+                return result;
+            }
+            if (filePath == null) {
+                result.put("error", "File path is null");
+                return result;
+            }
+            if (!Files.exists(filePath)) {
+                result.put("error", "File not found: " + filePath);
+                return result;
+            }
+            long size = Files.size(filePath);
+            if (size <= 0) {
+                result.put("error", "File is empty: " + filePath);
+                return result;
+            }
+
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.MULTIPART_FORM_DATA);
+            headers.set("Authorization", authorizationHeaderValue());
+
+            MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
+            body.add("phone", cleanPhone);
+            if (caption != null && !caption.isBlank()) {
+                body.add("caption", caption);
+            }
+
+                    String filename = "attachment";
+                    Path fileNamePath = filePath.getFileName();
+                    if (fileNamePath != null) {
+                        String candidate = fileNamePath.toString();
+                        if (candidate != null && !candidate.isBlank()) {
+                            filename = candidate;
+                        }
+                    }
+
+                Resource resource = new FileSystemResource(filePath.toFile());
+
+            HttpHeaders fileHeaders = new HttpHeaders();
+            if (contentType != null) {
+                fileHeaders.setContentType(contentType);
+            }
+            fileHeaders.setContentDisposition(ContentDisposition.formData().name(fileFieldName).filename(filename).build());
+
+            HttpEntity<Resource> filePart = new HttpEntity<>(resource, fileHeaders);
+            body.add(fileFieldName, filePart);
+
+            HttpEntity<MultiValueMap<String, Object>> requestEntity = new HttpEntity<>(body, headers);
+            String url = whatsappApiUrl + endpoint;
+
+            logger.info("[WABLAS] Sending attachment (path) to {} via {}", cleanPhone, url);
+            ResponseEntity<String> response = restTemplate.exchange(url, HttpMethod.POST, requestEntity, String.class);
+
+            result.put("httpStatus", response.getStatusCode().value());
+            result.put("rawResponse", response.getBody());
+
+            if (response.getStatusCode() != HttpStatus.OK) {
+                result.put("error", "HTTP " + response.getStatusCode());
+                return result;
+            }
+
+            JsonNode responseJson = objectMapper.readTree(response.getBody());
+            boolean apiSuccess = isWablasSuccess(responseJson);
+            if (!apiSuccess) {
+                String errorMsg = responseJson.has("message") ? responseJson.get("message").asText() : "Unknown error";
+                if (responseJson.has("data") && responseJson.get("data").has("message")) {
+                    errorMsg = responseJson.get("data").get("message").asText();
+                }
+                if (errorMsg == null || errorMsg.isBlank()) {
+                    String statusText = responseJson.has("status") ? responseJson.get("status").asText() : "";
+                    errorMsg = "Wablas API returned unsuccessful status: " + statusText;
+                }
+                result.put("error", errorMsg);
+                return result;
+            }
+
+            result.put("success", true);
+
+            if (responseJson.has("data") && responseJson.get("data").has("messages")) {
+                JsonNode messages = responseJson.get("data").get("messages");
+                if (messages.isArray() && messages.size() > 0) {
+                    JsonNode first = messages.get(0);
+                    if (first.has("id")) {
+                        result.put("messageId", first.get("id").asText());
+                    }
+                    if (first.has("status")) {
+                        result.put("messageStatus", first.get("status").asText());
+                    }
+                    if (first.has("message")) {
+                        result.put("messageDetail", first.get("message").asText());
+                    }
+                }
+            }
+
+            if (!result.containsKey("messageId")) {
+                result.put("messageId", "WA_ATTACH_PATH_" + System.currentTimeMillis());
+            }
+
+            return result;
+        } catch (Exception e) {
+            logger.error("[WABLAS] Attachment(path) send failed: {}", e.getMessage());
             result.put("error", e.getMessage());
             return result;
         }

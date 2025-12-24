@@ -21,8 +21,19 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
@@ -32,17 +43,11 @@ import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
+import jakarta.annotation.PostConstruct;
 
 @Service
 public class VideoReportService {
     private static final Logger logger = LoggerFactory.getLogger(VideoReportService.class);
-    
-    // D-ID API can handle "tens of thousands of requests in parallel"
-    // Using 10 concurrent requests for safety (avoid overwhelming API)
-    private static final int VIDEO_GENERATION_PARALLELISM = 10;
-    
-    // Batch size for processing - process in batches to save progress
-    private static final int VIDEO_GENERATION_BATCH_SIZE = 50;
 
     private final VideoReportRepository videoReportRepository;
     private final VideoReportItemRepository videoReportItemRepository;
@@ -55,6 +60,64 @@ public class VideoReportService {
     
     @Value("${app.frontend.url:http://localhost:3000}")
     private String frontendUrl;
+
+    @Value("${app.video.generation.parallelism}")
+    private int videoGenerationParallelism;
+
+    @Value("${app.video.generation.batch-size}")
+    private int videoGenerationBatchSize;
+
+    @Value("${app.video.generation.batch-delay-ms}")
+    private long videoGenerationBatchDelayMs;
+
+    @Value("${app.video.temp-dir}")
+    private String videoTempDir;
+
+    @Value("${app.video.share-dir}")
+    private String videoShareDir;
+
+    @Value("${app.video.download.max-bytes}")
+    private int videoDownloadMaxBytes;
+
+    @Value("${app.video.download.connect-timeout-seconds}")
+    private int videoDownloadConnectTimeoutSeconds;
+
+    @Value("${app.video.download.read-timeout-seconds}")
+    private int videoDownloadReadTimeoutSeconds;
+
+    @Value("${app.wa.retry.delay-ms}")
+    private long waRetryDelayMs;
+
+    @PostConstruct
+    void validateVideoStorageConfig() {
+        if (videoGenerationParallelism <= 0) {
+            throw new IllegalStateException("Invalid property app.video.generation.parallelism; must be > 0");
+        }
+        if (videoGenerationBatchSize <= 0) {
+            throw new IllegalStateException("Invalid property app.video.generation.batch-size; must be > 0");
+        }
+        if (videoGenerationBatchDelayMs < 0) {
+            throw new IllegalStateException("Invalid property app.video.generation.batch-delay-ms; must be >= 0");
+        }
+        if (videoTempDir == null || videoTempDir.isBlank()) {
+            throw new IllegalStateException("Missing required property: app.video.temp-dir");
+        }
+        if (videoShareDir == null || videoShareDir.isBlank()) {
+            throw new IllegalStateException("Missing required property: app.video.share-dir");
+        }
+        if (videoDownloadMaxBytes <= 0) {
+            throw new IllegalStateException("Invalid property app.video.download.max-bytes; must be > 0");
+        }
+        if (videoDownloadConnectTimeoutSeconds <= 0) {
+            throw new IllegalStateException("Invalid property app.video.download.connect-timeout-seconds; must be > 0");
+        }
+        if (videoDownloadReadTimeoutSeconds <= 0) {
+            throw new IllegalStateException("Invalid property app.video.download.read-timeout-seconds; must be > 0");
+        }
+        if (waRetryDelayMs <= 0) {
+            throw new IllegalStateException("Invalid property app.wa.retry.delay-ms; must be > 0");
+        }
+    }
 
     public VideoReportService(VideoReportRepository videoReportRepository,
                              VideoReportItemRepository videoReportItemRepository,
@@ -172,7 +235,7 @@ public class VideoReportService {
         logger.info("[VIDEO GEN] ========================================");
         logger.info("[VIDEO GEN] Starting video generation for report {}", reportId);
         logger.info("[VIDEO GEN] Total items: {}, Pending items: {}", items.size(), pendingItems.size());
-        logger.info("[VIDEO GEN] Parallelism: {}, Batch size: {}", VIDEO_GENERATION_PARALLELISM, VIDEO_GENERATION_BATCH_SIZE);
+        logger.info("[VIDEO GEN] Parallelism: {}, Batch size: {}", videoGenerationParallelism, videoGenerationBatchSize);
         logger.info("[VIDEO GEN] ========================================");
         
         if (pendingItems.isEmpty()) {
@@ -182,11 +245,11 @@ public class VideoReportService {
         }
         
         // Create thread pool for parallel processing
-        ExecutorService executor = Executors.newFixedThreadPool(VIDEO_GENERATION_PARALLELISM);
+        ExecutorService executor = Executors.newFixedThreadPool(videoGenerationParallelism);
         
         try {
             // Process in batches to save progress periodically
-            List<List<VideoReportItem>> batches = splitIntoBatches(pendingItems, VIDEO_GENERATION_BATCH_SIZE);
+            List<List<VideoReportItem>> batches = splitIntoBatches(pendingItems, videoGenerationBatchSize);
             int batchNumber = 0;
             
             for (List<VideoReportItem> batch : batches) {
@@ -221,7 +284,9 @@ public class VideoReportService {
                 
                 // Small delay between batches
                 if (batchNumber < batches.size()) {
-                    Thread.sleep(500);
+                    if (videoGenerationBatchDelayMs > 0) {
+                        Thread.sleep(videoGenerationBatchDelayMs);
+                    }
                 }
             }
         } catch (InterruptedException e) {
@@ -503,74 +568,70 @@ public class VideoReportService {
         
         logger.info("[WA BLAST VIDEO] Marked {} items as PROCESSING", readyItems.size());
         
-        // STEP 3: Build bulk video items
-        List<WhatsAppService.BulkVideoItem> bulkItems = new ArrayList<>();
-        Map<Long, VideoReportItem> itemMap = new HashMap<>();
-        
-        for (VideoReportItem item : readyItems) {
-            // Build WA caption
-            String waTemplate = report.getWaMessageTemplate();
-            if (waTemplate == null || waTemplate.isEmpty()) {
-                waTemplate = getDefaultWaMessageTemplate();
-            }
-
-            String caption = waTemplate
-                    .replace(":name", item.getName() == null ? "" : item.getName())
-                    .replace(":linkvideo", "");
-
-            // Send as WhatsApp VIDEO message (media), not text link.
-            bulkItems.add(new WhatsAppService.BulkVideoItem(item.getPhone(), caption, item.getVideoUrl(), String.valueOf(item.getId())));
-            itemMap.put(item.getId(), item);
-        }
-        
-        logger.info("[WA BLAST VIDEO] Sending {} videos via Wablas bulk API...", bulkItems.size());
-
-        // STEP 4: Send bulk videos
-        List<WhatsAppService.BulkVideoResult> results = whatsAppService.sendBulkVideos(bulkItems);
-        
-        // STEP 5: Process results and update status to SENT/FAILED
+        // STEP 3: Send per-item using local video file (Wablas send-video-from-local)
         int successCount = 0;
         int failCount = 0;
-        
-        for (WhatsAppService.BulkVideoResult result : results) {
-            VideoReportItem item = null;
-            
-            // Try to find item by originalId first
-            if (result.getOriginalId() != null) {
-                try {
-                    Long itemId = Long.parseLong(result.getOriginalId());
-                    item = itemMap.get(itemId);
-                } catch (NumberFormatException e) {
-                    logger.warn("[WA BLAST VIDEO] Invalid originalId: {}", result.getOriginalId());
+
+        for (VideoReportItem item : readyItems) {
+            try {
+                String waTemplate = report.getWaMessageTemplate();
+                if (waTemplate == null || waTemplate.isEmpty()) {
+                    waTemplate = getDefaultWaMessageTemplate();
                 }
-            }
-            
-            if (item == null) continue;
-            
-            if (result.isSuccess()) {
-                String wablasStatus = result.getStatus();
-                if (wablasStatus != null && wablasStatus.equalsIgnoreCase("pending")) {
-                    item.setWaStatus("QUEUED");
-                } else if (wablasStatus != null && (wablasStatus.equalsIgnoreCase("delivered") || wablasStatus.equalsIgnoreCase("read"))) {
-                    item.setWaStatus("DELIVERED");
-                    successCount++;
+
+                String caption = waTemplate
+                        .replace(":name", item.getName() == null ? "" : item.getName())
+                        .replace(":linkvideo", "");
+
+                Path tempPath = getTempVideoPath(reportId, item.getId());
+                Path sharePath = getShareVideoPath(reportId, item.getId());
+                ensureTempVideoExists(item, tempPath, sharePath);
+
+                Map<String, Object> waResult = whatsAppService.sendVideoFileFromLocalWithDetails(
+                    item.getPhone(),
+                    caption,
+                    tempPath
+                );
+
+                boolean ok = Boolean.TRUE.equals(waResult.get("success"));
+                String messageId = Objects.toString(waResult.get("messageId"), null);
+                String messageStatus = Objects.toString(waResult.get("messageStatus"), null);
+
+                if (ok) {
+                    boolean queued = messageStatus != null && messageStatus.equalsIgnoreCase("pending");
+                    if (queued) {
+                        item.setWaStatus("QUEUED");
+                    } else if (messageStatus != null && (messageStatus.equalsIgnoreCase("delivered") || messageStatus.equalsIgnoreCase("read"))) {
+                        item.setWaStatus("DELIVERED");
+                        successCount++;
+                    } else {
+                        item.setWaStatus("SENT");
+                        successCount++;
+                    }
+
+                    item.setWaMessageId(messageId);
+                    item.setWaSentAt(LocalDateTime.now());
+                    item.setWaErrorMessage(null);
+
+                    // delete local video after WA accepted
+                    try {
+                        Files.deleteIfExists(tempPath);
+                    } catch (Exception ignored) {
+                    }
                 } else {
-                    item.setWaStatus("SENT");
-                    successCount++;
+                    item.setWaStatus("ERROR");
+                    item.setWaMessageId(messageId);
+                    item.setWaErrorMessage(Objects.toString(waResult.get("error"), null));
+                    failCount++;
                 }
-                item.setWaMessageId(result.getMessageId());
-                item.setWaSentAt(LocalDateTime.now());
-                item.setWaErrorMessage(null);
-                logger.debug("[WA BLAST VIDEO] Item {} SENT successfully", item.getId());
-            } else {
+
+                videoReportItemRepository.save(item);
+            } catch (Exception e) {
                 item.setWaStatus("ERROR");
-                item.setWaMessageId(result.getMessageId());
-                item.setWaErrorMessage(result.getError());
+                item.setWaErrorMessage(e.getMessage());
                 failCount++;
-                logger.warn("[WA BLAST VIDEO] Item {} FAILED: {}", item.getId(), result.getError());
+                videoReportItemRepository.save(item);
             }
-            
-            videoReportItemRepository.save(item);
         }
         
         // STEP 6: Update report counters
@@ -585,6 +646,100 @@ public class VideoReportService {
         logger.info("[WA BLAST VIDEO] ========================================");
         logger.info("[WA BLAST VIDEO] COMPLETED: {} sent, {} failed", successCount, failCount);
         logger.info("[WA BLAST VIDEO] ========================================");
+    }
+
+    private Path getTempVideoPath(Long reportId, Long itemId) {
+        return Paths.get(videoTempDir, "report-" + reportId, "item-" + itemId + ".mp4");
+    }
+
+    private Path getShareVideoPath(Long reportId, Long itemId) {
+        return Paths.get(videoShareDir, "report-" + reportId, "item-" + itemId + ".mp4");
+    }
+
+    private void ensureTempVideoExists(VideoReportItem item, Path tempPath, Path sharePath) throws IOException, InterruptedException {
+        if (Files.exists(tempPath) && Files.size(tempPath) > 0) {
+            return;
+        }
+
+        if (Files.exists(sharePath) && Files.size(sharePath) > 0) {
+            Files.createDirectories(tempPath.getParent());
+            Files.copy(sharePath, tempPath, StandardCopyOption.REPLACE_EXISTING);
+            return;
+        }
+
+        String sourceUrl = item.getVideoUrl();
+        if (sourceUrl == null || sourceUrl.isBlank()) {
+            throw new IOException("Video URL is empty; cannot download");
+        }
+        downloadToFile(
+                sourceUrl,
+                tempPath,
+                videoDownloadMaxBytes,
+                videoDownloadConnectTimeoutSeconds,
+                videoDownloadReadTimeoutSeconds
+        );
+
+        Files.createDirectories(sharePath.getParent());
+        Files.copy(tempPath, sharePath, StandardCopyOption.REPLACE_EXISTING);
+    }
+
+    private static void downloadToFile(
+            String url,
+            Path target,
+            int maxBytes,
+            int connectTimeoutSeconds,
+            int readTimeoutSeconds
+    ) throws IOException, InterruptedException {
+        if (Files.exists(target) && Files.size(target) > 0) {
+            return;
+        }
+
+        Files.createDirectories(target.getParent());
+
+        HttpClient client = HttpClient.newBuilder()
+                .followRedirects(HttpClient.Redirect.NORMAL)
+            .connectTimeout(Duration.ofSeconds(Math.max(1, connectTimeoutSeconds)))
+                .build();
+
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(url))
+            .timeout(Duration.ofSeconds(Math.max(1, readTimeoutSeconds)))
+                .header("User-Agent", "Mozilla/5.0")
+                .header("Accept", "video/*,*/*")
+                .GET()
+                .build();
+
+        HttpResponse<InputStream> response = client.send(request, HttpResponse.BodyHandlers.ofInputStream());
+        int status = response.statusCode();
+        if (status < 200 || status >= 300) {
+            throw new IOException("HTTP " + status + " when downloading video");
+        }
+
+        Path tmp = Files.createTempFile(target.getParent(), target.getFileName().toString(), ".part");
+        try (InputStream in = response.body(); java.io.OutputStream out = Files.newOutputStream(tmp)) {
+            byte[] buffer = new byte[8192];
+            int total = 0;
+            int read;
+            while ((read = in.read(buffer)) != -1) {
+                total += read;
+                if (total > maxBytes) {
+                    throw new IOException("Video too large (exceeds " + maxBytes + " bytes)");
+                }
+                out.write(buffer, 0, read);
+            }
+
+            if (total <= 0) {
+                throw new IOException("Downloaded video is empty");
+            }
+
+            out.flush();
+            Files.move(tmp, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+        } finally {
+            try {
+                Files.deleteIfExists(tmp);
+            } catch (Exception ignored) {
+            }
+        }
     }
     
     /**
@@ -634,7 +789,29 @@ public class VideoReportService {
             logger.info("[WA RESEND] Item {} - Attempt {}/{} to {}", itemId, attempt, maxRetries, item.getPhone());
 
             // Send WhatsApp VIDEO message with detailed response
-            Map<String, Object> attemptResult = whatsAppService.sendVideoUrlWithDetails(item.getPhone(), caption, item.getVideoUrl());
+            Map<String, Object> attemptResult;
+            try {
+                Path tempPath = getTempVideoPath(reportId, item.getId());
+                Path sharePath = getShareVideoPath(reportId, item.getId());
+                ensureTempVideoExists(item, tempPath, sharePath);
+
+                attemptResult = whatsAppService.sendVideoFileFromLocalWithDetails(
+                        item.getPhone(),
+                        caption,
+                        tempPath
+                );
+
+                if (Boolean.TRUE.equals(attemptResult.get("success"))) {
+                    try {
+                        Files.deleteIfExists(tempPath);
+                    } catch (Exception ignored) {
+                    }
+                }
+            } catch (Exception e) {
+                attemptResult = new java.util.HashMap<>();
+                attemptResult.put("success", false);
+                attemptResult.put("error", e.getMessage());
+            }
             waResult = attemptResult == null ? new java.util.HashMap<>() : attemptResult;
 
             success = Boolean.TRUE.equals(waResult.get("success"));
@@ -656,7 +833,7 @@ public class VideoReportService {
             
             if (attempt < maxRetries) {
                 try {
-                    Thread.sleep(2000); // 2 second delay between retries
+                    Thread.sleep(waRetryDelayMs);
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                     break;
@@ -921,9 +1098,9 @@ public class VideoReportService {
         
         // Use parallel checking for large batches
         if (processingItems.size() > 10) {
-            checkClipsParallel(processingItems);
+            checkClipsParallel(processingItems, reportId);
         } else {
-            checkClipsSequential(processingItems);
+            checkClipsSequential(processingItems, reportId);
         }
 
         checkAndUpdateReportStatus(reportId);
@@ -932,21 +1109,21 @@ public class VideoReportService {
     /**
      * Check clips sequentially (for small batches)
      */
-    private void checkClipsSequential(List<VideoReportItem> items) {
+    private void checkClipsSequential(List<VideoReportItem> items, Long reportId) {
         for (VideoReportItem item : items) {
-            checkSingleClipStatus(item);
+            checkSingleClipStatus(reportId, item);
         }
     }
     
     /**
      * Check clips in parallel (for large batches)
      */
-    private void checkClipsParallel(List<VideoReportItem> items) {
-        ExecutorService executor = Executors.newFixedThreadPool(VIDEO_GENERATION_PARALLELISM);
+    private void checkClipsParallel(List<VideoReportItem> items, Long reportId) {
+        ExecutorService executor = Executors.newFixedThreadPool(videoGenerationParallelism);
         
         try {
             List<CompletableFuture<Void>> futures = items.stream()
-                    .map(item -> CompletableFuture.runAsync(() -> checkSingleClipStatus(item), executor))
+                    .map(item -> CompletableFuture.runAsync(() -> checkSingleClipStatus(reportId, item), executor))
                     .collect(Collectors.toList());
             
             CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
@@ -963,7 +1140,7 @@ public class VideoReportService {
     /**
      * Check status of a single clip
      */
-    private void checkSingleClipStatus(VideoReportItem item) {
+    private void checkSingleClipStatus(Long reportId, VideoReportItem item) {
         if (item.getDidClipId() == null) return;
         
         try {
@@ -974,10 +1151,32 @@ public class VideoReportService {
                 String clipStatus = (String) status.get("status");
                 
                 if ("done".equals(clipStatus)) {
-                    item.setStatus("DONE");
-                    item.setVideoUrl((String) status.get("result_url"));
-                    item.setVideoGeneratedAt(LocalDateTime.now());
-                    logger.info("[CHECK CLIPS] Item {} DONE with videoUrl", item.getId());
+                    String resultUrl = (String) status.get("result_url");
+                    if (resultUrl == null || resultUrl.isBlank()) {
+                        item.setStatus("FAILED");
+                        item.setErrorMessage("D-ID done but result_url is empty");
+                        logger.warn("[CHECK CLIPS] Item {} FAILED: {}", item.getId(), item.getErrorMessage());
+                    } else if (reportId == null) {
+                        item.setStatus("FAILED");
+                        item.setErrorMessage("Missing reportId; cannot save video to local");
+                        logger.warn("[CHECK CLIPS] Item {} FAILED: {}", item.getId(), item.getErrorMessage());
+                    } else {
+                        try {
+                            item.setVideoUrl(resultUrl);
+
+                            Path tempPath = getTempVideoPath(reportId, item.getId());
+                            Path sharePath = getShareVideoPath(reportId, item.getId());
+                            ensureTempVideoExists(item, tempPath, sharePath);
+                            item.setStatus("DONE");
+                            item.setVideoGeneratedAt(LocalDateTime.now());
+                            item.setErrorMessage(null);
+                            logger.info("[CHECK CLIPS] Item {} DONE (saved local)", item.getId());
+                        } catch (Exception ex) {
+                            item.setStatus("FAILED");
+                            item.setErrorMessage("Failed to download video to local: " + ex.getMessage());
+                            logger.warn("[CHECK CLIPS] Item {} FAILED: {}", item.getId(), item.getErrorMessage());
+                        }
+                    }
                 } else if ("error".equals(clipStatus)) {
                     item.setStatus("FAILED");
                     item.setErrorMessage((String) status.get("error"));
