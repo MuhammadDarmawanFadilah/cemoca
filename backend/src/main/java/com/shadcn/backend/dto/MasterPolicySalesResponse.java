@@ -6,6 +6,7 @@ import java.time.LocalDateTime;
 
 public record MasterPolicySalesResponse(
         Long id,
+        String companyCode,
         String agentCode,
         LocalDate policyDate,
         BigDecimal policyFyp,

@@ -9,7 +9,7 @@ import java.util.List;
 
 public class MasterAgencyAgentApiImportRequest {
 
-    @NotBlank(message = "Company Code wajib diisi")
+    @NotBlank(message = "Company Code is required")
     @JsonAlias({"company_code", "companyCode"})
     private String companyCode;
 
@@ -19,7 +19,7 @@ public class MasterAgencyAgentApiImportRequest {
     @JsonAlias({"remove_existing", "removeExisting"})
     private Boolean removeExisting;
 
-    @NotNull(message = "Items wajib diisi")
+    @NotNull(message = "Items is required")
     @Valid
     @JsonAlias({"items", "data"})
     private List<MasterAgencyAgentRequest> items;

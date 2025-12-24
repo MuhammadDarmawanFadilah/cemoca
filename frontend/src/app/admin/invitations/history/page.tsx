@@ -22,21 +22,12 @@ import {
   TableHeader, 
   TableRow 
 } from "@/components/ui/table";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import { 
   Mail, 
   RotateCcw, 
   X, 
-  Link2, 
   Calendar,
   Phone,
   Clock,
@@ -52,7 +43,6 @@ import {
   ArrowDown,
   Users
 } from "lucide-react";
-import { publicInvitationLinkAPI } from "@/lib/api";
 import { AdminPageHeader } from "@/components/AdminPageHeader";
 
 const InvitationHistoryPage = () => {
@@ -60,10 +50,6 @@ const InvitationHistoryPage = () => {
   const [loading, setLoading] = useState(true);
   const [statistics, setStatistics] = useState<any>({});
   const [actionLoading, setActionLoading] = useState<number | null>(null);
-  const [showPublicLinkDialog, setShowPublicLinkDialog] = useState(false);
-  const [publicLinkDescription, setPublicLinkDescription] = useState("");
-  const [publicLinkMaxUses, setPublicLinkMaxUses] = useState<number | undefined>();
-  const [generatedLink, setGeneratedLink] = useState<string>("");
   
   // Pagination and filtering states
   const [currentPage, setCurrentPage] = useState(0);
@@ -149,30 +135,6 @@ const InvitationHistoryPage = () => {
     } finally {
       setActionLoading(null);
     }
-  };
-
-  const handleGeneratePublicLink = async () => {
-    try {
-      const response = await publicInvitationLinkAPI.generatePublicLink(
-        publicLinkDescription || undefined,
-        undefined, // no expiration for now
-        publicLinkMaxUses
-      );
-      setGeneratedLink(response.registrationUrl);
-      toast.success("Link undangan publik berhasil dibuat");
-      
-      // Reset form
-      setPublicLinkDescription("");
-      setPublicLinkMaxUses(undefined);
-    } catch (error: any) {
-      console.error("Error generating public link:", error);
-      toast.error(error.message || "Gagal membuat link undangan publik");
-    }
-  };
-
-  const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text);
-    toast.success("Link berhasil disalin ke clipboard");
   };
 
   // Filter and pagination handlers
@@ -302,11 +264,6 @@ const InvitationHistoryPage = () => {
         title="Histori Undangan"
         description="Kelola undangan member yang telah dikirim"
         icon={History}
-        primaryAction={{
-          label: "Undangan Link",
-          onClick: () => setShowPublicLinkDialog(true),
-          icon: Link2
-        }}
         stats={[
           {
             label: "Total Undangan",
@@ -599,68 +556,6 @@ const InvitationHistoryPage = () => {
           </Card>
         )}
 
-        {/* Dialog for Public Link */}
-        <Dialog open={showPublicLinkDialog} onOpenChange={setShowPublicLinkDialog}>
-          <DialogContent className="sm:max-w-md bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-600">
-            <DialogHeader>
-              <DialogTitle className="text-slate-900 dark:text-slate-100">Buat Link Undangan Publik</DialogTitle>
-              <DialogDescription className="text-slate-600 dark:text-slate-400">
-                Link ini dapat digunakan siapa saja untuk mendaftar sebagai member. 
-                Pendaftar akan menunggu persetujuan admin.
-              </DialogDescription>
-            </DialogHeader>
-            <div className="space-y-4">
-              <div>
-                <Label htmlFor="description" className="text-slate-700 dark:text-slate-300">Deskripsi (opsional)</Label>
-                <Input
-                  id="description"
-                  placeholder="Misal: Undangan Member Batch 2024"
-                  value={publicLinkDescription}
-                  onChange={(e) => setPublicLinkDescription(e.target.value)}
-                  className="bg-white dark:bg-slate-700 border-slate-300 dark:border-slate-500"
-                />
-              </div>
-              <div>
-                <Label htmlFor="maxUses" className="text-slate-700 dark:text-slate-300">Batas Penggunaan (opsional)</Label>
-                <Input
-                  id="maxUses"
-                  type="number"
-                  placeholder="Misal: 100"
-                  value={publicLinkMaxUses || ""}
-                  onChange={(e) => setPublicLinkMaxUses(e.target.value ? parseInt(e.target.value) : undefined)}
-                  className="bg-white dark:bg-slate-700 border-slate-300 dark:border-slate-500"
-                />
-              </div>
-              {generatedLink && (
-                <div className="space-y-2">
-                  <Label className="text-slate-700 dark:text-slate-300">Link yang dibuat:</Label>
-                  <div className="flex items-center space-x-2">
-                    <Input 
-                      value={generatedLink} 
-                      readOnly 
-                      className="text-sm bg-slate-50 dark:bg-slate-700 border-slate-300 dark:border-slate-500" 
-                    />
-                    <Button 
-                      size="sm" 
-                      onClick={() => copyToClipboard(generatedLink)}
-                      className="bg-blue-600 hover:bg-blue-700 dark:bg-blue-700 dark:hover:bg-blue-800"
-                    >
-                      Salin
-                    </Button>
-                  </div>
-                </div>
-              )}
-            </div>
-            <DialogFooter>
-              <Button 
-                onClick={handleGeneratePublicLink}
-                className="bg-blue-600 hover:bg-blue-700 dark:bg-blue-700 dark:hover:bg-blue-800"
-              >
-                Buat Link
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
       </div>
     </div>
   );

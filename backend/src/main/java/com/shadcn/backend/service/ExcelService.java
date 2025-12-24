@@ -76,7 +76,7 @@ public class ExcelService {
 
         } catch (IOException e) {
             logger.error("Error parsing Excel file: {}", e.getMessage());
-            errors.add("Gagal membaca file Excel: " + e.getMessage());
+            errors.add("Failed to read Excel file: " + e.getMessage());
             result.setValid(false);
             result.setErrors(errors);
         }
@@ -103,7 +103,7 @@ public class ExcelService {
         // Check missing columns
         for (String required : requiredColumns) {
             if (!foundColumns.contains(required)) {
-                errors.add("Kolom '" + required + "' tidak ditemukan");
+                errors.add("Column '" + required + "' not found");
             }
         }
 
@@ -126,10 +126,10 @@ public class ExcelService {
         // Validate phone
         if (phone == null || phone.isEmpty()) {
             excelRow.setValidPhone(false);
-            excelRow.setPhoneError("Nomor telepon kosong");
+            excelRow.setPhoneError("Phone number is empty");
         } else if (!isValidPhone(normalizePhone(phone))) {
             excelRow.setValidPhone(false);
-            excelRow.setPhoneError("Format nomor telepon tidak valid");
+            excelRow.setPhoneError("Invalid phone number format");
         } else {
             excelRow.setValidPhone(true);
         }
@@ -147,7 +147,7 @@ public class ExcelService {
             
             if (!exists) {
                 excelRow.setValidAvatar(false);
-                excelRow.setAvatarError("Avatar '" + trimmedName + "' tidak ditemukan. Pastikan nama avatar sesuai dengan yang ada di D-ID Studio.");
+                excelRow.setAvatarError("Avatar '" + trimmedName + "' not found. Please ensure the avatar name matches D-ID Studio.");
                 logger.warn("Row {}: Avatar '{}' NOT FOUND after database check and API refresh", rowNum, trimmedName);
             } else {
                 excelRow.setValidAvatar(true);

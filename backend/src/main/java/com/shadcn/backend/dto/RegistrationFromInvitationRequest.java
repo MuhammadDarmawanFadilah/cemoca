@@ -13,19 +13,19 @@ import lombok.AllArgsConstructor;
 @AllArgsConstructor
 public class RegistrationFromInvitationRequest {
     
-    @NotBlank(message = "Invitation token tidak boleh kosong")
+    @NotBlank(message = "Invitation token is required")
     private String invitationToken;
     
-    @NotBlank(message = "Username tidak boleh kosong")
-    @Size(min = 3, max = 50, message = "Username harus antara 3-50 karakter")
+    @NotBlank(message = "Username is required")
+    @Size(min = 3, max = 50, message = "Username must be between 3 and 50 characters")
     private String username;
     
-    @NotBlank(message = "Password tidak boleh kosong")
-    @Size(min = 6, message = "Password minimal 6 karakter")
+    @NotBlank(message = "Password is required")
+    @Size(min = 6, message = "Password must be at least 6 characters")
     private String password;
     
-    @NotBlank(message = "Email tidak boleh kosong")
-    @Email(message = "Format email tidak valid")
+    @NotBlank(message = "Email is required")
+    @Email(message = "Invalid email format")
     private String email;
     
     @Valid

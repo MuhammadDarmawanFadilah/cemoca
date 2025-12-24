@@ -9,10 +9,6 @@ function storageKey(userId: number) {
   return `company_profile_${userId}`;
 }
 
-function storageKeyPublic() {
-  return `company_profile_public`;
-}
-
 function safeParse<T>(raw: string | null): T | null {
   if (!raw) return null;
   try {
@@ -25,12 +21,17 @@ function safeParse<T>(raw: string | null): T | null {
 export function getCompanyProfileFromLocalStorage(userId?: number | null): CompanyProfileLocal {
   if (typeof window === "undefined") return {};
 
-  const publicProfile = safeParse<CompanyProfileLocal>(window.localStorage.getItem(storageKeyPublic())) || {};
-  if (!userId) return publicProfile;
+  const authUser = safeParse<{ companyName?: string; companyCode?: string }>(window.localStorage.getItem("auth_user"));
+  const fromAuth: CompanyProfileLocal = {
+    companyName: (authUser?.companyName || "").trim() || undefined,
+    companyCode: (authUser?.companyCode || "").trim() || undefined,
+  };
+
+  if (!userId) return fromAuth;
 
   const userProfile = safeParse<CompanyProfileLocal>(window.localStorage.getItem(storageKey(userId))) || {};
   return {
-    ...publicProfile,
+    ...fromAuth,
     ...userProfile,
   };
 }
@@ -38,7 +39,9 @@ export function getCompanyProfileFromLocalStorage(userId?: number | null): Compa
 export function setCompanyProfileToLocalStorage(profile: CompanyProfileLocal, userId?: number | null) {
   if (typeof window === "undefined") return;
 
-  const key = userId ? storageKey(userId) : storageKeyPublic();
+  if (!userId) return;
+
+  const key = storageKey(userId);
   const current = safeParse<CompanyProfileLocal>(window.localStorage.getItem(key)) || {};
   const next: CompanyProfileLocal = {
     ...current,

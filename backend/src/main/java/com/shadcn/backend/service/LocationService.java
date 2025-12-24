@@ -72,12 +72,12 @@ public class LocationService {
     public ProvinsiResponseDTO createProvinsi(ProvinsiRequest request) {
         // Check if kode already exists
         if (provinsiRepository.existsByKode(request.getKode())) {
-            throw new RuntimeException("Provinsi dengan kode '" + request.getKode() + "' sudah ada");
+            throw new RuntimeException("Province with code '" + request.getKode() + "' already exists");
         }
         
         // Check if nama already exists
         if (provinsiRepository.existsByNama(request.getNama())) {
-            throw new RuntimeException("Provinsi dengan nama '" + request.getNama() + "' sudah ada");
+            throw new RuntimeException("Province with name '" + request.getNama() + "' already exists");
         }
         
         Provinsi provinsi = new Provinsi();
@@ -95,12 +95,12 @@ public class LocationService {
         
         // Check if kode already exists (excluding current record)
         if (provinsiRepository.existsByKodeAndIdNot(request.getKode(), id)) {
-            throw new RuntimeException("Provinsi dengan kode '" + request.getKode() + "' sudah ada");
+            throw new RuntimeException("Province with code '" + request.getKode() + "' already exists");
         }
         
         // Check if nama already exists (excluding current record)
         if (provinsiRepository.existsByNamaAndIdNot(request.getNama(), id)) {
-            throw new RuntimeException("Provinsi dengan nama '" + request.getNama() + "' sudah ada");
+            throw new RuntimeException("Province with name '" + request.getNama() + "' already exists");
         }
         
         existing.setKode(request.getKode());
@@ -145,12 +145,12 @@ public class LocationService {
     public KotaResponseDTO createKota(KotaRequest request) {
         // Check if kode already exists
         if (kotaRepository.existsByKode(request.getKode())) {
-            throw new RuntimeException("Kota dengan kode '" + request.getKode() + "' sudah ada");
+            throw new RuntimeException("City with code '" + request.getKode() + "' already exists");
         }
         
         // Check if nama already exists
         if (kotaRepository.existsByNama(request.getNama())) {
-            throw new RuntimeException("Kota dengan nama '" + request.getNama() + "' sudah ada");
+            throw new RuntimeException("City with name '" + request.getNama() + "' already exists");
         }
         
         // Get provinsi
@@ -174,12 +174,12 @@ public class LocationService {
         
         // Check if kode already exists (excluding current record)
         if (kotaRepository.existsByKodeAndIdNot(request.getKode(), id)) {
-            throw new RuntimeException("Kota dengan kode '" + request.getKode() + "' sudah ada");
+            throw new RuntimeException("City with code '" + request.getKode() + "' already exists");
         }
         
         // Check if nama already exists (excluding current record)
         if (kotaRepository.existsByNamaAndIdNot(request.getNama(), id)) {
-            throw new RuntimeException("Kota dengan nama '" + request.getNama() + "' sudah ada");
+            throw new RuntimeException("City with name '" + request.getNama() + "' already exists");
         }
         
         // Get provinsi

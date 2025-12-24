@@ -7,7 +7,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
@@ -126,11 +125,11 @@ public class WilayahCacheService {
                 log.info("Cached new provinsi: {} - {}", saved.getKode(), saved.getNama());
                 return saved;
             } else {
-                throw new RuntimeException("Provinsi dengan kode " + kode + " tidak ditemukan di wilayah.id");
+                throw new RuntimeException("Province with code " + kode + " was not found in wilayah.id");
             }
         } catch (Exception e) {
             log.error("Error fetching provinsi {}: {}", kode, e.getMessage());
-            throw new RuntimeException("Gagal mengambil data provinsi: " + e.getMessage());
+            throw new RuntimeException("Failed to fetch provinces: " + e.getMessage());
         }
     }
     
@@ -167,11 +166,11 @@ public class WilayahCacheService {
                 log.info("Cached new kota: {} - {}", saved.getKode(), saved.getNama());
                 return saved;
             } else {
-                throw new RuntimeException("Kota dengan kode " + kode + " tidak ditemukan di wilayah.id");
+                throw new RuntimeException("City with code " + kode + " was not found in wilayah.id");
             }
         } catch (Exception e) {
             log.error("Error fetching kota {}: {}", kode, e.getMessage());
-            throw new RuntimeException("Gagal mengambil data kota: " + e.getMessage());
+            throw new RuntimeException("Failed to fetch cities: " + e.getMessage());
         }
     }
     
@@ -209,11 +208,11 @@ public class WilayahCacheService {
                 log.info("Cached new kecamatan: {} - {}", saved.getKode(), saved.getNama());
                 return saved;
             } else {
-                throw new RuntimeException("Kecamatan dengan kode " + kode + " tidak ditemukan di wilayah.id");
+                throw new RuntimeException("District with code " + kode + " was not found in wilayah.id");
             }
         } catch (Exception e) {
             log.error("Error fetching kecamatan {}: {}", kode, e.getMessage());
-            throw new RuntimeException("Gagal mengambil data kecamatan: " + e.getMessage());
+            throw new RuntimeException("Failed to fetch districts: " + e.getMessage());
         }
     }
     
@@ -252,11 +251,11 @@ public class WilayahCacheService {
                 log.info("Cached new kelurahan: {} - {}", saved.getKode(), saved.getNama());
                 return saved;
             } else {
-                throw new RuntimeException("Kelurahan dengan kode " + kode + " tidak ditemukan di wilayah.id");
+                throw new RuntimeException("Sub-district with code " + kode + " was not found in wilayah.id");
             }
         } catch (Exception e) {
             log.error("Error fetching kelurahan {}: {}", kode, e.getMessage());
-            throw new RuntimeException("Gagal mengambil data kelurahan: " + e.getMessage());
+            throw new RuntimeException("Failed to fetch sub-districts: " + e.getMessage());
         }
     }
     

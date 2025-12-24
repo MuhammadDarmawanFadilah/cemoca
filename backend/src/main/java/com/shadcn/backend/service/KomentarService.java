@@ -30,7 +30,7 @@ public class KomentarService {
     public KomentarBerita tambahKomentar(KomentarRequest request) {
         Optional<Berita> beritaOpt = beritaRepository.findById(request.getBeritaId());
         if (!beritaOpt.isPresent()) {
-            throw new RuntimeException("Berita tidak ditemukan");
+            throw new RuntimeException("Berita not found");
         }        KomentarBerita komentar = new KomentarBerita();
         komentar.setBerita(beritaOpt.get());
         komentar.setNamaPengguna(request.getNamaPengguna());
@@ -104,7 +104,7 @@ public class KomentarService {
     public KomentarBerita updateKomentar(Long komentarId, String kontenBaru) {
         Optional<KomentarBerita> komentarOpt = komentarRepository.findById(komentarId);
         if (!komentarOpt.isPresent()) {
-            throw new RuntimeException("Komentar tidak ditemukan");
+            throw new RuntimeException("Comment not found");
         }
 
         KomentarBerita komentar = komentarOpt.get();
@@ -120,6 +120,6 @@ public class KomentarService {
 
     public KomentarBerita getKomentarById(Long komentarId) {
         return komentarRepository.findById(komentarId)
-            .orElseThrow(() -> new RuntimeException("Komentar tidak ditemukan"));
+            .orElseThrow(() -> new RuntimeException("Comment not found"));
     }
 }

@@ -13,7 +13,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Optional;
-import java.util.Arrays;
 import java.util.Set;
 import java.util.HashSet;
 
@@ -90,7 +89,7 @@ public class RoleService {
     
     public Role createRole(RoleRequest request) {
         if (roleRepository.existsByRoleName(request.getRoleName())) {
-            throw new RuntimeException("Role dengan nama '" + request.getRoleName() + "' sudah ada");
+            throw new RuntimeException("Role with name '" + request.getRoleName() + "' already exists");
         }
         
         Role role = new Role();
@@ -111,12 +110,12 @@ public class RoleService {
     
     public Role updateRole(Long id, RoleRequest request) {
         Role role = roleRepository.findById(id)
-            .orElseThrow(() -> new RuntimeException("Role tidak ditemukan"));
+            .orElseThrow(() -> new RuntimeException("Role not found"));
         
         // Check if new name already exists (excluding current role)
         if (!role.getRoleName().equals(request.getRoleName()) && 
             roleRepository.existsByRoleName(request.getRoleName())) {
-            throw new RuntimeException("Role dengan nama '" + request.getRoleName() + "' sudah ada");
+            throw new RuntimeException("Role with name '" + request.getRoleName() + "' already exists");
         }
         
         role.setRoleName(request.getRoleName());
@@ -136,7 +135,7 @@ public class RoleService {
     
     public void deleteRole(Long id) {
         Role role = roleRepository.findById(id)
-            .orElseThrow(() -> new RuntimeException("Role tidak ditemukan"));
+            .orElseThrow(() -> new RuntimeException("Role not found"));
         roleRepository.delete(role);
     }
     

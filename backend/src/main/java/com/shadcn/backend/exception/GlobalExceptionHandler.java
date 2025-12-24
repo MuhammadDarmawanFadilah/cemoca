@@ -5,6 +5,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotWritableException;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
@@ -23,6 +24,33 @@ import java.util.Map;
 @RestControllerAdvice
 @Slf4j
 public class GlobalExceptionHandler {
+
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ResponseEntity<ErrorResponse> handleDataIntegrityViolation(DataIntegrityViolationException ex) {
+        log.error("Data integrity violation: {}", ex.getMessage(), ex);
+
+        Throwable mostSpecific = ex.getMostSpecificCause();
+        String lower = (mostSpecific != null && mostSpecific.getMessage() != null)
+            ? mostSpecific.getMessage().toLowerCase()
+            : "";
+
+        String message = "Resource already exists";
+        if (lower.contains("users") && (lower.contains("username") || lower.contains("uk_") || lower.contains("uniq"))) {
+            if (lower.contains("username")) message = "Username already exists";
+            if (lower.contains("email")) message = "Email already exists";
+            if (lower.contains("phone") || lower.contains("phone_number") || lower.contains("phonenumber")) message = "Phone number already exists";
+        }
+
+        ErrorResponse error = ErrorResponse.builder()
+                .timestamp(LocalDateTime.now())
+                .status(HttpStatus.CONFLICT.value())
+                .error("Conflict")
+                .message(message)
+                .type("DUPLICATE_RESOURCE")
+                .build();
+
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(error);
+    }
 
     @ExceptionHandler(DuplicateResourceException.class)
     public ResponseEntity<ErrorResponse> handleDuplicateResource(DuplicateResourceException ex) {
@@ -80,7 +108,7 @@ public class GlobalExceptionHandler {
             fieldErrors.put(fieldName, errorMessage);
         });
         
-        String message = "Data tidak valid: " + fieldErrors.values().iterator().next();
+                String message = "Invalid request data: " + fieldErrors.values().iterator().next();
           ErrorResponse error = ErrorResponse.builder()
                 .timestamp(LocalDateTime.now())
                 .status(HttpStatus.BAD_REQUEST.value())
@@ -98,8 +126,8 @@ public class GlobalExceptionHandler {
         log.warn("Missing request parameter: {}", ex.getMessage());
 
         String message = ex.getParameterName() == null
-                ? "Parameter request wajib diisi."
-                : "Parameter '" + ex.getParameterName() + "' wajib diisi.";
+                ? "A required request parameter is missing."
+                : "Parameter '" + ex.getParameterName() + "' is required.";
 
         ErrorResponse error = ErrorResponse.builder()
                 .timestamp(LocalDateTime.now())
@@ -120,7 +148,7 @@ public class GlobalExceptionHandler {
                 .timestamp(LocalDateTime.now())
                 .status(HttpStatus.INTERNAL_SERVER_ERROR.value())
                 .error("Internal Server Error")
-                .message("Terjadi kesalahan pada server. Silakan coba lagi atau hubungi administrator.")
+            .message("An unexpected server error occurred. Please try again or contact support.")
                 .type("INTERNAL_ERROR")
                 .build();
                 
@@ -156,7 +184,7 @@ public class GlobalExceptionHandler {
                 .timestamp(LocalDateTime.now())
                 .status(HttpStatus.PAYLOAD_TOO_LARGE.value())
                 .error("Payload Too Large")
-                .message("Ukuran file terlalu besar. Maksimal ukuran file adalah 100MB.")
+            .message("File size exceeds the maximum limit (100MB).")
                 .type("FILE_SIZE_EXCEEDED")
                 .build();
                 
@@ -173,7 +201,7 @@ public class GlobalExceptionHandler {
                 .timestamp(LocalDateTime.now())
                 .status(HttpStatus.BAD_REQUEST.value())
                 .error("Bad Request")
-                .message("Terjadi kesalahan saat upload file. Silakan coba lagi dengan file yang valid.")
+            .message("File upload failed. Please try again with a valid file.")
                 .type("FILE_UPLOAD_ERROR")
                 .build();
                 
@@ -195,8 +223,8 @@ public class GlobalExceptionHandler {
                 .status(isBrokenPipe ? HttpStatus.BAD_REQUEST.value() : HttpStatus.INTERNAL_SERVER_ERROR.value())
                 .error(isBrokenPipe ? "Connection Closed" : "Internal Server Error")
                 .message(isBrokenPipe ? 
-                        "Koneksi terputus sebelum proses selesai. Coba lagi dengan koneksi yang stabil." : 
-                        "Terjadi kesalahan saat operasi file. Silakan coba lagi.")
+                "Connection closed before the operation completed. Please try again with a stable connection." : 
+                "File operation failed. Please try again.")
                 .type(isBrokenPipe ? "CONNECTION_CLOSED" : "FILE_OPERATION_ERROR")
                 .build();
                 
@@ -213,7 +241,7 @@ public class GlobalExceptionHandler {
                 .timestamp(LocalDateTime.now())
                 .status(HttpStatus.INTERNAL_SERVER_ERROR.value())
                 .error("Internal Server Error")
-                .message("Terjadi kesalahan saat memproses respons. Silakan coba lagi.")
+            .message("Failed to process the response. Please try again.")
                 .type("RESPONSE_PROCESSING_ERROR")
                 .build();
                 
@@ -231,7 +259,7 @@ public class GlobalExceptionHandler {
         HttpStatus status = HttpStatus.BAD_REQUEST;
         String errorType = "BUSINESS_LOGIC_ERROR";
         
-        if (message != null && (message.contains("sudah terdaftar") || message.contains("already exists"))) {
+        if (message != null && (message.contains("sudah terdaftar") || message.toLowerCase().contains("already"))) {
             status = HttpStatus.CONFLICT;
             errorType = "DUPLICATE_RESOURCE";
         }
@@ -240,7 +268,7 @@ public class GlobalExceptionHandler {
                 .timestamp(LocalDateTime.now())
                 .status(status.value())
                 .error(status.getReasonPhrase())
-                .message(message != null ? message : "Terjadi kesalahan dalam proses bisnis")
+            .message(message != null ? message : "A business logic error occurred")
                 .type(errorType)
                 .build();
                 

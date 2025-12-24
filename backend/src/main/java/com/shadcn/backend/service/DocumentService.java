@@ -297,7 +297,7 @@ public class DocumentService {
         }
     }    private void validateFile(MultipartFile file) {
         if (file.isEmpty()) {
-            throw new ValidationException("File tidak boleh kosong");
+            throw new ValidationException("File must not be empty");
         }
 
         long maxFileSize = appProperties.getDocument().getMaxFileSize().toBytes();
@@ -338,7 +338,7 @@ public class DocumentService {
     public CommentResponse createComment(CommentRequest request, Long documentId) {
         Optional<Document> documentOpt = documentRepository.findById(documentId);
         if (!documentOpt.isPresent()) {
-            throw new RuntimeException("Document tidak ditemukan");
+            throw new RuntimeException("Document not found");
         }
 
         // Validate foto field - should only contain filename, not path
@@ -417,7 +417,7 @@ public class DocumentService {
     public CommentResponse likeComment(Long commentId, Long biografiId, String userName) {
         Optional<KomentarDocument> komentarOpt = komentarDocumentRepository.findById(commentId);
         if (!komentarOpt.isPresent()) {
-            throw new RuntimeException("Komentar tidak ditemukan");
+            throw new RuntimeException("Comment not found");
         }
 
         KomentarDocument komentar = komentarOpt.get();
@@ -456,7 +456,7 @@ public class DocumentService {
     public CommentResponse dislikeComment(Long commentId, Long biografiId, String userName) {
         Optional<KomentarDocument> komentarOpt = komentarDocumentRepository.findById(commentId);
         if (!komentarOpt.isPresent()) {
-            throw new RuntimeException("Komentar tidak ditemukan");
+            throw new RuntimeException("Comment not found");
         }
 
         KomentarDocument komentar = komentarOpt.get();
@@ -500,7 +500,7 @@ public class DocumentService {
     }    public CommentResponse replyToComment(Long commentId, CommentRequest request, Long documentId) {
         Optional<KomentarDocument> parentOpt = komentarDocumentRepository.findById(commentId);
         if (!parentOpt.isPresent()) {
-            throw new RuntimeException("Komentar parent tidak ditemukan");
+            throw new RuntimeException("Parent comment not found");
         }
         
         // Create reply request with parent ID

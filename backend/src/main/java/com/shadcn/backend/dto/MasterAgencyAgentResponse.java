@@ -5,6 +5,7 @@ import java.time.LocalDateTime;
 
 public record MasterAgencyAgentResponse(
         Long id,
+        String companyCode,
         String agentCode,
         String fullName,
         String shortName,

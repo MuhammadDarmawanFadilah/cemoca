@@ -11,11 +11,17 @@ import lombok.AllArgsConstructor;
 @AllArgsConstructor
 public class InvitationRequest {
     
-    @NotBlank(message = "Nama lengkap tidak boleh kosong")
-    @Size(max = 100, message = "Nama lengkap maksimal 100 karakter")
+    @NotBlank(message = "Full name is required")
+    @Size(max = 100, message = "Full name must be at most 100 characters")
     private String namaLengkap;
     
-    @NotBlank(message = "Nomor HP tidak boleh kosong")
-    @Size(max = 20, message = "Nomor HP maksimal 20 karakter")
+    @NotBlank(message = "Phone number is required")
+    @Size(max = 20, message = "Phone number must be at most 20 characters")
     private String nomorHp;
+
+    private Integer durationDays;
+
+    private String invitationType;
+
+    private String companyName;
 }

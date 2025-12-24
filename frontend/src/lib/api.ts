@@ -3,6 +3,22 @@ import { config } from './config';
 
 const API_BASE_URL = config.apiUrl;
 
+export class ApiError extends Error {
+  status: number;
+  type?: string;
+  details?: any;
+  raw?: any;
+
+  constructor(message: string, status: number, type?: string, details?: any, raw?: any) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+    this.type = type;
+    this.details = details;
+    this.raw = raw;
+  }
+}
+
 // Clean API helper function
 export async function apiCall<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
   const url = `${API_BASE_URL}${endpoint}`;
@@ -38,21 +54,37 @@ export async function apiCall<T>(endpoint: string, options: RequestInit = {}): P
         // Trigger logout by dispatching custom event
         window.dispatchEvent(new CustomEvent('auth:token-expired'));
         
-        throw new Error(errorData.error || 'Token tidak valid atau telah kedaluwarsa. Silakan login kembali.');
+        throw new ApiError(
+          errorData.error || errorData.message || 'Token tidak valid atau telah kedaluwarsa. Silakan login kembali.',
+          401,
+          errorData.type,
+          errorData.details,
+          errorData
+        );
       } else {
         // Other errors
         const errorText = await response.text();
-        let errorMessage = `HTTP ${response.status}: ${errorText}`;
+        let errorMessage = `Terjadi kesalahan. Silakan coba lagi.`;
+        let parsed: any = null;
         
         // Try to parse JSON error response
         try {
-          const errorData = JSON.parse(errorText);
-          errorMessage = errorData.error || errorData.message || errorMessage;
+          parsed = JSON.parse(errorText);
+          errorMessage = parsed?.error || parsed?.message || errorMessage;
         } catch {
           // Keep original error text if not JSON
+          if (errorText && errorText.trim()) {
+            const plain = errorText.trim();
+            const lower = plain.toLowerCase();
+            const looksLikeHtml = lower.startsWith('<!doctype') || lower.startsWith('<html');
+            const isGenericBadRequest = lower === 'bad request' || lower === 'internal server error';
+            if (!looksLikeHtml && !isGenericBadRequest) {
+              errorMessage = plain;
+            }
+          }
         }
-        
-        throw new Error(errorMessage);
+
+        throw new ApiError(errorMessage, response.status, parsed?.type, parsed?.details, parsed);
       }
     }
 
@@ -559,11 +591,13 @@ export interface User {
   avatarUrl?: string;
   companyName?: string;
   companyCode?: string;
+  ownerName?: string;
   agencyRange?: string;
   reasonToUse?: string;
   status: 'ACTIVE' | 'INACTIVE' | 'SUSPENDED' | 'WAITING_APPROVAL' | 'REJECTED';
   role?: Role;
   biografi?: Biografi;
+  lastAccessAt?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -1086,26 +1120,9 @@ export interface Invitation {
 export interface InvitationRequest {
   namaLengkap: string;
   nomorHp: string;
-}
-
-export interface RegistrationFromInvitationRequest {
-  invitationToken: string;
-  username: string;
-  password: string;
-  email: string;
-  biografiData: BiografiRequest;
-}
-
-export interface PublicInvitationLink {
-  id: number;
-  linkToken: string;
-  description?: string;
-  status: 'ACTIVE' | 'INACTIVE' | 'EXPIRED';
-  expiresAt?: string;
-  maxUses?: number;
-  currentUses: number;
-  createdAt: string;
-  updatedAt: string;
+  durationDays?: number;
+  invitationType?: 'MEMBER' | 'COMPANY';
+  companyName?: string;
 }
 
 export interface RegistrationRequest {
@@ -1113,19 +1130,10 @@ export interface RegistrationRequest {
   email: string;
   password: string;
   phoneNumber: string;
+  ownerName: string;
   companyName: string;
   agencyRange: string;
   reasonToUse: string;
-}
-
-export interface PublicRegistrationRequest {
-  username: string;
-  email: string;
-  fullName: string;
-  password: string;
-  phoneNumber: string;
-  publicInvitationToken: string;
-  biografiData?: BiografiRequest;
 }
 
 // Invitation API functions
@@ -1184,58 +1192,61 @@ export const invitationAPI = {
     }    
     return apiCall<PagedInvitationResponse>(`/invitations/history/paginated?${params.toString()}`);
   },
-
-  // Register from invitation
-  registerFromInvitation: (request: RegistrationFromInvitationRequest): Promise<User> =>
-    apiCall<User>('/invitations/register', {
-      method: 'POST',
-      body: JSON.stringify(request),
-    }),
 };
 
-// Public Invitation Link API functions
-export const publicInvitationLinkAPI = {  // Generate public invitation link
-  generatePublicLink: (
-    description?: string,
-    expiresAt?: string,
-    maxUses?: number
-  ): Promise<{ message: string; link: PublicInvitationLink; registrationUrl: string }> =>
-    apiCall<{ message: string; link: PublicInvitationLink; registrationUrl: string }>('/public-invitation-links/generate', {
-      method: 'POST',
-      body: JSON.stringify({ description, expiresAt, maxUses }),
+export interface CompanySummary {
+  companyCode: string;
+  companyName: string;
+  totalUsers: number;
+  activeUsers: number;
+  active: boolean;
+}
+
+export interface CompanyDetail {
+  companyCode: string;
+  companyName: string;
+  ownerName?: string;
+  email?: string;
+  phoneNumber?: string;
+  agencyRange?: string;
+  reasonToUse?: string;
+  avatarUrl?: string;
+}
+
+export const companyAdminAPI = {
+  listCompanies: (): Promise<CompanySummary[]> => apiCall<CompanySummary[]>('/admin/companies'),
+
+  getCompanyDetail: (companyCode: string): Promise<CompanyDetail> =>
+    apiCall<CompanyDetail>(`/admin/companies/${encodeURIComponent(companyCode)}`),
+
+  updateCompanyName: (companyCode: string, companyName: string): Promise<{ updated: number }> =>
+    apiCall<{ updated: number }>(`/admin/companies/${encodeURIComponent(companyCode)}`, {
+      method: 'PUT',
+      body: JSON.stringify({ companyName }),
     }),
 
-  // Get public link by token
-  getPublicLinkByToken: (token: string): Promise<PublicInvitationLink> =>
-    apiCall<PublicInvitationLink>(`/public-invitation-links/token/${token}`),
-
-  // Validate public link
-  validatePublicLink: (token: string): Promise<{ valid: boolean; message?: string }> =>
-    apiCall<{ valid: boolean; message?: string }>(`/public-invitation-links/validate/${token}`),
-
-  // Get all public links
-  getAllPublicLinks: (): Promise<PublicInvitationLink[]> =>
-    apiCall<PublicInvitationLink[]>('/public-invitation-links'),
-
-  // Get active public links
-  getActivePublicLinks: (): Promise<PublicInvitationLink[]> =>
-    apiCall<PublicInvitationLink[]>('/public-invitation-links/active'),
-
-  // Deactivate public link
-  deactivatePublicLink: (id: number): Promise<{ message: string; link: PublicInvitationLink }> =>
-    apiCall<{ message: string; link: PublicInvitationLink }>(`/public-invitation-links/${id}/deactivate`, {
-      method: 'POST',
+  updateCompanyStatus: (companyCode: string, status: string): Promise<{ updated: number }> =>
+    apiCall<{ updated: number }>(`/admin/companies/${encodeURIComponent(companyCode)}/status`, {
+      method: 'PUT',
+      body: JSON.stringify({ status }),
     }),
 
-  // Activate public link
-  activatePublicLink: (id: number): Promise<{ message: string; link: PublicInvitationLink }> =>
-    apiCall<{ message: string; link: PublicInvitationLink }>(`/public-invitation-links/${id}/activate`, {
-      method: 'POST',
+  deleteCompany: (companyCode: string): Promise<{ deleted: number }> =>
+    apiCall<{ deleted: number }>(`/admin/companies/${encodeURIComponent(companyCode)}`, {
+      method: 'DELETE',
     }),
 
-  // Get public link statistics
-  getPublicLinkStatistics: (): Promise<any> =>
-    apiCall<any>('/public-invitation-links/statistics'),
+  updateCompanyFull: (companyCode: string, data: Partial<CompanyDetail>): Promise<{ updated: number }> =>
+    apiCall<{ updated: number }>(`/admin/companies/${encodeURIComponent(companyCode)}/full`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+
+  sendCompanyInvitation: (request: InvitationRequest): Promise<Invitation> =>
+    apiCall<Invitation>('/admin/companies/invitations', {
+      method: 'POST',
+      body: JSON.stringify({ ...request, invitationType: 'COMPANY' }),
+    }),
 };
 
 // User Approval API functions
@@ -1292,8 +1303,11 @@ export const authAPI = {
       fullName: string;
       email: string;
       status: string;
+      ownerName?: string;
       companyName?: string;
       companyCode?: string;
+      agencyRange?: string;
+      reasonToUse?: string;
     };
   }> =>
     apiCall<{
@@ -1304,35 +1318,13 @@ export const authAPI = {
         fullName: string;
         email: string;
         status: string;
+        ownerName?: string;
         companyName?: string;
         companyCode?: string;
+        agencyRange?: string;
+        reasonToUse?: string;
       };
     }>(`/auth/register`, {
-      method: 'POST',
-      body: JSON.stringify(request),
-    }),
-
-  // Register from public invitation link
-  registerFromPublicLink: (request: PublicRegistrationRequest): Promise<{
-    message: string;
-    user: {
-      id: number;
-      username: string;
-      fullName: string;
-      email: string;
-      status: string;
-    };
-  }> =>
-    apiCall<{
-      message: string;
-      user: {
-        id: number;
-        username: string;
-        fullName: string;
-        email: string;
-        status: string;
-      };
-    }>('/auth/register/public', {
       method: 'POST',
       body: JSON.stringify(request),
     }),
@@ -1573,26 +1565,9 @@ export interface Invitation {
 export interface InvitationRequest {
   namaLengkap: string;
   nomorHp: string;
-}
-
-export interface RegistrationFromInvitationRequest {
-  invitationToken: string;
-  username: string;
-  password: string;
-  email: string;
-  biografiData: BiografiRequest;
-}
-
-export interface PublicInvitationLink {
-  id: number;
-  linkToken: string;
-  description?: string;
-  status: 'ACTIVE' | 'INACTIVE' | 'EXPIRED';
-  expiresAt?: string;
-  maxUses?: number;
-  currentUses: number;
-  createdAt: string;
-  updatedAt: string;
+  durationDays?: number;
+  invitationType?: 'MEMBER' | 'COMPANY';
+  companyName?: string;
 }
 
 // Location interfaces
@@ -1812,6 +1787,7 @@ export interface MasterAgencyAgentRequest {
 
 export interface MasterAgencyAgentResponse {
   id: number;
+  companyCode?: string;
   agentCode: string;
   fullName: string;
   shortName?: string;
@@ -1867,6 +1843,7 @@ export interface MasterPolicySalesRequest {
 
 export interface MasterPolicySalesResponse {
   id: number;
+  companyCode?: string;
   agentCode: string;
   policyDate: string;
   policyFyp: number;
@@ -1907,7 +1884,7 @@ export interface MasterPolicySalesListFilters {
 export const masterDataAPI = {
   agencyList: {
     getAll: (
-      companyCode: string,
+      companyCode: string | undefined,
       filters?: MasterAgencyAgentListFilters | string,
       isActiveLegacy?: boolean,
       page = 0,
@@ -1916,7 +1893,7 @@ export const masterDataAPI = {
       sortDir: 'asc' | 'desc' = 'desc'
     ) => {
       const params = new URLSearchParams();
-      params.append('companyCode', companyCode);
+      if (companyCode) params.append('companyCode', companyCode);
 
       if (typeof filters === 'string') {
         if (filters) params.append('search', filters);
@@ -2086,7 +2063,7 @@ export const masterDataAPI = {
 
   policySales: {
     getAll: (
-      companyCode: string,
+      companyCode: string | undefined,
       filters?: MasterPolicySalesListFilters | string,
       _legacyUnused?: any,
       page = 0,
@@ -2095,7 +2072,7 @@ export const masterDataAPI = {
       sortDir: 'asc' | 'desc' = 'desc'
     ) => {
       const params = new URLSearchParams();
-      params.append('companyCode', companyCode);
+      if (companyCode) params.append('companyCode', companyCode);
 
       if (typeof filters === 'string') {
         if (filters) params.append('search', filters);
@@ -3171,6 +3148,78 @@ export const pdfReportAPI = {
     error?: string;
   }> => {
     const response = await fetch(`${API_BASE_URL}/pdf-reports/view/${token}`);
+    return response.json();
+  },
+};
+
+// File Manager API
+export const fileManager = {
+  getAllFolders: async (): Promise<any[]> => {
+    const token = localStorage.getItem("auth_token");
+    const response = await fetch(`${API_BASE_URL}/admin/file-manager/folders`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    if (!response.ok) throw new Error("Failed to fetch folders");
+    return response.json();
+  },
+
+  processNow: async (): Promise<{ message: string }> => {
+    const token = localStorage.getItem("auth_token");
+    const response = await fetch(`${API_BASE_URL}/admin/file-manager/process-now`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    if (!response.ok) throw new Error("Failed to trigger processing");
+    return response.json();
+  },
+
+  getLogs: async (page: number = 0, size: number = 25): Promise<any> => {
+    const token = localStorage.getItem("auth_token");
+    const response = await fetch(
+      `${API_BASE_URL}/admin/file-manager/logs?page=${page}&size=${size}`,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      }
+    );
+    if (!response.ok) throw new Error("Failed to fetch logs");
+    return response.json();
+  },
+
+  getConfig: async (): Promise<{ basePath: string; enabled: boolean; intervalHours: number; nextRun: string }> => {
+    const token = localStorage.getItem("auth_token");
+    const response = await fetch(`${API_BASE_URL}/admin/file-manager/config`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    if (!response.ok) throw new Error("Failed to fetch config");
+    return response.json();
+  },
+
+  uploadFile: async (file: File, companyCode: string, importType: string): Promise<{ message: string; fileName: string }> => {
+    const token = localStorage.getItem("auth_token");
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("companyCode", companyCode);
+    formData.append("importType", importType);
+
+    const response = await fetch(`${API_BASE_URL}/admin/file-manager/upload`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+      body: formData,
+    });
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || "Failed to upload file");
+    }
     return response.json();
   },
 };

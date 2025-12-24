@@ -41,7 +41,7 @@ public class MasterAgencyAgentController {
     @GetMapping
     @PreAuthorize("hasRole('ADMIN') or hasRole('MODERATOR') or hasRole('USER')")
     public ResponseEntity<Page<MasterAgencyAgentResponse>> findAll(
-            @RequestParam String companyCode,
+            @RequestParam(required = false) String companyCode,
             @RequestParam(required = false) String search,
             @RequestParam(required = false) String fullName,
             @RequestParam(required = false) String phoneNo,

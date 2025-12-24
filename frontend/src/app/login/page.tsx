@@ -32,7 +32,8 @@ import { useLanguage } from "@/contexts/LanguageContext";
 import { toast } from "sonner";
 import Link from "next/link";
 import Image from "next/image";
-import { authAPI, userAPI } from "@/lib/api";
+import { ApiError, authAPI, userAPI } from "@/lib/api";
+import { PhoneNumberField, toE164 } from "@/components/PhoneNumberField";
 
 const loginSchema = z.object({
   username: z.string().min(1, "Username or email is required"),
@@ -50,8 +51,10 @@ const agencyRanges = [
 ] as const;
 
 type AccountRequestFormData = {
+  ownerName: string;
   companyName: string;
   email: string;
+  phoneCountryCode: string;
   phoneNumber: string;
   username: string;
   password: string;
@@ -87,8 +90,10 @@ function LoginForm() {
   });  // Check for registration messages
 
   const requestSchema = z.object({
+    ownerName: z.string().min(1, t('auth.ownerNameRequired')),
     companyName: z.string().min(1, t('auth.companyNameRequired')),
     email: z.string().min(1, t('auth.emailRequired')).email(t('auth.emailRequired')),
+    phoneCountryCode: z.string().min(1, "Country code is required"),
     phoneNumber: z.string().min(1, t('auth.phoneRequired')),
     username: z.string().min(1, t('auth.usernameRequired')),
     password: z.string().min(1, t('auth.passwordRequired')),
@@ -101,8 +106,10 @@ function LoginForm() {
   const requestForm = useForm<AccountRequestFormData>({
     resolver: zodResolver(requestSchema),
     defaultValues: {
+      ownerName: "",
       companyName: "",
       email: "",
+      phoneCountryCode: "+62",
       phoneNumber: "",
       username: "",
       password: "",
@@ -156,44 +163,45 @@ function LoginForm() {
   const onSubmitAccountRequest = async (data: AccountRequestFormData) => {
     setError(null);
     try {
+      const phoneE164 = toE164(data.phoneCountryCode, data.phoneNumber);
+
       try {
-        const [usernameExists, emailExists] = await Promise.all([
+        const [usernameExists, emailExists, phoneExists] = await Promise.all([
           userAPI.checkUsernameExists(data.username),
           userAPI.checkEmailExists(data.email),
+          userAPI.checkPhoneExists(phoneE164 || data.phoneNumber),
         ]);
 
         if (usernameExists) {
-          requestForm.setError("username", { type: "manual", message: "Username sudah terdaftar" });
-          toast.error("Username sudah terdaftar");
+          requestForm.setError("username", { type: "manual", message: "Username is already registered" });
+          toast.error("Username is already registered");
           return;
         }
         if (emailExists) {
-          requestForm.setError("email", { type: "manual", message: "Email sudah terdaftar" });
-          toast.error("Email sudah terdaftar");
+          requestForm.setError("email", { type: "manual", message: "Email is already registered" });
+          toast.error("Email is already registered");
+          return;
+        }
+
+        if (phoneExists) {
+          requestForm.setError("phoneNumber", { type: "manual", message: "Phone number is already registered" });
+          toast.error("Phone number is already registered");
           return;
         }
       } catch {
         // ignore precheck failures; backend will validate
       }
 
-      const res = await authAPI.register({
+      await authAPI.register({
         username: data.username,
         email: data.email,
         password: data.password,
-        phoneNumber: data.phoneNumber,
+        phoneNumber: phoneE164 || data.phoneNumber,
+        ownerName: data.ownerName,
         companyName: data.companyName,
         agencyRange: data.agencyRange,
         reasonToUse: data.reasonToUse,
       });
-
-      const companyName = (res.user.companyName || data.companyName || "").trim();
-      const companyCode = (res.user.companyCode || "").trim();
-      if (companyName || companyCode) {
-        localStorage.setItem(
-          "company_profile_public",
-          JSON.stringify({ companyName, companyCode, updatedAt: new Date().toISOString() })
-        );
-      }
 
       await login(data.username, data.password);
       toast.success(t('auth.accountCreated'));
@@ -202,8 +210,10 @@ function LoginForm() {
       router.push(redirectTo);
 
       requestForm.reset({
+        ownerName: "",
         companyName: "",
         email: "",
+        phoneCountryCode: "+62",
         phoneNumber: "",
         username: "",
         password: "",
@@ -213,56 +223,41 @@ function LoginForm() {
       closeCreate();
     } catch (e) {
       const msg = e instanceof Error ? e.message : t('errors.general');
-      if (msg.toLowerCase().includes("username")) {
-        requestForm.setError("username", { type: "manual", message: msg });
+
+      if (e instanceof ApiError && e.details && typeof e.details === 'object') {
+        const details = e.details as Record<string, string>;
+        if (details.username) requestForm.setError('username', { type: 'manual', message: details.username });
+        if (details.email) requestForm.setError('email', { type: 'manual', message: details.email });
+        if (details.phoneNumber) requestForm.setError('phoneNumber', { type: 'manual', message: details.phoneNumber });
+        if (details.ownerName) requestForm.setError('ownerName', { type: 'manual', message: details.ownerName });
+        if (details.companyName) requestForm.setError('companyName', { type: 'manual', message: details.companyName });
+        if (details.agencyRange) requestForm.setError('agencyRange', { type: 'manual', message: details.agencyRange });
+        if (details.reasonToUse) requestForm.setError('reasonToUse', { type: 'manual', message: details.reasonToUse });
+      } else {
+        const lower = msg.toLowerCase();
+        if (lower.includes('username')) requestForm.setError('username', { type: 'manual', message: msg });
+        if (lower.includes('email')) requestForm.setError('email', { type: 'manual', message: msg });
+        if (lower.includes('phone') || lower.includes('nomor') || lower.includes('hp')) {
+          requestForm.setError('phoneNumber', { type: 'manual', message: msg });
+        }
       }
-      if (msg.toLowerCase().includes("email")) {
-        requestForm.setError("email", { type: "manual", message: msg });
-      }
+
       toast.error(msg);
     }
   };
 
   const CreateAccountForm = (
     <Form {...requestForm}>
-      <form onSubmit={requestForm.handleSubmit(onSubmitAccountRequest)} className="space-y-4">
-        <FormField
-          control={requestForm.control}
-          name="companyName"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>{t('auth.companyName')}</FormLabel>
-              <FormControl>
-                <Input {...field} placeholder={t('auth.enterCompanyName')} className="h-11" />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-
-        <FormField
-          control={requestForm.control}
-          name="email"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>{t('auth.email')}</FormLabel>
-              <FormControl>
-                <Input {...field} placeholder={t('auth.email')} className="h-11" />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <form onSubmit={requestForm.handleSubmit(onSubmitAccountRequest)} className="space-y-6">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           <FormField
             control={requestForm.control}
-            name="username"
+            name="ownerName"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>{t('auth.username')}</FormLabel>
+                <FormLabel>{t('auth.ownerName')}</FormLabel>
                 <FormControl>
-                  <Input {...field} placeholder={t('auth.enterUsername')} className="h-11" />
+                  <Input {...field} placeholder={t('auth.enterOwnerName')} className="h-11" />
                 </FormControl>
                 <FormMessage />
               </FormItem>
@@ -271,12 +266,40 @@ function LoginForm() {
 
           <FormField
             control={requestForm.control}
-            name="phoneNumber"
+            name="companyName"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>{t('auth.phoneNumber')}</FormLabel>
+                <FormLabel>{t('auth.companyName')}</FormLabel>
                 <FormControl>
-                  <Input {...field} placeholder={t('auth.enterPhoneNumber')} className="h-11" inputMode="tel" />
+                  <Input {...field} placeholder={t('auth.enterCompanyName')} className="h-11" />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
+          <FormField
+            control={requestForm.control}
+            name="email"
+            render={({ field }) => (
+              <FormItem className="md:col-span-2">
+                <FormLabel>{t('auth.email')}</FormLabel>
+                <FormControl>
+                  <Input {...field} placeholder="name@company.com" className="h-11" />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
+          <FormField
+            control={requestForm.control}
+            name="username"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>{t('auth.username')}</FormLabel>
+                <FormControl>
+                  <Input {...field} placeholder={t('auth.enterUsername')} className="h-11" />
                 </FormControl>
                 <FormMessage />
               </FormItem>
@@ -301,10 +324,39 @@ function LoginForm() {
                       type="button"
                       onClick={() => setShowCreatePassword(!showCreatePassword)}
                       className="absolute right-3 top-3.5 h-4 w-4 text-muted-foreground hover:text-foreground"
+                      aria-label={showCreatePassword ? "Hide password" : "Show password"}
                     >
                       {showCreatePassword ? <EyeOff /> : <Eye />}
                     </button>
                   </div>
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
+          <FormField
+            control={requestForm.control}
+            name="phoneNumber"
+            render={({ field }) => (
+              <FormItem className="md:col-span-2">
+                <FormLabel>{t('auth.phoneNumber')}</FormLabel>
+                <FormControl>
+                  <FormField
+                    control={requestForm.control}
+                    name="phoneCountryCode"
+                    render={({ field: ccField }) => (
+                      <PhoneNumberField
+                        countryCodeValue={ccField.value}
+                        onCountryCodeChange={ccField.onChange}
+                        numberValue={field.value}
+                        onNumberChange={field.onChange}
+                        countryCodePlaceholder="Country code"
+                        numberPlaceholder={t('auth.enterPhoneNumber')}
+                        idPrefix="create-account-phone"
+                      />
+                    )}
+                  />
                 </FormControl>
                 <FormMessage />
               </FormItem>
@@ -333,21 +385,23 @@ function LoginForm() {
               </FormItem>
             )}
           />
-        </div>
 
-        <FormField
-          control={requestForm.control}
-          name="reasonToUse"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>{t('auth.reasonToUse')}</FormLabel>
-              <FormControl>
-                <Textarea {...field} placeholder={t('auth.enterReason')} className="min-h-[96px]" />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
+          <div className="hidden md:block" />
+
+          <FormField
+            control={requestForm.control}
+            name="reasonToUse"
+            render={({ field }) => (
+              <FormItem className="md:col-span-2">
+                <FormLabel>{t('auth.reasonToUse')}</FormLabel>
+                <FormControl>
+                  <Textarea {...field} placeholder={t('auth.enterReason')} className="min-h-[96px]" />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        </div>
 
         <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2">
           <Button type="button" variant="outline" onClick={closeCreate}>

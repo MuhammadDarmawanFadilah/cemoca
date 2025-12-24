@@ -159,3 +159,6 @@ next-env.d.ts
 .DS_Store
 *~
 /afan2.ppk
+
+# Local scripts (do not commit)
+/scripts/

@@ -28,7 +28,7 @@ public class FileUploadController {
             String imageUrl = imageService.getImageUrl(filename);
 
             response.put("success", "true");
-            response.put("message", "File berhasil diupload");
+            response.put("message", "File uploaded successfully");
             response.put("url", imageUrl);
             response.put("filename", filename);
 
@@ -47,7 +47,7 @@ public class FileUploadController {
         Map<String, String> response = new HashMap<>();
         imageService.deleteImage(filename);
         response.put("success", "true");
-        response.put("message", "File berhasil dihapus");
+        response.put("message", "File deleted successfully");
         return ResponseEntity.ok(response);
     }
 }

@@ -24,6 +24,8 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.BufferedReader;
 import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
@@ -60,16 +62,17 @@ public class MasterPolicySalesService {
             String sortDir
     ) {
         String normalizedCompanyCode = normalizeString(companyCode);
-        if (normalizedCompanyCode == null) {
-            throw new ValidationException("Company Code wajib diisi");
-        }
-
         Sort.Direction direction = "desc".equalsIgnoreCase(sortDir) ? Sort.Direction.DESC : Sort.Direction.ASC;
         Sort sort = Sort.by(direction, sortBy == null || sortBy.isBlank() ? "createdAt" : sortBy);
         Pageable pageable = PageRequest.of(page, size, sort);
 
         String fAgentCode = normalizeSearch(agentCode);
         String fCreatedBy = normalizeSearch(createdBy);
+
+        if (normalizedCompanyCode == null || normalizedCompanyCode.isEmpty()) {
+            return repository.findAllWithColumnFilters(fAgentCode, fCreatedBy, pageable)
+                    .map(this::toResponse);
+        }
 
         boolean hasColumnFilters = fAgentCode != null || fCreatedBy != null;
         if (hasColumnFilters) {
@@ -85,14 +88,14 @@ public class MasterPolicySalesService {
     public MasterPolicySalesResponse findById(String companyCode, Long id) {
         String normalizedCompanyCode = normalizeString(companyCode);
         if (normalizedCompanyCode == null) {
-            throw new ValidationException("Company Code wajib diisi");
+            throw new ValidationException("Company Code is required");
         }
 
         MasterPolicySales entity = repository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Data policy sales dengan ID " + id + " tidak ditemukan"));
+                .orElseThrow(() -> new ResourceNotFoundException("Policy sales data with ID " + id + " not found"));
 
         if (!normalizedCompanyCode.equalsIgnoreCase(entity.getCompanyCode())) {
-            throw new ResourceNotFoundException("Data policy sales dengan ID " + id + " tidak ditemukan");
+            throw new ResourceNotFoundException("Policy sales data with ID " + id + " not found");
         }
 
         return toResponse(entity);
@@ -102,7 +105,7 @@ public class MasterPolicySalesService {
     public MasterPolicySalesResponse create(String companyCode, MasterPolicySalesRequest request, String createdBy) {
         String normalizedCompanyCode = normalizeString(companyCode);
         if (normalizedCompanyCode == null) {
-            throw new ValidationException("Company Code wajib diisi");
+            throw new ValidationException("Company Code is required");
         }
 
         MasterPolicySales entity = new MasterPolicySales();
@@ -118,14 +121,14 @@ public class MasterPolicySalesService {
     public MasterPolicySalesResponse update(String companyCode, Long id, MasterPolicySalesRequest request) {
         String normalizedCompanyCode = normalizeString(companyCode);
         if (normalizedCompanyCode == null) {
-            throw new ValidationException("Company Code wajib diisi");
+            throw new ValidationException("Company Code is required");
         }
 
         MasterPolicySales existing = repository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Data policy sales dengan ID " + id + " tidak ditemukan"));
+                .orElseThrow(() -> new ResourceNotFoundException("Policy sales data with ID " + id + " not found"));
 
         if (!normalizedCompanyCode.equalsIgnoreCase(existing.getCompanyCode())) {
-            throw new ResourceNotFoundException("Data policy sales dengan ID " + id + " tidak ditemukan");
+            throw new ResourceNotFoundException("Policy sales data with ID " + id + " not found");
         }
 
         applyRequest(existing, request);
@@ -139,14 +142,14 @@ public class MasterPolicySalesService {
     public void delete(String companyCode, Long id) {
         String normalizedCompanyCode = normalizeString(companyCode);
         if (normalizedCompanyCode == null) {
-            throw new ValidationException("Company Code wajib diisi");
+            throw new ValidationException("Company Code is required");
         }
 
         MasterPolicySales existing = repository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Data policy sales dengan ID " + id + " tidak ditemukan"));
+                .orElseThrow(() -> new ResourceNotFoundException("Policy sales data with ID " + id + " not found"));
 
         if (!normalizedCompanyCode.equalsIgnoreCase(existing.getCompanyCode())) {
-            throw new ResourceNotFoundException("Data policy sales dengan ID " + id + " tidak ditemukan");
+            throw new ResourceNotFoundException("Policy sales data with ID " + id + " not found");
         }
 
         repository.deleteById(id);
@@ -157,7 +160,7 @@ public class MasterPolicySalesService {
         String normalizedCompanyCode = normalizeString(companyCode);
         if (normalizedCompanyCode == null) {
             return new MasterPolicySalesImportResult(false, 0, 0, List.of(
-                    new MasterPolicySalesImportError(0, "Company Code", "Wajib diisi", companyCode)
+                    new MasterPolicySalesImportError(0, "Company Code", "Required", companyCode)
             ));
         }
 
@@ -177,7 +180,7 @@ public class MasterPolicySalesService {
             Sheet sheet = workbook.getNumberOfSheets() > 0 ? workbook.getSheetAt(0) : null;
             if (sheet == null) {
                 return new MasterPolicySalesImportResult(false, 0, 0, List.of(
-                        new MasterPolicySalesImportError(0, "file", "Sheet tidak ditemukan", null)
+                        new MasterPolicySalesImportError(0, "file", "Sheet not found", null)
                 ));
             }
 
@@ -215,19 +218,19 @@ public class MasterPolicySalesService {
                 }
 
                 if (isBlank(agentCode)) {
-                    errors.add(new MasterPolicySalesImportError(rowNumber, "Agent Code", "Wajib diisi", null));
+                    errors.add(new MasterPolicySalesImportError(rowNumber, "Agent Code", "Required", null));
                     continue;
                 }
                 if (policyDate == null) {
-                    errors.add(new MasterPolicySalesImportError(rowNumber, "Policy Date", "Wajib diisi", null));
+                    errors.add(new MasterPolicySalesImportError(rowNumber, "Policy Date", "Required", null));
                     continue;
                 }
                 if (policyFyp == null) {
-                    errors.add(new MasterPolicySalesImportError(rowNumber, "Policy FYP", "Wajib diisi", null));
+                    errors.add(new MasterPolicySalesImportError(rowNumber, "Policy FYP", "Required", null));
                     continue;
                 }
                 if (policyApe == null) {
-                    errors.add(new MasterPolicySalesImportError(rowNumber, "Policy APE", "Wajib diisi", null));
+                    errors.add(new MasterPolicySalesImportError(rowNumber, "Policy APE", "Required", null));
                     continue;
                 }
 
@@ -257,11 +260,120 @@ public class MasterPolicySalesService {
     }
 
     @Transactional
+    public MasterPolicySalesImportResult importExcelFromFile(String companyCode, File file, boolean removeExisting, String createdBy) {
+        try {
+            try (FileInputStream fis = new FileInputStream(file)) {
+                return importExcelFromInputStream(companyCode, fis, removeExisting, createdBy);
+            }
+        } catch (Exception e) {
+            log.error("Error import excel from file: {}", file.getAbsolutePath(), e);
+            return new MasterPolicySalesImportResult(false, 0, 0, List.of(
+                    new MasterPolicySalesImportError(0, "file", e.getMessage(), file.getAbsolutePath())
+            ));
+        }
+    }
+
+    private MasterPolicySalesImportResult importExcelFromInputStream(String companyCode, InputStream is, boolean removeExisting, String createdBy) throws Exception {
+        String normalizedCompanyCode = normalizeString(companyCode);
+        if (normalizedCompanyCode == null) {
+            return new MasterPolicySalesImportResult(false, 0, 0, List.of(
+                    new MasterPolicySalesImportError(0, "Company Code", "Required", companyCode)
+            ));
+        }
+
+        String normalizedCreatedBy = resolveCreatedByForCompany(normalizedCompanyCode, createdBy);
+
+        List<MasterPolicySalesImportError> errors = new ArrayList<>();
+        int created = 0;
+        int updated = 0;
+
+        try (Workbook workbook = WorkbookFactory.create(is)) {
+            Sheet sheet = workbook.getNumberOfSheets() > 0 ? workbook.getSheetAt(0) : null;
+            if (sheet == null) {
+                return new MasterPolicySalesImportResult(false, 0, 0, List.of(
+                        new MasterPolicySalesImportError(0, "file", "Sheet not found", null)
+                ));
+            }
+
+            DataFormatter formatter = new DataFormatter();
+            int lastRow = sheet.getLastRowNum();
+            if (lastRow < 1) {
+                if (removeExisting) {
+                    repository.deleteByCompanyCode(normalizedCompanyCode);
+                    repository.flush();
+                    return new MasterPolicySalesImportResult(true, 0, 0, List.of());
+                }
+                return new MasterPolicySalesImportResult(true, 0, 0, List.of());
+            }
+
+            if (removeExisting) {
+                repository.deleteByCompanyCode(normalizedCompanyCode);
+                repository.flush();
+            }
+
+            Set<String> seenRowHashes = new HashSet<>();
+
+            for (int r = 1; r <= lastRow; r++) {
+                Row row = sheet.getRow(r);
+                if (row == null) continue;
+
+                int rowNumber = r + 1;
+
+                String agentCode = readString(formatter, row.getCell(1));
+                LocalDate policyDate = readLocalDate(row.getCell(2), formatter, errors, rowNumber, "Policy Date");
+                BigDecimal policyFyp = readDecimal(row.getCell(3), formatter, errors, rowNumber, "Policy FYP");
+                BigDecimal policyApe = readDecimal(row.getCell(4), formatter, errors, rowNumber, "Policy APE");
+
+                if (isAllBlank(agentCode) && policyDate == null && policyFyp == null && policyApe == null) {
+                    continue;
+                }
+
+                if (isBlank(agentCode)) {
+                    errors.add(new MasterPolicySalesImportError(rowNumber, "Agent Code", "Required", null));
+                    continue;
+                }
+                if (policyDate == null) {
+                    errors.add(new MasterPolicySalesImportError(rowNumber, "Policy Date", "Required", null));
+                    continue;
+                }
+                if (policyFyp == null) {
+                    errors.add(new MasterPolicySalesImportError(rowNumber, "Policy FYP", "Required", null));
+                    continue;
+                }
+                if (policyApe == null) {
+                    errors.add(new MasterPolicySalesImportError(rowNumber, "Policy APE", "Required", null));
+                    continue;
+                }
+
+                String rowHash = (agentCode.trim().toLowerCase(Locale.ROOT) + "|" + policyDate + "|" + policyFyp + "|" + policyApe);
+                if (seenRowHashes.contains(rowHash)) {
+                    continue;
+                }
+                seenRowHashes.add(rowHash);
+
+                MasterPolicySales entity = new MasterPolicySales();
+                entity.setAgentCode(agentCode.trim());
+                entity.setPolicyDate(policyDate);
+                entity.setPolicyFyp(BigDecimal.valueOf(policyFyp.doubleValue()));
+                entity.setPolicyApe(BigDecimal.valueOf(policyApe.doubleValue()));
+                entity.setCompanyCode(normalizedCompanyCode);
+                entity.setCreatedBy(normalizedCreatedBy);
+
+                repository.save(entity);
+                created++;
+            }
+        }
+
+        boolean success = errors.isEmpty();
+        return new MasterPolicySalesImportResult(success, created, updated, errors);
+    }
+
+    @Transactional
     public MasterPolicySalesImportResult importCsv(String companyCode, MultipartFile file, boolean removeExisting, String createdBy) {
         String normalizedCompanyCode = normalizeString(companyCode);
         if (normalizedCompanyCode == null) {
             return new MasterPolicySalesImportResult(false, 0, 0, List.of(
-                    new MasterPolicySalesImportError(0, "Company Code", "Wajib diisi", companyCode)
+                    new MasterPolicySalesImportError(0, "Company Code", "Required", companyCode)
             ));
         }
 
@@ -315,19 +427,19 @@ public class MasterPolicySalesService {
                     }
 
                     if (isBlank(agentCode)) {
-                        errors.add(new MasterPolicySalesImportError(rowNumber, "Agent Code", "Wajib diisi", agentCode));
+                        errors.add(new MasterPolicySalesImportError(rowNumber, "Agent Code", "Required", agentCode));
                         continue;
                     }
                     if (policyDate == null) {
-                        errors.add(new MasterPolicySalesImportError(rowNumber, "Policy Date", "Wajib diisi", policyDateRaw));
+                        errors.add(new MasterPolicySalesImportError(rowNumber, "Policy Date", "Required", policyDateRaw));
                         continue;
                     }
                     if (policyFyp == null) {
-                        errors.add(new MasterPolicySalesImportError(rowNumber, "Policy FYP", "Wajib diisi", policyFypRaw));
+                        errors.add(new MasterPolicySalesImportError(rowNumber, "Policy FYP", "Required", policyFypRaw));
                         continue;
                     }
                     if (policyApe == null) {
-                        errors.add(new MasterPolicySalesImportError(rowNumber, "Policy APE", "Wajib diisi", policyApeRaw));
+                        errors.add(new MasterPolicySalesImportError(rowNumber, "Policy APE", "Required", policyApeRaw));
                         continue;
                     }
 
@@ -365,7 +477,7 @@ public class MasterPolicySalesService {
         String normalizedCompanyCode = normalizeString(companyCode);
         if (normalizedCompanyCode == null) {
             return new MasterPolicySalesImportResult(false, 0, 0, List.of(
-                    new MasterPolicySalesImportError(0, "Company Code", "Wajib diisi", companyCode)
+                    new MasterPolicySalesImportError(0, "Company Code", "Required", companyCode)
             ));
         }
 
@@ -398,19 +510,19 @@ public class MasterPolicySalesService {
             BigDecimal policyApe = item == null ? null : item.getPolicyApe();
 
             if (agentCode == null || agentCode.isBlank()) {
-                errors.add(new MasterPolicySalesImportError(rowNumber, "Agent Code", "Wajib diisi", null));
+                errors.add(new MasterPolicySalesImportError(rowNumber, "Agent Code", "Required", null));
                 continue;
             }
             if (policyDate == null) {
-                errors.add(new MasterPolicySalesImportError(rowNumber, "Policy Date", "Wajib diisi", null));
+                errors.add(new MasterPolicySalesImportError(rowNumber, "Policy Date", "Required", null));
                 continue;
             }
             if (policyFyp == null) {
-                errors.add(new MasterPolicySalesImportError(rowNumber, "Policy FYP", "Wajib diisi", null));
+                errors.add(new MasterPolicySalesImportError(rowNumber, "Policy FYP", "Required", null));
                 continue;
             }
             if (policyApe == null) {
-                errors.add(new MasterPolicySalesImportError(rowNumber, "Policy APE", "Wajib diisi", null));
+                errors.add(new MasterPolicySalesImportError(rowNumber, "Policy APE", "Required", null));
                 continue;
             }
 
@@ -467,7 +579,7 @@ public class MasterPolicySalesService {
             return bos.toByteArray();
         } catch (Exception e) {
             log.error("Error build excel template policy sales", e);
-            throw new RuntimeException("Gagal membuat template excel", e);
+            throw new RuntimeException("Failed to create Excel template", e);
         }
     }
 
@@ -497,16 +609,16 @@ public class MasterPolicySalesService {
         BigDecimal policyApe = request.getPolicyApe();
 
         if (agentCode == null) {
-            throw new ValidationException("Agent Code wajib diisi");
+            throw new ValidationException("Agent Code is required");
         }
         if (policyDate == null) {
-            throw new ValidationException("Policy Date wajib diisi");
+            throw new ValidationException("Policy Date is required");
         }
         if (policyFyp == null) {
-            throw new ValidationException("Policy FYP wajib diisi");
+            throw new ValidationException("Policy FYP is required");
         }
         if (policyApe == null) {
-            throw new ValidationException("Policy APE wajib diisi");
+            throw new ValidationException("Policy APE is required");
         }
 
         entity.setAgentCode(agentCode);
@@ -518,6 +630,7 @@ public class MasterPolicySalesService {
     private MasterPolicySalesResponse toResponse(MasterPolicySales entity) {
         return new MasterPolicySalesResponse(
                 entity.getId(),
+                entity.getCompanyCode(),
                 entity.getAgentCode(),
                 entity.getPolicyDate(),
                 entity.getPolicyFyp(),

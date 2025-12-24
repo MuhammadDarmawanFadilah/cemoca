@@ -18,6 +18,12 @@ public class InvitationResponse {
     private String nomorHp;
     private String invitationToken;
     private String status;
+
+    private String invitationType;
+
+    private String companyName;
+
+    private String companyCode;
     
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss")
     private LocalDateTime sentAt;
@@ -38,6 +44,9 @@ public class InvitationResponse {
         this.nomorHp = invitation.getNomorHp();
         this.invitationToken = invitation.getInvitationToken();
         this.status = invitation.getStatus().toString();
+        this.invitationType = invitation.getInvitationType() == null ? null : invitation.getInvitationType().toString();
+        this.companyName = invitation.getCompanyName();
+        this.companyCode = invitation.getCompanyCode();
         this.sentAt = invitation.getSentAt();
         this.expiresAt = invitation.getExpiresAt();
         this.usedAt = invitation.getUsedAt();

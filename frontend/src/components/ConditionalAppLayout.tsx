@@ -21,9 +21,7 @@ const noSidebarRoutes = [
   "/login",
   "/forgot-password",
   "/reset-password",
-  "/register",
-  "/register/invitation",
-  "/register/public",
+  "/register/company-invitation",
 ];
 
 export default function ConditionalAppLayout({ 

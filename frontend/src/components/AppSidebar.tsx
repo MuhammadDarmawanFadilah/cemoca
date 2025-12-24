@@ -18,6 +18,7 @@ import {
   FileText,
   Mail,
   CalendarClock,
+  FolderOpen,
 } from "lucide-react";
 import {
   DndContext,
@@ -207,9 +208,14 @@ const AppSidebar = () => {
   // Admin items (accessible to admin/moderator)
   const adminItems = [
     {
-      title: t('nav.users'),
-      url: "/users",
+      title: "Admin",
+      url: "/admin",
       icon: Users,
+    },
+    {
+      title: "Company",
+      url: "/company",
+      icon: Building,
     },
     {
       title: t('nav.roles'),
@@ -228,6 +234,11 @@ const AppSidebar = () => {
       title: t('nav.policySales'),
       url: "/master-data/policy-sales",
       icon: FileText,
+    },
+    {
+      title: "File Manager",
+      url: "/admin/master-data/file-manager",
+      icon: FolderOpen,
     },
   ];
 

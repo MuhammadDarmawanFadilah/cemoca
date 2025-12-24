@@ -23,7 +23,6 @@ import { useState, useEffect, useCallback } from "react";
 import { imageAPI, biografiAPI } from "@/lib/api";
 import { Loader2 } from "lucide-react";
 import { SupportedLocale } from "@/lib/i18n";
-import { getCompanyProfileFromLocalStorage } from "@/lib/companyProfileLocal";
 
 const Navbar = () => {
   const { setTheme } = useTheme();
@@ -38,9 +37,7 @@ const Navbar = () => {
     "/login",
     "/forgot-password",
     "/reset-password",
-    "/register",
-    "/register/invitation",
-    "/register/public",
+    "/register/company-invitation",
   ].some((p) => pathname === p || pathname.startsWith(`${p}/`));
 
   // Debug PWA state
@@ -49,11 +46,12 @@ const Navbar = () => {
   const [isCategoryLoading, setIsCategoryLoading] = useState(false);
   const [currentCategory, setCurrentCategory] = useState('Semua');
   const [biografiPhoto, setBiografiPhoto] = useState<string | null>(null);
-  const [companyPhotoFilename, setCompanyPhotoFilename] = useState<string | null>(null);
 
   // Function to get page title and icon based on current path
   const getPageInfo = () => {
     if (pathname === "/" || pathname === "/dashboard") return { title: t('nav.dashboard'), icon: Home };
+    if (pathname === "/admin") return { title: "Admin", icon: Users };
+    if (pathname === "/company") return { title: "Company", icon: Building2 };
     if (pathname === "/documents") return { title: "Document Center", icon: FileText };
     if (pathname.startsWith("/biografi")) {
       if (pathname.includes("/edit")) return { title: "Edit Biografi", icon: UserCircle };
@@ -128,26 +126,6 @@ const Navbar = () => {
     
     fetchBiographyPhoto();
   }, [user]);
-
-  useEffect(() => {
-    const updateCompanyPhoto = () => {
-      if (!isAuthenticated) {
-        setCompanyPhotoFilename(null);
-        return;
-      }
-
-      const profile = getCompanyProfileFromLocalStorage(user?.id);
-      setCompanyPhotoFilename(profile.photoFilename || null);
-    };
-
-    updateCompanyPhoto();
-
-    const onUpdated = () => updateCompanyPhoto();
-    window.addEventListener("companyProfileUpdated", onUpdated as EventListener);
-    return () => {
-      window.removeEventListener("companyProfileUpdated", onUpdated as EventListener);
-    };
-  }, [isAuthenticated, user?.id]);
 
   // Listen for category changes from BeritaPage
   useEffect(() => {
@@ -314,8 +292,7 @@ const Navbar = () => {
             <DropdownMenuTrigger>              <Avatar className="h-8 w-8">
                 <AvatarImage 
                   src={
-                    (companyPhotoFilename ? imageAPI.getImageUrl(companyPhotoFilename) : undefined) ||
-                    user?.avatarUrl || 
+                    (user?.avatarUrl ? imageAPI.getImageUrl(user.avatarUrl) : undefined) ||
                     (user?.biografi?.fotoProfil ? imageAPI.getImageUrl(user.biografi.fotoProfil) : 
                      user?.biografi?.foto ? imageAPI.getImageUrl(user.biografi.foto) :
                      biografiPhoto ? imageAPI.getImageUrl(biografiPhoto) : undefined)

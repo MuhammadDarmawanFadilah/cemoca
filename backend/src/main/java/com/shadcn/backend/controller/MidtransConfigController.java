@@ -65,14 +65,14 @@ public class MidtransConfigController {
             savedConfig.setServerKey("***HIDDEN***");
             return ResponseEntity.ok(Map.of(
                 "success", true,
-                "message", "Konfigurasi Midtrans berhasil disimpan",
+                "message", "Midtrans configuration saved successfully",
                 "data", savedConfig
             ));
         } catch (Exception e) {
             logger.error("Error saving Midtrans config", e);
             return ResponseEntity.badRequest().body(Map.of(
                 "success", false,
-                "message", "Gagal menyimpan konfigurasi: " + e.getMessage()
+                "message", "Failed to save configuration: " + e.getMessage()
             ));
         }
     }
@@ -89,14 +89,14 @@ public class MidtransConfigController {
             updatedConfig.setServerKey("***HIDDEN***");
             return ResponseEntity.ok(Map.of(
                 "success", true,
-                "message", "Konfigurasi Midtrans berhasil diperbarui",
+                "message", "Midtrans configuration updated successfully",
                 "data", updatedConfig
             ));
         } catch (Exception e) {
             logger.error("Error updating Midtrans config", e);
             return ResponseEntity.badRequest().body(Map.of(
                 "success", false,
-                "message", "Gagal memperbarui konfigurasi: " + e.getMessage()
+                "message", "Failed to update configuration: " + e.getMessage()
             ));
         }
     }
@@ -110,13 +110,13 @@ public class MidtransConfigController {
             midtransConfigService.deleteConfig(id);
             return ResponseEntity.ok(Map.of(
                 "success", true,
-                "message", "Konfigurasi Midtrans berhasil dihapus"
+                "message", "Midtrans configuration deleted successfully"
             ));
         } catch (Exception e) {
             logger.error("Error deleting Midtrans config", e);
             return ResponseEntity.badRequest().body(Map.of(
                 "success", false,
-                "message", "Gagal menghapus konfigurasi: " + e.getMessage()
+                "message", "Failed to delete configuration: " + e.getMessage()
             ));
         }
     }
@@ -130,13 +130,13 @@ public class MidtransConfigController {
             midtransConfigService.activateConfig(id);
             return ResponseEntity.ok(Map.of(
                 "success", true,
-                "message", "Konfigurasi Midtrans berhasil diaktifkan"
+                "message", "Midtrans configuration activated successfully"
             ));
         } catch (Exception e) {
             logger.error("Error activating Midtrans config", e);
             return ResponseEntity.badRequest().body(Map.of(
                 "success", false,
-                "message", "Gagal mengaktifkan konfigurasi: " + e.getMessage()
+                "message", "Failed to activate configuration: " + e.getMessage()
             ));
         }
     }

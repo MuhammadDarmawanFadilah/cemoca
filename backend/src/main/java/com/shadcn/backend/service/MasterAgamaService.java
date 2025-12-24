@@ -56,7 +56,7 @@ public class MasterAgamaService {
     public MasterAgamaResponse findById(Long id) {
         log.info("Finding master agama by id: {}", id);
         MasterAgama entity = repository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Data agama dengan ID " + id + " tidak ditemukan"));
+                .orElseThrow(() -> new ResourceNotFoundException("Religion data with ID " + id + " not found"));
         return toResponse(entity);
     }
       @Transactional
@@ -65,12 +65,12 @@ public class MasterAgamaService {
         
         // Validate input
         if (request.getNama() == null || request.getNama().trim().isEmpty()) {
-            throw new ValidationException("Nama agama tidak boleh kosong");
+            throw new ValidationException("Religion name is required");
         }
         
         // Check if name already exists
         if (repository.findByNamaIgnoreCase(request.getNama().trim()).isPresent()) {
-            throw new DuplicateResourceException("Agama dengan nama '" + request.getNama().trim() + "' sudah terdaftar dalam sistem");
+            throw new DuplicateResourceException("Religion with name '" + request.getNama().trim() + "' already exists");
         }
         
         MasterAgama entity = toEntity(request);
@@ -84,16 +84,16 @@ public class MasterAgamaService {
         log.info("Updating master agama with id: {} - {}", id, request);
         
         MasterAgama existing = repository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Data agama dengan ID " + id + " tidak ditemukan"));
+                .orElseThrow(() -> new ResourceNotFoundException("Religion data with ID " + id + " not found"));
         
         // Validate input
         if (request.getNama() == null || request.getNama().trim().isEmpty()) {
-            throw new ValidationException("Nama agama tidak boleh kosong");
+            throw new ValidationException("Religion name is required");
         }
         
         // Check if name already exists (excluding current record)
         if (repository.existsByNamaIgnoreCaseAndIdNot(request.getNama().trim(), id)) {
-            throw new DuplicateResourceException("Agama dengan nama '" + request.getNama().trim() + "' sudah terdaftar dalam sistem");
+            throw new DuplicateResourceException("Religion with name '" + request.getNama().trim() + "' already exists");
         }
           existing.setNama(request.getNama());
         existing.setDeskripsi(request.getDeskripsi());
@@ -110,7 +110,7 @@ public class MasterAgamaService {
         log.info("Deleting master agama with id: {}", id);
         
         if (!repository.existsById(id)) {
-            throw new ResourceNotFoundException("Data agama dengan ID " + id + " tidak ditemukan");
+            throw new ResourceNotFoundException("Religion data with ID " + id + " not found");
         }
         
         repository.deleteById(id);
@@ -122,7 +122,7 @@ public class MasterAgamaService {
         log.info("Toggling active status for master agama with id: {}", id);
         
         MasterAgama entity = repository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Data agama dengan ID " + id + " tidak ditemukan"));
+                .orElseThrow(() -> new ResourceNotFoundException("Religion data with ID " + id + " not found"));
         
         entity.setIsActive(!entity.getIsActive());
         MasterAgama saved = repository.save(entity);

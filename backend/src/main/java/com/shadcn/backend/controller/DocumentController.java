@@ -165,7 +165,7 @@ public class DocumentController {
             log.error("IO Error creating document", e);
             Map<String, Object> errorResponse = new HashMap<>();
             errorResponse.put("error", "Failed to create document");
-            errorResponse.put("message", "Terjadi kesalahan saat menyimpan file. Silakan coba lagi.");
+            errorResponse.put("message", "Failed to save the file. Please try again.");
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
         } catch (Exception e) {
             log.error("Error creating document", e);
@@ -220,7 +220,7 @@ public class DocumentController {
             log.error("IO Error updating document with file: {}", id, e);
             Map<String, Object> errorResponse = new HashMap<>();
             errorResponse.put("error", "Failed to update document");
-            errorResponse.put("message", "Terjadi kesalahan saat menyimpan file. Silakan coba lagi.");
+            errorResponse.put("message", "Failed to save the file. Please try again.");
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
         } catch (RuntimeException e) {
             log.error("Error updating document with file: {}", id, e);

@@ -69,7 +69,7 @@ public class RoleController {
             return ResponseEntity.badRequest().body(e.getMessage());
         } catch (Exception e) {
             log.error("Error creating role", e);
-            return ResponseEntity.internalServerError().body("Terjadi kesalahan saat membuat role");
+            return ResponseEntity.internalServerError().body("Failed to create role");
         }
     }
     
@@ -81,7 +81,7 @@ public class RoleController {
         } catch (RuntimeException e) {
             return ResponseEntity.badRequest().body(e.getMessage());
         } catch (Exception e) {
-            return ResponseEntity.internalServerError().body("Terjadi kesalahan saat mengupdate role");
+            return ResponseEntity.internalServerError().body("Failed to update role");
         }
     }
     
@@ -89,11 +89,11 @@ public class RoleController {
     public ResponseEntity<?> deleteRole(@PathVariable Long id) {
         try {
             roleService.deleteRole(id);
-            return ResponseEntity.ok().body("Role berhasil dihapus");
+            return ResponseEntity.ok().body("Role deleted successfully");
         } catch (RuntimeException e) {
             return ResponseEntity.badRequest().body(e.getMessage());
         } catch (Exception e) {
-            return ResponseEntity.internalServerError().body("Terjadi kesalahan saat menghapus role");
+            return ResponseEntity.internalServerError().body("Failed to delete role");
         }
     }
     
@@ -121,9 +121,9 @@ public class RoleController {
     public ResponseEntity<?> initializeDefaultRoles() {
         try {
             roleService.initializeDefaultRoles();
-            return ResponseEntity.ok().body("Default roles berhasil dibuat");
+            return ResponseEntity.ok().body("Default roles created successfully");
         } catch (Exception e) {
-            return ResponseEntity.internalServerError().body("Terjadi kesalahan saat membuat default roles");
+            return ResponseEntity.internalServerError().body("Failed to create default roles");
         }
     }
 }

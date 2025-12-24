@@ -11,7 +11,7 @@ import java.util.List;
 @Data
 public class MasterPolicySalesApiImportRequest {
 
-    @NotBlank(message = "Company Code wajib diisi")
+    @NotBlank(message = "Company Code is required")
     @JsonAlias({"company_code", "companyCode"})
     private String companyCode;
 
@@ -22,6 +22,6 @@ public class MasterPolicySalesApiImportRequest {
     private Boolean removeExisting;
 
     @Valid
-    @NotNull(message = "items wajib diisi")
+    @NotNull(message = "Items is required")
     private List<MasterPolicySalesRequest> items;
 }

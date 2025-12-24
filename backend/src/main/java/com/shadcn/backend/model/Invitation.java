@@ -30,6 +30,16 @@ public class Invitation {
     @Size(max = 100, message = "Nama lengkap maksimal 100 karakter")
     @Column(name = "nama_lengkap", nullable = false)
     private String namaLengkap;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "invitation_type", nullable = false, length = 20)
+    private InvitationType invitationType = InvitationType.COMPANY;
+
+    @Column(name = "company_name", length = 150)
+    private String companyName;
+
+    @Column(name = "company_code", length = 32)
+    private String companyCode;
     
     @NotBlank(message = "Nomor HP is required")
     @Size(max = 20, message = "Nomor HP maksimal 20 karakter")
@@ -75,6 +85,11 @@ public class Invitation {
     @OneToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "created_user_id")
     private User createdUser;
+
+    public enum InvitationType {
+        MEMBER,
+        COMPANY
+    }
       public enum InvitationStatus {
         PENDING,
         SENT,
@@ -94,6 +109,12 @@ public class Invitation {
         if (expiresAt == null) {
             // Set expiration to 7 days from now
             expiresAt = LocalDateTime.now().plusDays(7);
+        }
+
+        if (invitationType == InvitationType.COMPANY) {
+            if (companyName == null || companyName.isBlank()) {
+                companyName = namaLengkap;
+            }
         }
     }
     

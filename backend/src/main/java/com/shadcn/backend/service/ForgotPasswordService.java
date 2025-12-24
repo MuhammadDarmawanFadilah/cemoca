@@ -55,7 +55,7 @@ public class ForgotPasswordService {
             if (isRateLimited(user)) {
                 return ForgotPasswordResponse.builder()
                     .success(false)
-                    .message("Terlalu banyak permintaan reset password. Silakan coba lagi nanti.")
+                    .message("Too many password reset requests. Please try again later.")
                     .build();
             }
 
@@ -63,7 +63,7 @@ public class ForgotPasswordService {
             if (user.getPhoneNumber() == null || user.getPhoneNumber().trim().isEmpty()) {
                 return ForgotPasswordResponse.builder()
                     .success(false)
-                    .message("Akun tidak memiliki nomor telepon yang terdaftar.")
+                    .message("This account does not have a registered phone number.")
                     .build();
             }
 
@@ -99,7 +99,7 @@ public class ForgotPasswordService {
                 passwordResetTokenRepository.delete(tokenEntity);
                 return ForgotPasswordResponse.builder()
                     .success(false)
-                    .message("Gagal mengirim pesan WhatsApp. Silakan coba lagi.")
+                    .message("Failed to send WhatsApp message. Please try again.")
                     .build();
             }
 
@@ -107,7 +107,7 @@ public class ForgotPasswordService {
             log.error("Error processing forgot password request: {}", e.getMessage(), e);
             return ForgotPasswordResponse.builder()
                 .success(false)
-                .message("Terjadi kesalahan sistem. Silakan coba lagi.")
+                    .message("A system error occurred. Please try again.")
                 .build();
         }
     }
@@ -122,7 +122,7 @@ public class ForgotPasswordService {
             if (tokenOpt.isEmpty()) {
                 return ForgotPasswordResponse.builder()
                     .success(false)
-                    .message("Token reset password tidak valid atau sudah digunakan.")
+                    .message("The password reset token is invalid or has already been used.")
                     .build();
             }
 
@@ -132,7 +132,7 @@ public class ForgotPasswordService {
             if (token.isExpired()) {
                 return ForgotPasswordResponse.builder()
                     .success(false)
-                    .message("Token reset password telah kedaluwarsa.")
+                    .message("The password reset token has expired.")
                     .build();
             }
 
@@ -150,14 +150,14 @@ public class ForgotPasswordService {
 
             return ForgotPasswordResponse.builder()
                 .success(true)
-                .message("Password berhasil direset. Silakan login dengan password baru.")
+                    .message("Password reset successfully. Please log in with your new password.")
                 .build();
 
         } catch (Exception e) {
             log.error("Error resetting password: {}", e.getMessage(), e);
             return ForgotPasswordResponse.builder()
                 .success(false)
-                .message("Terjadi kesalahan sistem. Silakan coba lagi.")
+                    .message("A system error occurred. Please try again.")
                 .build();
         }
     }
@@ -170,7 +170,7 @@ public class ForgotPasswordService {
             if (tokenOpt.isEmpty()) {
                 return ForgotPasswordResponse.builder()
                     .success(false)
-                    .message("Token reset password tidak valid atau sudah digunakan.")
+                    .message("The password reset token is invalid or has already been used.")
                     .build();
             }
 
@@ -179,7 +179,7 @@ public class ForgotPasswordService {
             if (resetToken.isExpired()) {
                 return ForgotPasswordResponse.builder()
                     .success(false)
-                    .message("Token reset password telah kedaluwarsa.")
+                    .message("The password reset token has expired.")
                     .build();
             }
 
@@ -192,7 +192,7 @@ public class ForgotPasswordService {
             log.error("Error verifying reset token: {}", e.getMessage(), e);
             return ForgotPasswordResponse.builder()
                 .success(false)
-                .message("Terjadi kesalahan sistem.")
+                    .message("A system error occurred.")
                 .build();
         }
     }

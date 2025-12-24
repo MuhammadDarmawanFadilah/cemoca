@@ -20,6 +20,9 @@ public class RegistrationRequest {
     @Email(message = "Email should be valid")
     private String email;
 
+    @NotBlank(message = "Owner name is required")
+    private String ownerName;
+
     @NotBlank(message = "Company name is required")
     private String companyName;
 
@@ -28,7 +31,7 @@ public class RegistrationRequest {
     private String password;
 
     @NotBlank(message = "Phone number is required")
-    @Size(max = 20, message = "Phone number maksimal 20 karakter")
+    @Size(max = 20, message = "Phone number must be at most 20 characters")
     private String phoneNumber;
 
     @NotBlank(message = "Agency range is required")

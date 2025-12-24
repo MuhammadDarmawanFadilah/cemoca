@@ -2,6 +2,7 @@ package com.shadcn.backend.controller;
 
 import com.shadcn.backend.dto.UserRequest;
 import com.shadcn.backend.model.User;
+import com.shadcn.backend.service.AuthService;
 import com.shadcn.backend.service.UserService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -22,6 +23,35 @@ import java.util.Optional;
 public class UserController {
     
     private final UserService userService;
+    private final AuthService authService;
+
+    private static class UnauthorizedException extends RuntimeException {
+        UnauthorizedException(String message) {
+            super(message);
+        }
+    }
+
+    private static class ForbiddenException extends RuntimeException {
+        ForbiddenException(String message) {
+            super(message);
+        }
+    }
+
+    private User requireAdmin(String token) {
+        if (token == null || !token.startsWith("Bearer ")) {
+            throw new UnauthorizedException("No valid token provided");
+        }
+
+        String actualToken = token.substring(7);
+        User user = authService.getUserFromToken(actualToken);
+        if (user == null) {
+            throw new UnauthorizedException("Invalid token");
+        }
+        if (!user.isAdmin()) {
+            throw new ForbiddenException("Forbidden");
+        }
+        return user;
+    }
     
     @GetMapping
     public ResponseEntity<List<User>> getAllUsers() {
@@ -103,34 +133,69 @@ public class UserController {
     }
     
     @PostMapping
-    public ResponseEntity<User> createUser(@RequestBody UserRequest userRequest) {
+    public ResponseEntity<?> createUser(
+            @RequestHeader(value = "Authorization", required = false) String token,
+            @RequestBody UserRequest userRequest
+    ) {
         try {
+            User adminUser = requireAdmin(token);
             log.info("Creating user with username: {}", userRequest.getUsername());
             User createdUser = userService.createUser(userRequest);
+
+            boolean needsCompanyCode = createdUser.getCompanyCode() == null || createdUser.getCompanyCode().isBlank();
+            boolean adminHasCompanyCode = adminUser.getCompanyCode() != null && !adminUser.getCompanyCode().isBlank();
+            if (needsCompanyCode && adminHasCompanyCode) {
+                createdUser.setCompanyCode(adminUser.getCompanyCode());
+                if (createdUser.getCompanyName() == null || createdUser.getCompanyName().isBlank()) {
+                    createdUser.setCompanyName(adminUser.getCompanyName());
+                }
+                if (createdUser.getOwnerName() == null || createdUser.getOwnerName().isBlank()) {
+                    createdUser.setOwnerName(adminUser.getOwnerName());
+                }
+                createdUser = userService.updateUser(createdUser);
+            }
+
             log.info("User created successfully: {}", createdUser.getUsername());
             return ResponseEntity.ok(createdUser);
         } catch (RuntimeException e) {
+            if (e instanceof UnauthorizedException) {
+                return ResponseEntity.status(401).body(java.util.Map.of("error", e.getMessage()));
+            }
+            if (e instanceof ForbiddenException) {
+                return ResponseEntity.status(403).body(java.util.Map.of("error", e.getMessage()));
+            }
             log.warn("Error creating user: {}", e.getMessage());
-            return ResponseEntity.badRequest().build();
+            return ResponseEntity.badRequest().body(java.util.Map.of("error", e.getMessage()));
         } catch (Exception e) {
             log.error("Error creating user", e);
-            return ResponseEntity.internalServerError().build();
+            return ResponseEntity.internalServerError().body(java.util.Map.of("error", "Failed to create user"));
         }
     }
     
     @PutMapping("/{id}")
-    public ResponseEntity<User> updateUser(@PathVariable Long id, @RequestBody UserRequest userRequest) {
+    public ResponseEntity<?> updateUser(
+            @RequestHeader(value = "Authorization", required = false) String token,
+            @PathVariable Long id,
+            @RequestBody UserRequest userRequest
+    ) {
         try {
+            requireAdmin(token);
             log.info("Updating user with ID: {}", id);
             User updatedUser = userService.updateUser(id, userRequest);
             log.info("User updated successfully: {}", updatedUser.getUsername());
             return ResponseEntity.ok(updatedUser);
         } catch (RuntimeException e) {
+            if (e instanceof UnauthorizedException) {
+                return ResponseEntity.status(401).body(java.util.Map.of("error", e.getMessage()));
+            }
+            if (e instanceof ForbiddenException) {
+                return ResponseEntity.status(403).body(java.util.Map.of("error", e.getMessage()));
+            }
             log.warn("Error updating user {}: {}", id, e.getMessage());
-            return ResponseEntity.badRequest().build();
+            return ResponseEntity.badRequest().body(java.util.Map.of("error", e.getMessage()));
         } catch (Exception e) {
             log.error("Error updating user: {}", id, e);
-            return ResponseEntity.internalServerError().build();
+            return ResponseEntity.internalServerError().body(java.util.Map.of("error", "Failed to update user"));
         }
     }
     

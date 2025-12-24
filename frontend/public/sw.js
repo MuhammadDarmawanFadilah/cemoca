@@ -1,11 +1,11 @@
 // Service Worker for CEMOCA PWA - Auto-generated
-// Generated at: 2025-12-23T11:27:26.691Z
-// Deployment ID: wtefoy
+// Generated at: 2025-12-24T03:15:38.979Z
+// Deployment ID: 5hvb2e
 
 // Dynamic cache name with timestamp for development
 const VERSION = '0.1.0';
-const BUILD_TIME = 1766489246642;
-const DEPLOYMENT_ID = 'wtefoy';
+const BUILD_TIME = 1766546138964;
+const DEPLOYMENT_ID = '5hvb2e';
 const isDev = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
 const CACHE_NAME = isDev ? `cemoca-system-dev-${BUILD_TIME}` : `cemoca-system-v${VERSION}-${DEPLOYMENT_ID}`;
 const OFFLINE_URL = '/offline';
@@ -178,7 +178,7 @@ self.addEventListener('fetch', (event) => {
   );
 });
 
-// Handle push notifications for CEMOCA updates
+// Handle push notifications for alumni updates
 self.addEventListener('push', (event) => {
   console.log('Service Worker: Push event received');
   

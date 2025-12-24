@@ -18,6 +18,11 @@ public interface MasterAgencyAgentRepository extends JpaRepository<MasterAgencyA
 
         long countByCompanyCode(String companyCode);
 
+        boolean existsByCompanyCodeIgnoreCase(String companyCode);
+
+        @Query("SELECT DISTINCT a.companyCode FROM MasterAgencyAgent a WHERE a.companyCode IS NOT NULL AND TRIM(a.companyCode) <> ''")
+        java.util.List<String> findDistinctCompanyCodes();
+
         Optional<MasterAgencyAgent> findByCompanyCodeAndAgentCodeIgnoreCase(String companyCode, String agentCode);
 
         java.util.List<MasterAgencyAgent> findByCompanyCodeAndAppointmentDateAndIsActiveTrue(String companyCode, LocalDate appointmentDate);
@@ -55,6 +60,21 @@ public interface MasterAgencyAgentRepository extends JpaRepository<MasterAgencyA
             "(:isActive IS NULL OR a.isActive = :isActive)")
     Page<MasterAgencyAgent> findWithColumnFilters(
             @Param("companyCode") String companyCode,
+            @Param("fullName") String fullName,
+            @Param("phoneNo") String phoneNo,
+            @Param("rankCode") String rankCode,
+            @Param("createdBy") String createdBy,
+            @Param("isActive") Boolean isActive,
+            Pageable pageable
+    );
+
+    @Query("SELECT a FROM MasterAgencyAgent a WHERE " +
+            "(:fullName IS NULL OR LOWER(a.fullName) LIKE LOWER(CONCAT('%', :fullName, '%'))) AND " +
+            "(:phoneNo IS NULL OR LOWER(a.phoneNo) LIKE LOWER(CONCAT('%', :phoneNo, '%'))) AND " +
+            "(:rankCode IS NULL OR LOWER(a.rankCode) LIKE LOWER(CONCAT('%', :rankCode, '%'))) AND " +
+            "(:createdBy IS NULL OR LOWER(a.createdBy) LIKE LOWER(CONCAT('%', :createdBy, '%'))) AND " +
+            "(:isActive IS NULL OR a.isActive = :isActive)")
+    Page<MasterAgencyAgent> findAllWithColumnFilters(
             @Param("fullName") String fullName,
             @Param("phoneNo") String phoneNo,
             @Param("rankCode") String rankCode,

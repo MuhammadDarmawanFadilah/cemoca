@@ -3,7 +3,7 @@ package com.shadcn.backend.service;
 import com.shadcn.backend.model.LearningScheduleConfig;
 import com.shadcn.backend.model.LearningScheduleHistory;
 import com.shadcn.backend.model.SchedulerLogEntry;
-import com.shadcn.backend.repository.SchedulerLogRepository;
+import com.shadcn.backend.repository.SchedulerLogEntryRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
@@ -16,7 +16,7 @@ import java.io.StringWriter;
 @RequiredArgsConstructor
 public class SchedulerLogService {
 
-    private final SchedulerLogRepository repository;
+    private final SchedulerLogEntryRepository repository;
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void info(String event, LearningScheduleConfig cfg, LearningScheduleHistory history, String message) {

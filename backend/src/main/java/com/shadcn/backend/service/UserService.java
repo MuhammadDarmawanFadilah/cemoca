@@ -2,6 +2,8 @@ package com.shadcn.backend.service;
 
 import com.shadcn.backend.dto.RegistrationRequest;
 import com.shadcn.backend.dto.UserRequest;
+import com.shadcn.backend.exception.DuplicateResourceException;
+import com.shadcn.backend.exception.ValidationException;
 import com.shadcn.backend.model.Role;
 import com.shadcn.backend.model.User;
 import com.shadcn.backend.repository.RoleRepository;
@@ -17,6 +19,8 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
 import java.util.Optional;
 import java.util.Locale;
+import java.util.LinkedHashSet;
+import java.util.Set;
 import java.util.UUID;
 
 @Slf4j
@@ -89,64 +93,78 @@ public class UserService {
 
         String username = request.getUsername() != null ? request.getUsername().trim() : null;
         String email = request.getEmail() != null ? request.getEmail().trim() : null;
+        String ownerName = request.getOwnerName() != null ? request.getOwnerName().trim() : null;
         String companyName = request.getCompanyName() != null ? request.getCompanyName().trim() : null;
         String phoneNumber = request.getPhoneNumber() != null ? request.getPhoneNumber().trim() : null;
         String agencyRange = request.getAgencyRange() != null ? request.getAgencyRange().trim() : null;
         String reasonToUse = request.getReasonToUse() != null ? request.getReasonToUse().trim() : null;
 
         if (username == null || username.isBlank()) {
-            throw new RuntimeException("Username is required");
+            throw new ValidationException("Username is required");
         }
         if (email == null || email.isBlank()) {
-            throw new RuntimeException("Email is required");
+            throw new ValidationException("Email is required");
+        }
+        if (ownerName == null || ownerName.isBlank()) {
+            throw new ValidationException("Owner name is required");
         }
         if (companyName == null || companyName.isBlank()) {
-            throw new RuntimeException("Company name is required");
+            throw new ValidationException("Company name is required");
         }
         if (phoneNumber == null || phoneNumber.isBlank()) {
-            throw new RuntimeException("Phone number is required");
+            throw new ValidationException("Phone number is required");
         }
         if (agencyRange == null || agencyRange.isBlank()) {
-            throw new RuntimeException("Agency range is required");
+            throw new ValidationException("Agency range is required");
         }
         if (reasonToUse == null || reasonToUse.isBlank()) {
-            throw new RuntimeException("Reason is required");
+            throw new ValidationException("Reason is required");
         }
         if (request.getPassword() == null || request.getPassword().trim().isEmpty()) {
-            throw new RuntimeException("Password is required");
+            throw new ValidationException("Password is required");
         }
 
-        if (existsByUsername(username)) {
-            throw new RuntimeException("Username already exists");
+        String companyCode = generateCompanyCode(companyName, username);
+        String resolvedCompanyName = companyName;
+
+        if (userRepository.existsByUsernameIgnoreCase(username)) {
+            throw new DuplicateResourceException("Username already exists");
         }
-        if (existsByEmail(email)) {
-            throw new RuntimeException("Email already exists");
+        if (userRepository.existsByEmailIgnoreCase(email)) {
+            throw new DuplicateResourceException("Email already exists");
         }
-        if (userRepository.existsByPhoneNumber(phoneNumber)) {
-            throw new RuntimeException("Phone number already exists");
+        Set<String> phoneCandidates = buildPhoneCandidates(phoneNumber);
+        if (!phoneCandidates.isEmpty() && userRepository.existsByPhoneNumberIn(phoneCandidates)) {
+            throw new DuplicateResourceException("Phone number already exists");
         }
 
         Role userRole = roleRepository.findByName("USER")
             .orElseGet(() -> roleRepository.findByName("MODERATOR")
                 .orElseThrow(() -> new RuntimeException("Role USER not found")));
 
-        String companyCode = generateCompanyCode(companyName, username);
-
         User user = User.builder()
             .username(username)
             .email(email)
-            .fullName(companyName)
+            .fullName(ownerName)
             .phoneNumber(phoneNumber)
             .password(passwordEncoder.encode(request.getPassword()))
             .role(userRole)
             .status(User.UserStatus.ACTIVE)
-            .companyName(companyName)
+            .companyName(resolvedCompanyName)
             .companyCode(companyCode)
+            .ownerName(ownerName)
             .agencyRange(agencyRange)
             .reasonToUse(reasonToUse)
             .build();
 
+        log.info("Before save - ownerName: {}, companyName: {}, companyCode: {}, agencyRange: {}, reasonToUse: {}", 
+                user.getOwnerName(), user.getCompanyName(), user.getCompanyCode(), user.getAgencyRange(), user.getReasonToUse());
+        
         User savedUser = userRepository.save(user);
+        
+        log.info("After save - ownerName: {}, companyName: {}, companyCode: {}, agencyRange: {}, reasonToUse: {}", 
+                savedUser.getOwnerName(), savedUser.getCompanyName(), savedUser.getCompanyCode(), savedUser.getAgencyRange(), savedUser.getReasonToUse());
+        
         log.info("Public registration successful for username: {}", savedUser.getUsername());
         return savedUser;
     }
@@ -175,6 +193,35 @@ public class UserService {
         }
 
         return normalized + UUID.randomUUID().toString().replace("-", "").substring(0, 10).toUpperCase(Locale.ROOT);
+    }
+
+    private Set<String> buildPhoneCandidates(String rawPhone) {
+        Set<String> candidates = new LinkedHashSet<>();
+        if (rawPhone == null) {
+            return candidates;
+        }
+
+        String trimmed = rawPhone.trim();
+        if (!trimmed.isBlank()) {
+            candidates.add(trimmed);
+        }
+
+        String digits = trimmed.replaceAll("\\D", "");
+        if (!digits.isBlank()) {
+            candidates.add(digits);
+            if (digits.startsWith("0") && digits.length() > 1) {
+                candidates.add("62" + digits.substring(1));
+                candidates.add("+62" + digits.substring(1));
+            }
+            if (digits.startsWith("62") && digits.length() > 2) {
+                candidates.add("0" + digits.substring(2));
+                candidates.add("+" + digits);
+            }
+        }
+
+        // Keep only reasonably short/long values
+        candidates.removeIf(v -> v == null || v.isBlank() || v.length() > 25);
+        return candidates;
     }
 
     public User updateUser(Long id, UserRequest userRequest) {
@@ -242,15 +289,33 @@ public class UserService {
     }
 
     public boolean existsByUsername(String username) {
-        return userRepository.existsByUsername(username);
+        if (username == null) {
+            return false;
+        }
+        String value = username.trim();
+        if (value.isBlank()) {
+            return false;
+        }
+        return userRepository.existsByUsernameIgnoreCase(value);
     }
 
     public boolean existsByEmail(String email) {
-        return userRepository.existsByEmail(email);
+        if (email == null) {
+            return false;
+        }
+        String value = email.trim();
+        if (value.isBlank()) {
+            return false;
+        }
+        return userRepository.existsByEmailIgnoreCase(value);
     }
 
     public boolean existsByPhoneNumber(String phoneNumber) {
-        return userRepository.existsByPhoneNumber(phoneNumber);
+        Set<String> candidates = buildPhoneCandidates(phoneNumber);
+        if (candidates.isEmpty()) {
+            return false;
+        }
+        return userRepository.existsByPhoneNumberIn(candidates);
     }
 
     public Page<User> getAllUsersPaginated(Pageable pageable) {

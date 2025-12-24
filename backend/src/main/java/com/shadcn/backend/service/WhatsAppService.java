@@ -109,7 +109,17 @@ public class WhatsAppService {
             return sendWhatsAppMessage(phoneNumber, message);
         } catch (Exception e) {
             logger.error("Failed to send WhatsApp invitation to {}: {}", phoneNumber, e.getMessage());
-            throw new RuntimeException("Gagal mengirim undangan WhatsApp: " + e.getMessage());
+            throw new RuntimeException("Failed to send WhatsApp invitation: " + e.getMessage());
+        }
+    }
+
+    public String sendCompanyInvitationMessage(String phoneNumber, String companyName, String invitationToken, int durationDays) {
+        try {
+            String message = buildCompanyInvitationMessage(companyName, invitationToken, durationDays);
+            return sendWhatsAppMessage(phoneNumber, message);
+        } catch (Exception e) {
+            logger.error("Failed to send WhatsApp company invitation to {}: {}", phoneNumber, e.getMessage());
+            throw new RuntimeException("Failed to send WhatsApp invitation: " + e.getMessage());
         }
     }
     
@@ -121,7 +131,7 @@ public class WhatsAppService {
             return sendWhatsAppMessage(phoneNumber, message);
         } catch (Exception e) {
             logger.error("Failed to send WhatsApp message to {}: {}", phoneNumber, e.getMessage());
-            throw new RuntimeException("Gagal mengirim pesan WhatsApp: " + e.getMessage());
+            throw new RuntimeException("Failed to send WhatsApp message: " + e.getMessage());
         }
     }
     
@@ -159,6 +169,22 @@ public class WhatsAppService {
             "⏰ Link ini berlaku selama 7 hari.\n\n" +
             "Terima kasih! 🙏",
             nama, registrationUrl
+        );
+    }
+
+    private String buildCompanyInvitationMessage(String companyName, String invitationToken, int durationDays) {
+        String registrationUrl = frontendUrl + "/register/company-invitation?token=" + invitationToken;
+        int days = durationDays <= 0 ? 7 : durationDays;
+
+        return String.format(
+            "*🏢 Undangan Registrasi Company - CAMOCA 🏢*\n\n" +
+            "Halo!\n\n" +
+            "Anda diundang untuk mendaftarkan perusahaan: *%s*\n\n" +
+            "📱 Klik link berikut untuk mendaftar:\n" +
+            "%s\n\n" +
+            "⏰ Link ini berlaku selama %d hari.\n\n" +
+            "Terima kasih.",
+            companyName, registrationUrl, days
         );
     }
     

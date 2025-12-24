@@ -30,7 +30,7 @@ import java.time.LocalDateTime;
 @DynamicUpdate
 @Data
 @Builder
-@NoArgsConstructor
+@NoArgsConstructor(force = true)
 @AllArgsConstructor
 @EqualsAndHashCode(onlyExplicitlyIncluded = true)
 @ToString(exclude = {"password"})
@@ -60,7 +60,7 @@ public class User {
     private String password;
     
     @NotBlank(message = "Phone number is required")
-    @Size(max = 20, message = "Phone number maksimal 20 karakter")
+    @Size(max = 20, message = "Phone number must be at most 20 characters")
     @Column(name = "phoneNumber", unique = true, nullable = false, length = 20)
     private String phoneNumber;
 
@@ -69,6 +69,9 @@ public class User {
 
     @Column(name = "company_code", length = 32)
     private String companyCode;
+
+    @Column(name = "owner_name", length = 150)
+    private String ownerName;
 
     @Column(name = "agency_range", length = 20)
     private String agencyRange;
@@ -124,6 +127,10 @@ public class User {
     @Column(name = "updated_at")
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss")
     private LocalDateTime updatedAt;
+
+    @Column(name = "last_access_at")
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd HH:mm:ss")
+    private LocalDateTime lastAccessAt;
     
     // Removed payments relationship for koperasi system
     
@@ -147,18 +154,6 @@ public class User {
     
     public boolean isAdmin() {
         return role != null && ("ADMIN".equals(role.getRoleName()) || "MODERATOR".equals(role.getRoleName()));
-    }
-    
-    /**
-     * Custom constructor for creating users with basic info
-     */
-    @Builder(builderMethodName = "basicBuilder")
-    public User(String username, String email, String fullName, String password, String phoneNumber) {        this.username = username;
-        this.email = email;
-        this.fullName = fullName;
-        this.password = password;
-        this.phoneNumber = phoneNumber;
-        this.status = UserStatus.ACTIVE;
     }
     
     /**

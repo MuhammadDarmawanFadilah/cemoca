@@ -8,8 +8,11 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.data.jpa.repository.Modifying;
 
 import java.time.LocalDateTime;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -60,14 +63,45 @@ public interface UserRepository extends JpaRepository<User, Long> {
     Page<User> findBySearchTermsIgnoreCase(@Param("search") String search, Pageable pageable);
     
     boolean existsByUsername(String username);
+
+       boolean existsByUsernameIgnoreCase(String username);
     
     boolean existsByEmail(String email);
+
+       boolean existsByEmailIgnoreCase(String email);
     
     boolean existsByPhoneNumber(String phoneNumber);
 
+       boolean existsByPhoneNumberIn(Collection<String> phoneNumbers);
        boolean existsByCompanyCode(String companyCode);
 
        Optional<User> findTopByCompanyCodeIgnoreCase(String companyCode);
+
+              List<User> findByCompanyCodeIgnoreCase(String companyCode);
+
+              @Query(value = "SELECT company_code, MAX(company_name) AS company_name, COUNT(*) AS total_users, " +
+                     "SUM(CASE WHEN status = 'ACTIVE' THEN 1 ELSE 0 END) AS active_users " +
+                     "FROM users WHERE company_code IS NOT NULL AND company_code <> '' " +
+                     "GROUP BY company_code ORDER BY company_name", nativeQuery = true)
+              List<Object[]> findCompanySummaries();
+
+              @Transactional
+              @Query(value = "UPDATE users SET company_name = :companyName WHERE LOWER(company_code) = LOWER(:companyCode)", nativeQuery = true)
+              @org.springframework.data.jpa.repository.Modifying
+              int updateCompanyNameByCompanyCode(@Param("companyCode") String companyCode, @Param("companyName") String companyName);
+
+              @Transactional
+              @Query(value = "UPDATE users SET status = :status WHERE LOWER(company_code) = LOWER(:companyCode)", nativeQuery = true)
+                    @Modifying
+              int updateStatusByCompanyCode(@Param("companyCode") String companyCode, @Param("status") String status);
+
+                    @Transactional
+                    @Modifying
+                    @Query(value = "DELETE FROM users " +
+                           "WHERE company_code IS NOT NULL AND company_code <> '' " +
+                           "AND (role_id IS NULL OR role_id NOT IN (SELECT id FROM roles WHERE UPPER(name) IN ('ADMIN','MODERATOR')))",
+                           nativeQuery = true)
+                    int deleteAllCompanyAccountsExcludingAdmins();
     
     @Query("SELECT COUNT(u) > 0 FROM User u WHERE u.phoneNumber = :phoneNumber AND u.id != :userId")
     boolean existsByPhoneNumberAndIdNot(@Param("phoneNumber") String phoneNumber, @Param("userId") Long userId);

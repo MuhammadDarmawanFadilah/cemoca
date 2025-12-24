@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,109 +10,38 @@ import { Textarea } from "@/components/ui/textarea";
 import { useOptionalAuth } from "@/contexts/AuthContext";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { imageAPI } from "@/lib/api";
+import { config } from "@/lib/config";
 import { toast } from "sonner";
 import Image from "next/image";
 import { Building2, ImageUp, Trash2 } from "lucide-react";
 
-type CompanyProfileLocal = {
-  companyName?: string;
-  companyCode?: string;
-  photoFilename?: string;
-  updatedAt?: string;
+type UpdatePhotoResponse = {
+  message?: string;
+  user?: unknown;
+  error?: string;
 };
 
-function storageKey(userId: number) {
-  return `company_profile_${userId}`;
-}
-
-function storageKeyPublic() {
-  return `company_profile_public`;
-}
-
-function safeParse<T>(raw: string | null): T | null {
-  if (!raw) return null;
-  try {
-    return JSON.parse(raw) as T;
-  } catch {
-    return null;
-  }
-}
-
 export default function ProfilePage() {
-  const { user, isAuthenticated } = useOptionalAuth();
+  const { user, isAuthenticated, setUser } = useOptionalAuth();
   const { t } = useLanguage();
 
-  const userId = user?.id;
-  const key = useMemo(() => {
-    if (isAuthenticated && userId) return storageKey(userId);
-    return storageKeyPublic();
-  }, [isAuthenticated, userId]);
+  const companyName = (user?.companyName || "").trim();
+  const companyCode = (user?.companyCode || "").trim();
+  const photoFilename = (user?.avatarUrl || "").trim() || null;
 
-  const [companyName, setCompanyName] = useState<string>("");
-  const [companyCode, setCompanyCode] = useState<string>("");
-  const [photoFilename, setPhotoFilename] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
 
-  const persistTo = (targetKey: string, patch: CompanyProfileLocal) => {
-    const current = safeParse<CompanyProfileLocal>(localStorage.getItem(targetKey)) || {};
-    const next: CompanyProfileLocal = { ...current, ...patch, updatedAt: new Date().toISOString() };
-    localStorage.setItem(targetKey, JSON.stringify(next));
-
-    window.dispatchEvent(new CustomEvent("companyProfileUpdated"));
-  };
-
-  useEffect(() => {
-    const current = safeParse<CompanyProfileLocal>(localStorage.getItem(key)) || {};
-    const publicCurrent = safeParse<CompanyProfileLocal>(localStorage.getItem(storageKeyPublic())) || {};
-    const merged: CompanyProfileLocal = key === storageKeyPublic() ? publicCurrent : { ...publicCurrent, ...current };
-
-    const nextCompanyName = (merged?.companyName || user?.companyName || "").trim();
-    const nextCompanyCode = (merged?.companyCode || user?.companyCode || "").trim();
-    setCompanyName(nextCompanyName);
-    setCompanyCode(nextCompanyCode);
-    setPhotoFilename(merged?.photoFilename || null);
-
-    const shouldCopyToKey =
-      (nextCompanyName && !current.companyName) ||
-      (nextCompanyCode && !current.companyCode) ||
-      (merged.photoFilename && !current.photoFilename);
-
-    if (shouldCopyToKey) {
-      persistTo(key, {
-        companyName: nextCompanyName || undefined,
-        companyCode: nextCompanyCode || undefined,
-        photoFilename: merged.photoFilename || undefined,
-      });
-    }
-
-    if (isAuthenticated && userId && (user?.companyName || user?.companyCode)) {
-      persistTo(storageKeyPublic(), {
-        companyName: (user.companyName || "").trim() || undefined,
-        companyCode: (user.companyCode || "").trim() || undefined,
-      });
-    }
-  }, [key, user?.companyName, user?.companyCode, isAuthenticated, userId]);
-
-  const persist = (patch: CompanyProfileLocal) => {
-    persistTo(key, patch);
-    if (isAuthenticated && userId) {
-      persistTo(storageKeyPublic(), patch);
-    }
-  };
-
-  const onSaveCompanyProfile = () => {
-    persist({ companyName, companyCode });
-    toast.success(t("profile.updateSuccess"));
-  };
-
-  const onResetCompanyCode = () => {
-    persist({ companyCode: undefined });
-    setCompanyCode("");
-    toast.success(t("profile.updateSuccess"));
-  };
+  const authToken = useMemo(() => {
+    if (typeof window === "undefined") return null;
+    return window.localStorage.getItem("auth_token");
+  }, []);
 
   const onSelectFile = async (file: File) => {
     if (!isAuthenticated) {
+      toast.error(t("auth.loginRequired"));
+      return;
+    }
+    if (!authToken) {
       toast.error(t("auth.loginRequired"));
       return;
     }
@@ -120,8 +49,27 @@ export default function ProfilePage() {
     try {
       const res = await imageAPI.uploadImage(file);
       const filename = res.filename || res.url;
-      persist({ photoFilename: filename });
-      setPhotoFilename(filename);
+
+      const response = await fetch(`${config.apiUrl}/auth/me/company-photo`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${authToken}`,
+        },
+        body: JSON.stringify({ photoFilename: filename }),
+      });
+
+      const data = (await response.json().catch(() => ({}))) as UpdatePhotoResponse;
+      if (!response.ok) {
+        throw new Error(data?.error || "Failed to update company photo");
+      }
+
+      const nextUser = { ...(user as any), avatarUrl: filename };
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem("auth_user", JSON.stringify(nextUser));
+      }
+      setUser(nextUser);
+
       toast.success(t("profile.companyPhotoUploaded"));
     } catch (e) {
       const msg = e instanceof Error ? e.message : t("errors.general");
@@ -132,12 +80,56 @@ export default function ProfilePage() {
   };
 
   const onRemovePhoto = () => {
-    persist({ photoFilename: undefined });
-    setPhotoFilename(null);
-    toast.success(t("profile.updateSuccess"));
+    if (!isAuthenticated || !authToken) {
+      toast.error(t("auth.loginRequired"));
+      return;
+    }
+    if (!photoFilename) return;
+    setIsUploading(true);
+    void (async () => {
+      try {
+        const response = await fetch(`${config.apiUrl}/auth/me/company-photo`, {
+          method: "DELETE",
+          headers: {
+            Authorization: `Bearer ${authToken}`,
+          },
+        });
+        const data = (await response.json().catch(() => ({}))) as UpdatePhotoResponse;
+        if (!response.ok) {
+          throw new Error(data?.error || "Failed to remove company photo");
+        }
+
+        const nextUser = { ...(user as any), avatarUrl: null };
+        if (typeof window !== "undefined") {
+          window.localStorage.setItem("auth_user", JSON.stringify(nextUser));
+        }
+        setUser(nextUser);
+        toast.success(t("profile.updateSuccess"));
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : t("errors.general");
+        toast.error(msg);
+      } finally {
+        setIsUploading(false);
+      }
+    })();
   };
 
   const photoUrl = photoFilename ? imageAPI.getImageUrl(photoFilename) : null;
+
+  if (!isAuthenticated) {
+    return (
+      <div className="w-full px-4 py-6 md:px-6 md:py-8">
+        <div className="mx-auto w-full max-w-3xl space-y-6">
+          <Card className="rounded-2xl">
+            <CardHeader>
+              <CardTitle>{t("auth.loginRequired")}</CardTitle>
+              <CardDescription>{t("auth.login")}</CardDescription>
+            </CardHeader>
+          </Card>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="w-full px-4 py-6 md:px-6 md:py-8">
@@ -176,31 +168,15 @@ export default function ProfilePage() {
                   <Label htmlFor="companyName">{t("auth.companyName")}</Label>
                   <Input
                     id="companyName"
-                    value={companyName}
-                    onChange={(e) => setCompanyName(e.target.value)}
+                    value={companyName || "-"}
+                    readOnly
                     placeholder={t("auth.enterCompanyName")}
                   />
                 </div>
 
                 <div className="space-y-2">
                   <Label htmlFor="companyCode">{t("profile.companyCode")}</Label>
-                  <div className="flex flex-col sm:flex-row gap-2">
-                    <Input
-                      id="companyCode"
-                      value={companyCode}
-                      onChange={(e) => setCompanyCode(e.target.value)}
-                      placeholder={t("profile.companyCodePlaceholder")}
-                    />
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={onResetCompanyCode}
-                      disabled={!companyCode.trim()}
-                      className="sm:w-auto"
-                    >
-                      {t("profile.resetCompanyCode")}
-                    </Button>
-                  </div>
+                  <Input id="companyCode" value={companyCode || "-"} readOnly placeholder={t("profile.companyCodePlaceholder")} />
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -215,6 +191,10 @@ export default function ProfilePage() {
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <div className="text-xs text-muted-foreground">{t("auth.ownerName")}</div>
+                    <div className="text-sm font-medium truncate">{user?.ownerName || "-"}</div>
+                  </div>
                   <div className="space-y-2">
                     <Label>{t("auth.phoneNumber")}</Label>
                     <Input value={user?.phoneNumber || "-"} readOnly />
@@ -229,10 +209,6 @@ export default function ProfilePage() {
                   <Label>{t("auth.reasonToUse")}</Label>
                   <Textarea value={user?.reasonToUse || "-"} readOnly className="min-h-[96px]" />
                 </div>
-
-                <Button onClick={onSaveCompanyProfile} className="w-full md:w-auto">
-                  {t("common.save")}
-                </Button>
               </CardContent>
             </Card>
 

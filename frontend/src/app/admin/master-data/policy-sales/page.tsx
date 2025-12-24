@@ -175,8 +175,9 @@ export default function PolicySalesPage() {
   }, [mounted, currentPage, pageSize, appliedAgentCode, appliedCreatedBy, companyCode])
 
   const loadData = async () => {
-    const cc = (companyCode || getCompanyCodeFromLocalStorage(userId)).trim()
-    if (!cc) {
+    const cc = isAdminOnly ? '' : (companyCode || getCompanyCodeFromLocalStorage(userId)).trim()
+    
+    if (!isAdminOnly && !cc) {
       setItems([])
       setTotalElements(0)
       setTotalPages(0)
@@ -190,7 +191,7 @@ export default function PolicySalesPage() {
         createdBy: appliedCreatedBy || undefined,
       }
 
-      const res = await masterDataAPI.policySales.getAll(cc, filters, undefined, currentPage, pageSize, 'createdAt', 'desc')
+      const res = await masterDataAPI.policySales.getAll(cc || undefined, filters, undefined, currentPage, pageSize, 'createdAt', 'desc')
       setItems(res.content || [])
       setTotalElements(res.totalElements || 0)
       setTotalPages(res.totalPages || 0)
@@ -245,6 +246,9 @@ export default function PolicySalesPage() {
 
   const openEdit = (item: MasterPolicySalesResponse) => {
     setSelected(item)
+    if (isAdminOnly && item.companyCode) {
+      setCompanyCode(item.companyCode)
+    }
     setFormData({
       agentCode: item.agentCode || '',
       policyDate: item.policyDate || '',
@@ -279,7 +283,7 @@ export default function PolicySalesPage() {
       setActionLoading(true)
       const cc = (companyCode || getCompanyCodeFromLocalStorage(userId)).trim()
       if (!cc) {
-        showErrorToast('Company Code wajib diisi')
+        showErrorToast(isAdminOnly ? 'Company Code wajib diisi' : 'Company Code wajib diisi (Profile)')
         return
       }
 
@@ -338,6 +342,9 @@ export default function PolicySalesPage() {
 
   const openDelete = (item: MasterPolicySalesResponse) => {
     setSelected(item)
+    if (isAdminOnly && item.companyCode) {
+      setCompanyCode(item.companyCode)
+    }
     setIsDeleteOpen(true)
   }
 
@@ -348,12 +355,13 @@ export default function PolicySalesPage() {
       setActionLoading(true)
       const cc = (companyCode || getCompanyCodeFromLocalStorage(userId)).trim()
       if (!cc) {
-        showErrorToast('Company Code wajib diisi')
+        showErrorToast(isAdminOnly ? 'Company Code wajib diisi' : 'Company Code wajib diisi (Profile)')
         return
       }
 
       await masterDataAPI.policySales.delete(cc, selected.id)
       showSuccessToast('Berhasil menghapus Policy Sales')
+      setIsDeleteOpen(false)
       await loadData()
     } catch (e) {
       showErrorToast(e)
@@ -380,11 +388,6 @@ export default function PolicySalesPage() {
   }
 
   const submitImportInternal = async () => {
-    if (isAdminOnly) {
-      showErrorToast('ADMIN tidak bisa upload Excel')
-      return
-    }
-
     const selectedFile = importFile ?? importFileInputRef.current?.files?.[0] ?? null
     if (!selectedFile) {
       showErrorToast('File Excel harus dipilih')
@@ -452,11 +455,6 @@ export default function PolicySalesPage() {
   }
 
   const submitCsvImportInternal = async () => {
-    if (isAdminOnly) {
-      showErrorToast('ADMIN tidak bisa upload CSV')
-      return
-    }
-
     const selectedFile = csvFile ?? csvFileInputRef.current?.files?.[0] ?? null
     if (!selectedFile) {
       showErrorToast('File CSV harus dipilih')
@@ -520,11 +518,6 @@ export default function PolicySalesPage() {
   }
 
   const submitApiImport = async () => {
-    if (isAdminOnly) {
-      showErrorToast('ADMIN tidak bisa Import API')
-      return
-    }
-
     const fallbackCompanyCode = (apiCompanyCode || '').trim()
     if (!fallbackCompanyCode && !apiJson.trim()) {
       showErrorToast('Company Code wajib diisi')
@@ -674,39 +667,21 @@ export default function PolicySalesPage() {
             </Button>
             <Button
               variant="outline"
-              onClick={() => {
-                if (isAdminOnly) {
-                  showErrorToast('ADMIN tidak bisa upload Excel')
-                  return
-                }
-                openExcelImport()
-              }}
+              onClick={() => openExcelImport()}
             >
               <Upload className="h-4 w-4" />
               Import Excel
             </Button>
             <Button
               variant="outline"
-              onClick={() => {
-                if (isAdminOnly) {
-                  showErrorToast('ADMIN tidak bisa upload CSV')
-                  return
-                }
-                openCsvImport()
-              }}
+              onClick={() => openCsvImport()}
             >
               <Upload className="h-4 w-4" />
               Import CSV
             </Button>
             <Button
               variant="outline"
-              onClick={() => {
-                if (isAdminOnly) {
-                  showErrorToast('ADMIN tidak bisa Import API')
-                  return
-                }
-                openApiImport()
-              }}
+              onClick={() => openApiImport()}
             >
               <Code className="h-4 w-4" />
               Import API
@@ -735,7 +710,7 @@ export default function PolicySalesPage() {
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
-            {!companyCode.trim() && (
+            {!isAdminOnly && !companyCode.trim() && (
               <div className="rounded-md border bg-muted/20 px-4 py-3 text-sm font-semibold text-foreground">
                 Company Code belum diisi. Silakan isi di <a className="underline" href="/profile">Profile</a> agar data Policy Sales bisa ditampilkan.
               </div>
@@ -869,6 +844,17 @@ export default function PolicySalesPage() {
           </DialogHeader>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {isAdminOnly && (
+              <div className="space-y-2 md:col-span-2">
+                <Label>Company Code <span className="text-destructive">*</span></Label>
+                <Input 
+                  value={companyCode} 
+                  onChange={(e) => setCompanyCode(e.target.value)} 
+                  placeholder="Masukkan Company Code"
+                />
+                <div className="text-xs text-muted-foreground">Wajib diisi untuk ADMIN. Tentukan company mana yang akan ditambahkan policy sales.</div>
+              </div>
+            )}
             <div className="space-y-2">
               <Label>Agent Code</Label>
               <Input value={formData.agentCode} onChange={(e) => setFormData((p) => ({ ...p, agentCode: e.target.value }))} />
@@ -919,6 +905,18 @@ export default function PolicySalesPage() {
           </DialogHeader>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {isAdminOnly && (
+              <div className="space-y-2 md:col-span-2">
+                <Label>Company Code <span className="text-destructive">*</span></Label>
+                <Input 
+                  value={companyCode} 
+                  onChange={(e) => setCompanyCode(e.target.value)} 
+                  placeholder="Masukkan Company Code"
+                  disabled
+                />
+                <div className="text-xs text-muted-foreground">Company Code tidak bisa diubah saat edit.</div>
+              </div>
+            )}
             <div className="space-y-2">
               <Label>Agent Code</Label>
               <Input value={formData.agentCode} onChange={(e) => setFormData((p) => ({ ...p, agentCode: e.target.value }))} />
@@ -1007,9 +1005,11 @@ export default function PolicySalesPage() {
           <div className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <div className="space-y-2">
-                <Label>Company Code</Label>
-                <Input value={importCompanyCode} onChange={(e) => setImportCompanyCode(e.target.value)} placeholder="Company Code" />
-                <div className="text-xs text-muted-foreground">Wajib diisi. Dipakai untuk scope data Policy Sales.</div>
+                <Label>Company Code <span className="text-destructive">*</span></Label>
+                <Input value={importCompanyCode} onChange={(e) => setImportCompanyCode(e.target.value)} placeholder="Masukkan Company Code" />
+                <div className="text-xs text-muted-foreground">
+                  {isAdminOnly ? 'Wajib diisi oleh ADMIN. Tentukan company mana yang akan di-import.' : 'Wajib diisi. Otomatis terisi dari profile Anda.'}
+                </div>
               </div>
               <div className="space-y-2">
                 <Label>Template</Label>
@@ -1055,7 +1055,7 @@ export default function PolicySalesPage() {
                 <Button variant="outline" onClick={() => resetImport()} disabled={actionLoading}>Reset</Button>
                 <Button
                   onClick={() => void submitImport()}
-                  disabled={actionLoading || (!importFile && !(importFileInputRef.current?.files?.[0])) || isAdminOnly || !importCompanyCode.trim()}
+                  disabled={actionLoading || (!importFile && !(importFileInputRef.current?.files?.[0])) || !importCompanyCode.trim()}
                 >
                   <Upload className="h-4 w-4 mr-2" />
                   Upload
@@ -1149,9 +1149,11 @@ export default function PolicySalesPage() {
           <div className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <div className="space-y-2">
-                <Label>Company Code</Label>
-                <Input value={csvCompanyCode} onChange={(e) => setCsvCompanyCode(e.target.value)} placeholder="Company Code" />
-                <div className="text-xs text-muted-foreground">Wajib diisi. Dipakai untuk scope data Policy Sales.</div>
+                <Label>Company Code <span className="text-destructive">*</span></Label>
+                <Input value={csvCompanyCode} onChange={(e) => setCsvCompanyCode(e.target.value)} placeholder="Masukkan Company Code" />
+                <div className="text-xs text-muted-foreground">
+                  {isAdminOnly ? 'Wajib diisi oleh ADMIN. Tentukan company mana yang akan di-import.' : 'Wajib diisi. Otomatis terisi dari profile Anda.'}
+                </div>
               </div>
               <div className="space-y-2">
                 <Label>Template</Label>
@@ -1197,7 +1199,7 @@ export default function PolicySalesPage() {
                 <Button variant="outline" onClick={() => resetCsvImport()} disabled={actionLoading}>Reset</Button>
                 <Button
                   onClick={() => void submitCsvImport()}
-                  disabled={actionLoading || (!csvFile && !(csvFileInputRef.current?.files?.[0])) || isAdminOnly || !csvCompanyCode.trim()}
+                  disabled={actionLoading || (!csvFile && !(csvFileInputRef.current?.files?.[0])) || !csvCompanyCode.trim()}
                 >
                   <Upload className="h-4 w-4 mr-2" />
                   Upload
@@ -1279,9 +1281,11 @@ export default function PolicySalesPage() {
           <div className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-1 gap-3">
               <div className="space-y-2">
-                <Label>Company Code</Label>
-                <Input value={apiCompanyCode} onChange={(e) => setApiCompanyCode(e.target.value)} placeholder="Company Code" />
-                <div className="text-xs text-muted-foreground">Wajib. Bisa diisi di sini atau di dalam JSON payload.</div>
+                <Label>Company Code <span className="text-destructive">*</span></Label>
+                <Input value={apiCompanyCode} onChange={(e) => setApiCompanyCode(e.target.value)} placeholder="Masukkan Company Code" />
+                <div className="text-xs text-muted-foreground">
+                  {isAdminOnly ? 'Wajib diisi oleh ADMIN. Tentukan company mana yang akan di-import (bisa juga di JSON payload).' : 'Wajib. Otomatis terisi dari profile Anda (bisa override di JSON payload).'}
+                </div>
               </div>
             </div>
 
@@ -1310,7 +1314,7 @@ export default function PolicySalesPage() {
 
             <div className="flex gap-2">
               <Button variant="outline" onClick={() => resetApiImport()} disabled={actionLoading}>Reset</Button>
-              <Button onClick={() => void submitApiImport()} disabled={actionLoading || !apiJson.trim() || isAdminOnly || !apiCompanyCode.trim()}>
+              <Button onClick={() => void submitApiImport()} disabled={actionLoading || !apiJson.trim() || !apiCompanyCode.trim()}>
                 <Code className="h-4 w-4 mr-2" />
                 Submit
               </Button>

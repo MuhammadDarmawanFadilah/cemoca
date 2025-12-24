@@ -2,7 +2,6 @@ package com.shadcn.backend.controller;
 
 import com.shadcn.backend.dto.CommentRequest;
 import com.shadcn.backend.dto.CommentResponse;
-import com.shadcn.backend.model.KomentarBerita;
 import com.shadcn.backend.service.CommentService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
@@ -59,19 +58,19 @@ public class CommentController {
             
             if (biografiId == null) {
                 return ResponseEntity.badRequest()
-                        .body(Map.of("message", "BiografiId tidak boleh kosong"));
+                        .body(Map.of("message", "BiografiId is required"));
             }
             
             if (userName == null || userName.trim().isEmpty()) {
                 return ResponseEntity.badRequest()
-                        .body(Map.of("message", "Nama pengguna tidak boleh kosong"));
+                        .body(Map.of("message", "User name is required"));
             }
             
             CommentResponse comment = commentService.likeComment(commentId, biografiId, userName);
             return ResponseEntity.ok(comment);
         } catch (RuntimeException e) {
             return ResponseEntity.badRequest()
-                    .body(Map.of("message", "Gagal menyukai komentar: " + e.getMessage()));
+                    .body(Map.of("message", "Failed to like comment: " + e.getMessage()));
         }
     }
 
@@ -86,19 +85,19 @@ public class CommentController {
             
             if (biografiId == null) {
                 return ResponseEntity.badRequest()
-                        .body(Map.of("message", "BiografiId tidak boleh kosong"));
+                        .body(Map.of("message", "BiografiId is required"));
             }
             
             if (userName == null || userName.trim().isEmpty()) {
                 return ResponseEntity.badRequest()
-                        .body(Map.of("message", "Nama pengguna tidak boleh kosong"));
+                        .body(Map.of("message", "User name is required"));
             }
             
             CommentResponse comment = commentService.dislikeComment(commentId, biografiId, userName);
             return ResponseEntity.ok(comment);
         } catch (RuntimeException e) {
             return ResponseEntity.badRequest()
-                    .body(Map.of("message", "Gagal memberikan dislike: " + e.getMessage()));
+                    .body(Map.of("message", "Failed to dislike comment: " + e.getMessage()));
         }
     }@PostMapping("/{commentId}/reply")
     public ResponseEntity<CommentResponse> replyToComment(

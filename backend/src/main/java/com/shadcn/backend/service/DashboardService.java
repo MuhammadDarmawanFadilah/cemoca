@@ -16,7 +16,6 @@ import java.time.LocalDateTime;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
-import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -90,7 +89,7 @@ public class DashboardService {
             
             response.put("success", true);
             response.put("data", stats);
-            response.put("message", "Data statistik berhasil diambil");
+            response.put("message", "Statistics data retrieved successfully");
             response.put("timestamp", LocalDateTime.now().toString());
             
             log.info("Statistik dashboard koperasi berhasil diambil");
@@ -98,7 +97,7 @@ public class DashboardService {
             log.error("Error mengambil statistik dashboard koperasi: ", e);
             response.put("success", false);
             response.put("data", null);
-            response.put("message", "Gagal mengambil data statistik: " + e.getMessage());
+            response.put("message", "Failed to retrieve statistics data: " + e.getMessage());
             response.put("timestamp", LocalDateTime.now().toString());
         }
         
@@ -131,7 +130,7 @@ public class DashboardService {
             
             response.put("success", true);
             response.put("data", charts);
-            response.put("message", "Data chart berhasil diambil");
+            response.put("message", "Chart data retrieved successfully");
             response.put("timestamp", LocalDateTime.now().toString());
             
             log.info("Data chart dashboard berhasil diambil");
@@ -139,7 +138,7 @@ public class DashboardService {
             log.error("Error mengambil data chart dashboard: ", e);
             response.put("success", false);
             response.put("data", null);
-            response.put("message", "Gagal mengambil data chart: " + e.getMessage());
+            response.put("message", "Failed to retrieve chart data: " + e.getMessage());
             response.put("timestamp", LocalDateTime.now().toString());
         }
         

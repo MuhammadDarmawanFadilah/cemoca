@@ -3,7 +3,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { User } from '@/lib/api';
 import { config, getApiUrl } from '@/lib/config';
-import { setCompanyProfileToLocalStorage } from '@/lib/companyProfileLocal';
 
 interface AuthContextType {
   user: User | null;
@@ -51,6 +50,24 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+
+  const refreshMe = async (bearerToken: string) => {
+    try {
+      const res = await fetch(getApiUrl(config.authMeEndpoint), {
+        headers: {
+          ...(bearerToken && { Authorization: `Bearer ${bearerToken}` }),
+        },
+      });
+      if (!res.ok) {
+        return;
+      }
+      const nextUser = (await res.json()) as User;
+      localStorage.setItem('auth_user', JSON.stringify(nextUser));
+      setUser(nextUser);
+    } catch {
+      // ignore
+    }
+  };
   // Load token and user from localStorage on mount
   useEffect(() => {
     const loadAuthFromStorage = () => {
@@ -61,6 +78,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         setToken(storedToken);
         try {
           setUser(JSON.parse(storedUser));
+          void refreshMe(storedToken);
         } catch (error) {
           console.error('Error parsing stored user:', error);
           localStorage.removeItem('auth_token');
@@ -115,21 +133,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       // Store token and user
       localStorage.setItem('auth_token', data.token);
       localStorage.setItem('auth_user', JSON.stringify(data.user));
-
-      if (data?.user?.id) {
-        setCompanyProfileToLocalStorage(
-          {
-            companyName: data.user.companyName || undefined,
-            companyCode: data.user.companyCode || undefined,
-          },
-          data.user.id
-        );
-      }
-
-      setCompanyProfileToLocalStorage({
-        companyName: data?.user?.companyName || undefined,
-        companyCode: data?.user?.companyCode || undefined,
-      });
       
       setToken(data.token);
       setUser(data.user);

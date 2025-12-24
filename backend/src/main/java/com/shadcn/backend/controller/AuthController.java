@@ -7,12 +7,14 @@ import com.shadcn.backend.model.User;
 import com.shadcn.backend.service.AuthService;
 import com.shadcn.backend.service.UserService;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.HashMap;
 import java.util.Map;
 
 @Slf4j
@@ -99,62 +101,95 @@ public class AuthController {
 
     @PostMapping("/register")
     public ResponseEntity<?> register(@Valid @RequestBody RegistrationRequest request) {
-        try {
-            log.debug("Registration attempt for username: {}", request.getUsername());
-            User user = userService.registerUser(request);
-            log.info("Registration successful for username: {}", user.getUsername());
+        log.debug("Registration attempt for username: {}", request.getUsername());
+        User user = userService.registerUser(request);
+        log.info("Registration successful for username: {}", user.getUsername());
 
-            return ResponseEntity.status(HttpStatus.CREATED)
-                .body(Map.of(
-                    "message", "Registration successful",
-                    "user", Map.of(
-                        "id", user.getId(),
-                        "username", user.getUsername(),
-                        "fullName", user.getFullName(),
-                        "email", user.getEmail(),
-                        "status", user.getStatus(),
-                        "companyName", user.getCompanyName(),
-                        "companyCode", user.getCompanyCode()
-                    )
-                ));
+        Map<String, Object> userPayload = new HashMap<>();
+        userPayload.put("id", user.getId());
+        userPayload.put("username", user.getUsername());
+        userPayload.put("fullName", user.getFullName());
+        userPayload.put("email", user.getEmail());
+        userPayload.put("status", user.getStatus());
+        userPayload.put("ownerName", user.getOwnerName());
+        userPayload.put("companyName", user.getCompanyName());
+        userPayload.put("companyCode", user.getCompanyCode());
+        userPayload.put("agencyRange", user.getAgencyRange());
+        userPayload.put("reasonToUse", user.getReasonToUse());
+
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("message", "Registration successful");
+        payload.put("user", userPayload);
+
+        return ResponseEntity.status(HttpStatus.CREATED).body(payload);
+    }
+
+    public record UpdateCompanyPhotoRequest(@NotBlank(message = "Photo filename is required") String photoFilename) {
+    }
+
+    @PutMapping("/me/company-photo")
+    public ResponseEntity<?> updateCompanyPhoto(
+            @RequestHeader(value = "Authorization", required = false) String token,
+            @Valid @RequestBody UpdateCompanyPhotoRequest request
+    ) {
+        try {
+            if (token == null || !token.startsWith("Bearer ")) {
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                        .body(Map.of("error", "No valid token provided"));
+            }
+
+            String actualToken = token.substring(7);
+            User user = authService.getUserFromToken(actualToken);
+            if (user == null) {
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                        .body(Map.of("error", "Invalid token"));
+            }
+
+            user.setAvatarUrl(request.photoFilename());
+            User saved = userService.updateUser(user);
+
+            Map<String, Object> payload = new HashMap<>();
+            payload.put("message", "Company photo updated successfully");
+            payload.put("user", saved);
+            return ResponseEntity.ok(payload);
         } catch (RuntimeException e) {
-            log.warn("Registration failed for username: {} - {}", request.getUsername(), e.getMessage());
             return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                .body(Map.of("error", e.getMessage()));
+                    .body(Map.of("error", e.getMessage()));
         } catch (Exception e) {
-            log.error("Error during registration for username: {}", request.getUsername(), e);
+            log.error("Error updating company photo", e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                .body(Map.of("error", "Registration failed"));
+                    .body(Map.of("error", "Failed to update company photo"));
         }
     }
-      /**
-     * Register user from public invitation link - DISABLED for koperasi system
-     */
-    /* @PostMapping("/register/public")
-    public ResponseEntity<?> registerFromPublicLink(@Valid @RequestBody PublicRegistrationRequest request) {
+
+    @DeleteMapping("/me/company-photo")
+    public ResponseEntity<?> removeCompanyPhoto(
+            @RequestHeader(value = "Authorization", required = false) String token
+    ) {
         try {
-            log.debug("Public registration attempt for username: {}", request.getUsername());
-            User user = userService.registerFromPublicLink(request);
-            log.info("Public registration successful for username: {}", request.getUsername());
-            return ResponseEntity.status(HttpStatus.CREATED)
-                .body(Map.of(
-                    "message", "Pendaftaran berhasil! Akun Anda menunggu persetujuan admin sebelum dapat digunakan.",
-                    "user", Map.of(
-                        "id", user.getId(),
-                        "username", user.getUsername(),
-                        "fullName", user.getFullName(),
-                        "email", user.getEmail(),
-                        "status", user.getStatus()
-                    )
-                ));
-        } catch (RuntimeException e) {
-            log.warn("Public registration failed for username: {} - {}", request.getUsername(), e.getMessage());
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                .body(Map.of("error", e.getMessage()));
+            if (token == null || !token.startsWith("Bearer ")) {
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                        .body(Map.of("error", "No valid token provided"));
+            }
+
+            String actualToken = token.substring(7);
+            User user = authService.getUserFromToken(actualToken);
+            if (user == null) {
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                        .body(Map.of("error", "Invalid token"));
+            }
+
+            user.setAvatarUrl(null);
+            User saved = userService.updateUser(user);
+
+            Map<String, Object> payload = new HashMap<>();
+            payload.put("message", "Company photo removed successfully");
+            payload.put("user", saved);
+            return ResponseEntity.ok(payload);
         } catch (Exception e) {
-            log.error("Error during public registration for username: {}", request.getUsername(), e);
+            log.error("Error removing company photo", e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                .body(Map.of("error", "Terjadi kesalahan saat mendaftarkan pengguna"));
+                    .body(Map.of("error", "Failed to remove company photo"));
         }
-    } */
+    }
 }

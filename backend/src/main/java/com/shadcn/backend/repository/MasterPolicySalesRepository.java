@@ -82,4 +82,13 @@ public interface MasterPolicySalesRepository extends JpaRepository<MasterPolicyS
             @Param("createdBy") String createdBy,
             Pageable pageable
     );
+
+    @Query("SELECT p FROM MasterPolicySales p WHERE " +
+            "(:agentCode IS NULL OR LOWER(p.agentCode) LIKE LOWER(CONCAT('%', :agentCode, '%'))) AND " +
+            "(:createdBy IS NULL OR LOWER(p.createdBy) LIKE LOWER(CONCAT('%', :createdBy, '%'))) ")
+    Page<MasterPolicySales> findAllWithColumnFilters(
+            @Param("agentCode") String agentCode,
+            @Param("createdBy") String createdBy,
+            Pageable pageable
+    );
 }

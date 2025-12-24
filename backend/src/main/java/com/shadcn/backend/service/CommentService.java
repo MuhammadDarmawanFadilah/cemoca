@@ -31,12 +31,12 @@ public class CommentService {    @Autowired
     private BeritaRepository beritaRepository;    public CommentResponse createComment(CommentRequest request) {
         // Validate beritaId is provided for new comments (not replies)
         if (request.getBeritaId() == null) {
-            throw new RuntimeException("Berita ID tidak boleh kosong untuk komentar baru");
+            throw new RuntimeException("Berita ID is required for a new comment");
         }
         
         Optional<Berita> beritaOpt = beritaRepository.findById(request.getBeritaId());
         if (!beritaOpt.isPresent()) {
-            throw new RuntimeException("Berita tidak ditemukan");
+            throw new RuntimeException("Berita not found");
         }
 
         // Validate foto field - should only contain filename, not path
@@ -44,7 +44,7 @@ public class CommentService {    @Autowired
         if (foto != null && !foto.trim().isEmpty()) {
             // Check if foto contains path separators (/, \) or protocol (http, https)
             if (foto.contains("/") || foto.contains("\\") || foto.startsWith("http")) {
-                throw new RuntimeException("Field foto hanya boleh berisi nama file, bukan path atau URL");
+                throw new RuntimeException("Foto field must contain only a filename, not a path or URL");
             }
         }        KomentarBerita komentar = new KomentarBerita();
         komentar.setBerita(beritaOpt.get());

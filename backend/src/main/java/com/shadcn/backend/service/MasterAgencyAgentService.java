@@ -8,6 +8,7 @@ import com.shadcn.backend.exception.DuplicateResourceException;
 import com.shadcn.backend.exception.ResourceNotFoundException;
 import com.shadcn.backend.exception.ValidationException;
 import com.shadcn.backend.model.MasterAgencyAgent;
+import com.shadcn.backend.model.MasterAgencyAgent.Gender;
 import com.shadcn.backend.model.User;
 import com.shadcn.backend.repository.MasterAgencyAgentRepository;
 import com.shadcn.backend.repository.UserRepository;
@@ -28,6 +29,8 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.BufferedReader;
 import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileInputStream;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
@@ -113,9 +116,6 @@ public class MasterAgencyAgentService {
             String sortDir
     ) {
         String normalizedCompanyCode = normalizeString(companyCode);
-        if (normalizedCompanyCode == null) {
-            throw new ValidationException("Company Code wajib diisi");
-        }
         Sort.Direction direction = "desc".equalsIgnoreCase(sortDir) ? Sort.Direction.DESC : Sort.Direction.ASC;
         Sort sort = Sort.by(direction, sortBy);
         Pageable pageable = PageRequest.of(page, size, sort);
@@ -124,6 +124,11 @@ public class MasterAgencyAgentService {
         String fPhoneNo = normalizeSearch(phoneNo);
         String fRankCode = normalizeSearch(rankCode);
         String fCreatedBy = normalizeSearch(createdBy);
+
+        if (normalizedCompanyCode == null || normalizedCompanyCode.isEmpty()) {
+            return repository.findAllWithColumnFilters(fFullName, fPhoneNo, fRankCode, fCreatedBy, isActive, pageable)
+                    .map(this::toResponse);
+        }
 
         boolean hasColumnFilters = fFullName != null || fPhoneNo != null || fRankCode != null || fCreatedBy != null;
         if (hasColumnFilters) {
@@ -138,12 +143,12 @@ public class MasterAgencyAgentService {
     public MasterAgencyAgentResponse findById(String companyCode, Long id) {
         String normalizedCompanyCode = normalizeString(companyCode);
         if (normalizedCompanyCode == null) {
-            throw new ValidationException("Company Code wajib diisi");
+            throw new ValidationException("Company Code is required");
         }
         MasterAgencyAgent entity = repository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Data agent dengan ID " + id + " tidak ditemukan"));
+                .orElseThrow(() -> new ResourceNotFoundException("Agent data with ID " + id + " not found"));
         if (!normalizedCompanyCode.equalsIgnoreCase(entity.getCompanyCode())) {
-            throw new ResourceNotFoundException("Data agent dengan ID " + id + " tidak ditemukan");
+            throw new ResourceNotFoundException("Agent data with ID " + id + " not found");
         }
         return toResponse(entity);
     }
@@ -152,7 +157,7 @@ public class MasterAgencyAgentService {
     public MasterAgencyAgentResponse create(String companyCode, MasterAgencyAgentRequest request, String createdBy) {
         String normalizedCompanyCode = normalizeString(companyCode);
         if (normalizedCompanyCode == null) {
-            throw new ValidationException("Company Code wajib diisi");
+            throw new ValidationException("Company Code is required");
         }
         String normalizedCreatedBy = resolveCreatedByForCompany(normalizedCompanyCode, createdBy);
         MasterAgencyAgent entity = new MasterAgencyAgent();
@@ -161,7 +166,7 @@ public class MasterAgencyAgentService {
         entity.setCreatedBy(normalizedCreatedBy);
 
         if (repository.existsByCompanyCodeAndAgentCodeIgnoreCase(normalizedCompanyCode, entity.getAgentCode())) {
-            throw new DuplicateResourceException("Agent dengan Agent Code '" + entity.getAgentCode() + "' sudah terdaftar untuk Company Code ini");
+            throw new DuplicateResourceException("Agent with Agent Code '" + entity.getAgentCode() + "' is already registered for this Company Code");
         }
 
         MasterAgencyAgent saved = repository.save(entity);
@@ -172,20 +177,20 @@ public class MasterAgencyAgentService {
     public MasterAgencyAgentResponse update(String companyCode, Long id, MasterAgencyAgentRequest request) {
         String normalizedCompanyCode = normalizeString(companyCode);
         if (normalizedCompanyCode == null) {
-            throw new ValidationException("Company Code wajib diisi");
+            throw new ValidationException("Company Code is required");
         }
         MasterAgencyAgent existing = repository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Data agent dengan ID " + id + " tidak ditemukan"));
+                .orElseThrow(() -> new ResourceNotFoundException("Agent data with ID " + id + " not found"));
 
         if (!normalizedCompanyCode.equalsIgnoreCase(existing.getCompanyCode())) {
-            throw new ResourceNotFoundException("Data agent dengan ID " + id + " tidak ditemukan");
+            throw new ResourceNotFoundException("Agent data with ID " + id + " not found");
         }
 
         applyRequest(existing, request);
         existing.setCompanyCode(normalizedCompanyCode);
 
         if (repository.existsByCompanyCodeAndAgentCodeIgnoreCaseAndIdNot(normalizedCompanyCode, existing.getAgentCode(), id)) {
-            throw new DuplicateResourceException("Agent dengan Agent Code '" + existing.getAgentCode() + "' sudah terdaftar untuk Company Code ini");
+            throw new DuplicateResourceException("Agent with Agent Code '" + existing.getAgentCode() + "' is already registered for this Company Code");
         }
 
         MasterAgencyAgent saved = repository.save(existing);
@@ -196,13 +201,13 @@ public class MasterAgencyAgentService {
     public void delete(String companyCode, Long id) {
         String normalizedCompanyCode = normalizeString(companyCode);
         if (normalizedCompanyCode == null) {
-            throw new ValidationException("Company Code wajib diisi");
+            throw new ValidationException("Company Code is required");
         }
 
         MasterAgencyAgent existing = repository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Data agent dengan ID " + id + " tidak ditemukan"));
+                .orElseThrow(() -> new ResourceNotFoundException("Agent data with ID " + id + " not found"));
         if (!normalizedCompanyCode.equalsIgnoreCase(existing.getCompanyCode())) {
-            throw new ResourceNotFoundException("Data agent dengan ID " + id + " tidak ditemukan");
+            throw new ResourceNotFoundException("Agent data with ID " + id + " not found");
         }
 
         repository.deleteById(id);
@@ -212,13 +217,13 @@ public class MasterAgencyAgentService {
     public MasterAgencyAgentResponse toggleActive(String companyCode, Long id) {
         String normalizedCompanyCode = normalizeString(companyCode);
         if (normalizedCompanyCode == null) {
-            throw new ValidationException("Company Code wajib diisi");
+            throw new ValidationException("Company Code is required");
         }
         MasterAgencyAgent entity = repository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Data agent dengan ID " + id + " tidak ditemukan"));
+                .orElseThrow(() -> new ResourceNotFoundException("Agent data with ID " + id + " not found"));
 
         if (!normalizedCompanyCode.equalsIgnoreCase(entity.getCompanyCode())) {
-            throw new ResourceNotFoundException("Data agent dengan ID " + id + " tidak ditemukan");
+            throw new ResourceNotFoundException("Agent data with ID " + id + " not found");
         }
 
         entity.setIsActive(!Boolean.TRUE.equals(entity.getIsActive()));
@@ -232,14 +237,14 @@ public class MasterAgencyAgentService {
         String normalizedCompanyCode = normalizeString(companyCode);
         if (normalizedCompanyCode == null) {
             return new MasterAgencyAgentImportResult(false, 0, 0, List.of(
-                    new MasterAgencyAgentImportError(0, "Company Code", "Wajib diisi", companyCode)
+                    new MasterAgencyAgentImportError(0, "Company Code", "Required", companyCode)
             ));
         }
 
         String normalizedCreatedBy = resolveCreatedByForCompany(normalizedCompanyCode, createdBy);
 
         if (file == null || file.isEmpty()) {
-            return new MasterAgencyAgentImportResult(false, 0, 0, List.of(new MasterAgencyAgentImportError(0, "file", "File kosong", null)));
+            return new MasterAgencyAgentImportResult(false, 0, 0, List.of(new MasterAgencyAgentImportError(0, "file", "File is empty", null)));
         }
 
         List<MasterAgencyAgentImportError> errors = new ArrayList<>();
@@ -249,7 +254,7 @@ public class MasterAgencyAgentService {
         try (InputStream is = file.getInputStream(); Workbook workbook = WorkbookFactory.create(is)) {
             Sheet sheet = workbook.getNumberOfSheets() > 0 ? workbook.getSheetAt(0) : null;
             if (sheet == null) {
-                return new MasterAgencyAgentImportResult(false, 0, 0, List.of(new MasterAgencyAgentImportError(0, "file", "Sheet tidak ditemukan", null)));
+                return new MasterAgencyAgentImportResult(false, 0, 0, List.of(new MasterAgencyAgentImportError(0, "file", "Sheet not found", null)));
             }
 
             DataFormatter formatter = new DataFormatter();
@@ -260,7 +265,7 @@ public class MasterAgencyAgentService {
                     repository.flush();
                     return new MasterAgencyAgentImportResult(true, 0, 0, List.of());
                 }
-                return new MasterAgencyAgentImportResult(false, 0, 0, List.of(new MasterAgencyAgentImportError(0, "file", "Data tidak ditemukan", null)));
+                return new MasterAgencyAgentImportResult(false, 0, 0, List.of(new MasterAgencyAgentImportError(0, "file", "No data found", null)));
             }
 
             List<MasterAgencyAgent> toSave = new ArrayList<>();
@@ -288,51 +293,51 @@ public class MasterAgencyAgentService {
                 }
 
                 if (isBlank(agentCode)) {
-                    errors.add(new MasterAgencyAgentImportError(rowNumber, "Agent Code", "Wajib diisi", agentCode));
+                    errors.add(new MasterAgencyAgentImportError(rowNumber, "Agent Code", "Required", agentCode));
                     continue;
                 }
 
                 String normalizedAgentCode = agentCode.trim();
                 String agentKey = normalizedAgentCode.toUpperCase(Locale.ROOT);
                 if (!seenAgentCodes.add(agentKey)) {
-                    errors.add(new MasterAgencyAgentImportError(rowNumber, "Agent Code", "Duplikat Agent Code pada file import", agentCode));
+                    errors.add(new MasterAgencyAgentImportError(rowNumber, "Agent Code", "Duplicate Agent Code in import file", agentCode));
                     continue;
                 }
 
                 if (!removeExisting && repository.existsByCompanyCodeAndAgentCodeIgnoreCase(normalizedCompanyCode, normalizedAgentCode)) {
-                    errors.add(new MasterAgencyAgentImportError(rowNumber, "Agent Code", "Duplikat Agent Code untuk Company Code ini", agentCode));
+                    errors.add(new MasterAgencyAgentImportError(rowNumber, "Agent Code", "Duplicate Agent Code for this Company Code", agentCode));
                     continue;
                 }
 
                 if (isBlank(fullName)) {
-                    errors.add(new MasterAgencyAgentImportError(rowNumber, "Full Name", "Wajib diisi", fullName));
+                    errors.add(new MasterAgencyAgentImportError(rowNumber, "Full Name", "Required", fullName));
                     continue;
                 }
 
                 if (isBlank(phoneNo)) {
-                    errors.add(new MasterAgencyAgentImportError(rowNumber, "Phone no", "Wajib diisi", phoneNo));
+                    errors.add(new MasterAgencyAgentImportError(rowNumber, "Phone no", "Required", phoneNo));
                     continue;
                 }
 
                 if (isBlank(rankCode)) {
-                    errors.add(new MasterAgencyAgentImportError(rowNumber, "Rank (Code)", "Wajib diisi", rankCode));
+                    errors.add(new MasterAgencyAgentImportError(rowNumber, "Rank (Code)", "Required", rankCode));
                     continue;
                 }
 
                 if (isBlank(rankTitle)) {
-                    errors.add(new MasterAgencyAgentImportError(rowNumber, "Rank (Full Title)", "Wajib diisi", rankTitle));
+                    errors.add(new MasterAgencyAgentImportError(rowNumber, "Rank (Full Title)", "Required", rankTitle));
                     continue;
                 }
 
                 String normalizedPhone = normalizePhone(phoneNo);
                 if (normalizedPhone == null) {
-                    errors.add(new MasterAgencyAgentImportError(rowNumber, "Phone no", "Format phone tidak valid", phoneNo));
+                    errors.add(new MasterAgencyAgentImportError(rowNumber, "Phone no", "Invalid phone number format", phoneNo));
                     continue;
                 }
 
                 MasterAgencyAgent.Gender gender = parseGender(genderRaw);
                 if (gender == null) {
-                    errors.add(new MasterAgencyAgentImportError(rowNumber, "Gender", "Gender harus Male atau Female", genderRaw));
+                    errors.add(new MasterAgencyAgentImportError(rowNumber, "Gender", "Gender must be MALE or FEMALE", genderRaw));
                     continue;
                 }
 
@@ -379,12 +384,145 @@ public class MasterAgencyAgentService {
     }
 
     @Transactional
+    public MasterAgencyAgentImportResult importExcelFromFile(String companyCode, File file, boolean removeExisting, String createdBy) {
+        try {
+            try (FileInputStream fis = new FileInputStream(file)) {
+                return importExcelFromInputStream(companyCode, fis, removeExisting, createdBy);
+            }
+        } catch (Exception e) {
+            log.error("Error import excel from file: {}", file.getAbsolutePath(), e);
+            return new MasterAgencyAgentImportResult(false, 0, 0, List.of(
+                    new MasterAgencyAgentImportError(0, "file", e.getMessage(), file.getAbsolutePath())
+            ));
+        }
+    }
+
+    private MasterAgencyAgentImportResult importExcelFromInputStream(String companyCode, InputStream is, boolean removeExisting, String createdBy) throws Exception {
+        ensureNoGlobalUniquePhoneIndex();
+        String normalizedCompanyCode = normalizeString(companyCode);
+        if (normalizedCompanyCode == null) {
+            return new MasterAgencyAgentImportResult(false, 0, 0, List.of(
+                    new MasterAgencyAgentImportError(0, "Company Code", "Required", companyCode)
+            ));
+        }
+
+        String normalizedCreatedBy = resolveCreatedByForCompany(normalizedCompanyCode, createdBy);
+
+        List<MasterAgencyAgentImportError> errors = new ArrayList<>();
+        int created = 0;
+        int updated = 0;
+
+        try (Workbook workbook = WorkbookFactory.create(is)) {
+            Sheet sheet = workbook.getNumberOfSheets() > 0 ? workbook.getSheetAt(0) : null;
+            if (sheet == null) {
+                return new MasterAgencyAgentImportResult(false, 0, 0, List.of(new MasterAgencyAgentImportError(0, "file", "Sheet not found", null)));
+            }
+
+            DataFormatter formatter = new DataFormatter();
+            int lastRow = sheet.getLastRowNum();
+            if (lastRow < 1) {
+                if (removeExisting) {
+                    repository.deleteByCompanyCode(normalizedCompanyCode);
+                    repository.flush();
+                    return new MasterAgencyAgentImportResult(true, 0, 0, List.of());
+                }
+                return new MasterAgencyAgentImportResult(false, 0, 0, List.of(new MasterAgencyAgentImportError(0, "file", "No data found", null)));
+            }
+
+            List<MasterAgencyAgent> toSave = new ArrayList<>();
+            Set<String> seenAgentCodes = new HashSet<>();
+
+            for (int r = 1; r <= lastRow; r++) {
+                Row row = sheet.getRow(r);
+                if (row == null) continue;
+
+                int rowNumber = r + 1;
+
+                String agentCode = readString(formatter, row.getCell(1));
+                String fullName = readString(formatter, row.getCell(2));
+                String shortName = readString(formatter, row.getCell(3));
+                LocalDate birthday = readDate(row.getCell(4), formatter, errors, rowNumber, "Birthday");
+                String genderRaw = readString(formatter, row.getCell(5));
+                String genderTitle = readString(formatter, row.getCell(6));
+                String phoneNo = readString(formatter, row.getCell(7));
+                String rankCode = readString(formatter, row.getCell(8));
+                String rankTitle = readString(formatter, row.getCell(9));
+                LocalDate appointmentDate = readDate(row.getCell(10), formatter, errors, rowNumber, "Appointment Date");
+
+                if (isAllBlank(agentCode, fullName, shortName, genderRaw, genderTitle, phoneNo, rankCode, rankTitle) && birthday == null && appointmentDate == null) {
+                    continue;
+                }
+
+                if (agentCode == null || agentCode.isBlank()) {
+                    errors.add(new MasterAgencyAgentImportError(rowNumber, "Agent Code", "Required", null));
+                    continue;
+                }
+
+                if (fullName == null || fullName.isBlank()) {
+                    errors.add(new MasterAgencyAgentImportError(rowNumber, "Full Name", "Required", fullName));
+                    continue;
+                }
+
+                if (phoneNo == null || phoneNo.isBlank()) {
+                    errors.add(new MasterAgencyAgentImportError(rowNumber, "Phone No", "Required", phoneNo));
+                    continue;
+                }
+
+                if (rankCode == null || rankCode.isBlank()) {
+                    errors.add(new MasterAgencyAgentImportError(rowNumber, "Rank Code", "Required", rankCode));
+                    continue;
+                }
+
+                Gender gender = parseGender(genderRaw);
+                if (gender == null) {
+                    errors.add(new MasterAgencyAgentImportError(rowNumber, "Gender", "Invalid value (MALE/FEMALE)", genderRaw));
+                    continue;
+                }
+
+                MasterAgencyAgent entity = new MasterAgencyAgent();
+                entity.setAgentCode(agentCode);
+                entity.setFullName(fullName);
+                entity.setShortName(shortName);
+                entity.setBirthday(birthday);
+                entity.setGender(gender);
+                entity.setGenderTitle(genderTitle);
+                entity.setPhoneNo(phoneNo);
+                entity.setRankCode(rankCode);
+                entity.setRankTitle(rankTitle);
+                entity.setAppointmentDate(appointmentDate);
+                entity.setCompanyCode(normalizedCompanyCode);
+                entity.setCreatedBy(normalizedCreatedBy);
+                entity.setIsActive(true);
+
+                toSave.add(entity);
+                seenAgentCodes.add(agentCode);
+            }
+
+            if (!errors.isEmpty()) {
+                return new MasterAgencyAgentImportResult(false, 0, 0, errors);
+            }
+
+            if (removeExisting) {
+                repository.deleteByCompanyCode(normalizedCompanyCode);
+                repository.flush();
+            }
+
+            for (MasterAgencyAgent entity : toSave) {
+                repository.save(entity);
+                created++;
+            }
+
+            return new MasterAgencyAgentImportResult(true, created, updated, List.of());
+        }
+    }
+
+    @Transactional
     public MasterAgencyAgentImportResult importApi(String companyCode, List<MasterAgencyAgentRequest> items, boolean removeExisting, String createdBy) {
         ensureNoGlobalUniquePhoneIndex();
         String normalizedCompanyCode = normalizeString(companyCode);
         if (normalizedCompanyCode == null) {
             return new MasterAgencyAgentImportResult(false, 0, 0, List.of(
-                    new MasterAgencyAgentImportError(0, "Company Code", "Wajib diisi", companyCode)
+                    new MasterAgencyAgentImportError(0, "Company Code", "Required", companyCode)
             ));
         }
 
@@ -392,7 +530,7 @@ public class MasterAgencyAgentService {
 
         if (items == null || items.isEmpty()) {
             return new MasterAgencyAgentImportResult(false, 0, 0, List.of(
-                    new MasterAgencyAgentImportError(0, "items", "Items kosong", null)
+                    new MasterAgencyAgentImportError(0, "items", "Items is empty", null)
             ));
         }
 
@@ -407,7 +545,7 @@ public class MasterAgencyAgentService {
             int rowNumber = i + 1;
             MasterAgencyAgentRequest request = items.get(i);
             if (request == null) {
-                errors.add(new MasterAgencyAgentImportError(rowNumber, "item", "Item null", null));
+                errors.add(new MasterAgencyAgentImportError(rowNumber, "item", "Item is null", null));
                 continue;
             }
 
@@ -418,50 +556,50 @@ public class MasterAgencyAgentService {
             String rankTitle = normalizeString(request.getRankTitle());
 
             if (agentCode == null) {
-                errors.add(new MasterAgencyAgentImportError(rowNumber, "Agent Code", "Wajib diisi", request.getAgentCode()));
+                errors.add(new MasterAgencyAgentImportError(rowNumber, "Agent Code", "Required", request.getAgentCode()));
                 continue;
             }
 
             String agentKey = agentCode.toUpperCase(Locale.ROOT);
             if (!seenAgentCodes.add(agentKey)) {
-                errors.add(new MasterAgencyAgentImportError(rowNumber, "Agent Code", "Duplikat Agent Code pada data import", request.getAgentCode()));
+                errors.add(new MasterAgencyAgentImportError(rowNumber, "Agent Code", "Duplicate Agent Code in import items", request.getAgentCode()));
                 continue;
             }
 
             if (!removeExisting && repository.existsByCompanyCodeAndAgentCodeIgnoreCase(normalizedCompanyCode, agentCode)) {
-                errors.add(new MasterAgencyAgentImportError(rowNumber, "Agent Code", "Duplikat Agent Code untuk Company Code ini", request.getAgentCode()));
+                errors.add(new MasterAgencyAgentImportError(rowNumber, "Agent Code", "Duplicate Agent Code for this Company Code", request.getAgentCode()));
                 continue;
             }
 
             if (fullName == null) {
-                errors.add(new MasterAgencyAgentImportError(rowNumber, "Full Name", "Wajib diisi", request.getFullName()));
+                errors.add(new MasterAgencyAgentImportError(rowNumber, "Full Name", "Required", request.getFullName()));
                 continue;
             }
 
             if (phoneNoRaw == null) {
-                errors.add(new MasterAgencyAgentImportError(rowNumber, "Phone no", "Wajib diisi", request.getPhoneNo()));
+                errors.add(new MasterAgencyAgentImportError(rowNumber, "Phone no", "Required", request.getPhoneNo()));
                 continue;
             }
 
             if (rankCode == null) {
-                errors.add(new MasterAgencyAgentImportError(rowNumber, "Rank (Code)", "Wajib diisi", request.getRankCode()));
+                errors.add(new MasterAgencyAgentImportError(rowNumber, "Rank (Code)", "Required", request.getRankCode()));
                 continue;
             }
 
             if (rankTitle == null) {
-                errors.add(new MasterAgencyAgentImportError(rowNumber, "Rank (Full Title)", "Wajib diisi", request.getRankTitle()));
+                errors.add(new MasterAgencyAgentImportError(rowNumber, "Rank (Full Title)", "Required", request.getRankTitle()));
                 continue;
             }
 
             String normalizedPhone = normalizePhone(phoneNoRaw);
             if (normalizedPhone == null) {
-                errors.add(new MasterAgencyAgentImportError(rowNumber, "Phone no", "Format phone tidak valid", request.getPhoneNo()));
+                errors.add(new MasterAgencyAgentImportError(rowNumber, "Phone no", "Invalid phone number format", request.getPhoneNo()));
                 continue;
             }
 
             MasterAgencyAgent.Gender gender = parseGender(request.getGender());
             if (gender == null) {
-                errors.add(new MasterAgencyAgentImportError(rowNumber, "Gender", "Gender harus Male atau Female", request.getGender()));
+                errors.add(new MasterAgencyAgentImportError(rowNumber, "Gender", "Gender must be MALE or FEMALE", request.getGender()));
                 continue;
             }
 
@@ -511,14 +649,14 @@ public class MasterAgencyAgentService {
         String normalizedCompanyCode = normalizeString(companyCode);
         if (normalizedCompanyCode == null) {
             return new MasterAgencyAgentImportResult(false, 0, 0, List.of(
-                    new MasterAgencyAgentImportError(0, "Company Code", "Wajib diisi", companyCode)
+                    new MasterAgencyAgentImportError(0, "Company Code", "Required", companyCode)
             ));
         }
 
         String normalizedCreatedBy = resolveCreatedByForCompany(normalizedCompanyCode, createdBy);
 
         if (file == null || file.isEmpty()) {
-            return new MasterAgencyAgentImportResult(false, 0, 0, List.of(new MasterAgencyAgentImportError(0, "file", "File kosong", null)));
+            return new MasterAgencyAgentImportResult(false, 0, 0, List.of(new MasterAgencyAgentImportError(0, "file", "File is empty", null)));
         }
 
         List<MasterAgencyAgentImportError> errors = new ArrayList<>();
@@ -528,7 +666,7 @@ public class MasterAgencyAgentService {
         try (BufferedReader reader = new BufferedReader(new InputStreamReader(file.getInputStream(), StandardCharsets.UTF_8))) {
             String header = reader.readLine();
             if (header == null) {
-                return new MasterAgencyAgentImportResult(false, 0, 0, List.of(new MasterAgencyAgentImportError(0, "file", "Data tidak ditemukan", null)));
+                return new MasterAgencyAgentImportResult(false, 0, 0, List.of(new MasterAgencyAgentImportError(0, "file", "No data found", null)));
             }
 
             List<MasterAgencyAgent> toSave = new ArrayList<>();
@@ -561,51 +699,51 @@ public class MasterAgencyAgentService {
                 }
 
                 if (isBlank(agentCode)) {
-                    errors.add(new MasterAgencyAgentImportError(rowNumber, "Agent Code", "Wajib diisi", agentCode));
+                    errors.add(new MasterAgencyAgentImportError(rowNumber, "Agent Code", "Required", agentCode));
                     continue;
                 }
 
                 String normalizedAgentCode = agentCode.trim();
                 String agentKey = normalizedAgentCode.toUpperCase(Locale.ROOT);
                 if (!seenAgentCodes.add(agentKey)) {
-                    errors.add(new MasterAgencyAgentImportError(rowNumber, "Agent Code", "Duplikat Agent Code pada file import", agentCode));
+                    errors.add(new MasterAgencyAgentImportError(rowNumber, "Agent Code", "Duplicate Agent Code in import file", agentCode));
                     continue;
                 }
 
                 if (!removeExisting && repository.existsByCompanyCodeAndAgentCodeIgnoreCase(normalizedCompanyCode, normalizedAgentCode)) {
-                    errors.add(new MasterAgencyAgentImportError(rowNumber, "Agent Code", "Duplikat Agent Code untuk Company Code ini", agentCode));
+                    errors.add(new MasterAgencyAgentImportError(rowNumber, "Agent Code", "Duplicate Agent Code for this Company Code", agentCode));
                     continue;
                 }
 
                 if (isBlank(fullName)) {
-                    errors.add(new MasterAgencyAgentImportError(rowNumber, "Full Name", "Wajib diisi", fullName));
+                    errors.add(new MasterAgencyAgentImportError(rowNumber, "Full Name", "Required", fullName));
                     continue;
                 }
 
                 if (isBlank(phoneNo)) {
-                    errors.add(new MasterAgencyAgentImportError(rowNumber, "Phone no", "Wajib diisi", phoneNo));
+                    errors.add(new MasterAgencyAgentImportError(rowNumber, "Phone no", "Required", phoneNo));
                     continue;
                 }
 
                 if (isBlank(rankCode)) {
-                    errors.add(new MasterAgencyAgentImportError(rowNumber, "Rank (Code)", "Wajib diisi", rankCode));
+                    errors.add(new MasterAgencyAgentImportError(rowNumber, "Rank (Code)", "Required", rankCode));
                     continue;
                 }
 
                 if (isBlank(rankTitle)) {
-                    errors.add(new MasterAgencyAgentImportError(rowNumber, "Rank (Full Title)", "Wajib diisi", rankTitle));
+                    errors.add(new MasterAgencyAgentImportError(rowNumber, "Rank (Full Title)", "Required", rankTitle));
                     continue;
                 }
 
                 String normalizedPhone = normalizePhone(phoneNo);
                 if (normalizedPhone == null) {
-                    errors.add(new MasterAgencyAgentImportError(rowNumber, "Phone no", "Format phone tidak valid", phoneNo));
+                    errors.add(new MasterAgencyAgentImportError(rowNumber, "Phone no", "Invalid phone number format", phoneNo));
                     continue;
                 }
 
                 MasterAgencyAgent.Gender gender = parseGender(genderRaw);
                 if (gender == null) {
-                    errors.add(new MasterAgencyAgentImportError(rowNumber, "Gender", "Gender harus Male atau Female", genderRaw));
+                    errors.add(new MasterAgencyAgentImportError(rowNumber, "Gender", "Gender must be MALE or FEMALE", genderRaw));
                     continue;
                 }
 
@@ -708,32 +846,32 @@ public class MasterAgencyAgentService {
     private void applyRequest(MasterAgencyAgent entity, MasterAgencyAgentRequest request) {
         String agentCode = normalizeString(request.getAgentCode());
         if (agentCode == null) {
-            throw new ValidationException("Agent Code wajib diisi");
+            throw new ValidationException("Agent Code is required");
         }
 
         String fullName = normalizeString(request.getFullName());
         if (fullName == null) {
-            throw new ValidationException("Full Name wajib diisi");
+            throw new ValidationException("Full Name is required");
         }
 
         String phone = normalizePhone(request.getPhoneNo());
         if (phone == null) {
-            throw new ValidationException("Phone no tidak valid");
+            throw new ValidationException("Invalid phone number");
         }
 
         String rankCode = normalizeString(request.getRankCode());
         if (rankCode == null) {
-            throw new ValidationException("Rank (Code) wajib diisi");
+            throw new ValidationException("Rank (Code) is required");
         }
 
         String rankTitle = normalizeString(request.getRankTitle());
         if (rankTitle == null) {
-            throw new ValidationException("Rank (Full Title) wajib diisi");
+            throw new ValidationException("Rank (Full Title) is required");
         }
 
         MasterAgencyAgent.Gender gender = parseGender(request.getGender());
         if (gender == null) {
-            throw new ValidationException("Gender harus Male atau Female");
+            throw new ValidationException("Gender must be MALE or FEMALE");
         }
 
         entity.setAgentCode(agentCode);
@@ -923,6 +1061,7 @@ public class MasterAgencyAgentService {
     private MasterAgencyAgentResponse toResponse(MasterAgencyAgent entity) {
         return new MasterAgencyAgentResponse(
                 entity.getId(),
+                entity.getCompanyCode(),
                 entity.getAgentCode(),
                 entity.getFullName(),
                 entity.getShortName(),

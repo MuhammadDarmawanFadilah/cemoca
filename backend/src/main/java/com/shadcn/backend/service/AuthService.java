@@ -8,8 +8,12 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDateTime;
 import java.util.Base64;
+import java.nio.charset.StandardCharsets;
+import java.util.Locale;
 import java.util.Optional;
+import java.util.UUID;
 
 @Slf4j
 @Service
@@ -18,6 +22,66 @@ public class AuthService {
     
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
+
+    private void ensureCompanyIdentity(User user) {
+        if (user == null) {
+            return;
+        }
+
+        boolean changed = false;
+
+        String ownerName = user.getOwnerName() == null ? null : user.getOwnerName().trim();
+        String companyName = user.getCompanyName() == null ? null : user.getCompanyName().trim();
+        String companyCode = user.getCompanyCode() == null ? null : user.getCompanyCode().trim();
+
+        if (ownerName != null && !ownerName.equals(user.getOwnerName())) {
+            user.setOwnerName(ownerName);
+            changed = true;
+        }
+
+        if (companyName != null && !companyName.equals(user.getCompanyName())) {
+            user.setCompanyName(companyName);
+            changed = true;
+        }
+
+        if (companyName == null || companyName.isBlank()) {
+            if (changed) {
+                userRepository.save(user);
+            }
+            return;
+        }
+
+        if (companyCode != null && !companyCode.isBlank()) {
+            if (changed) {
+                userRepository.save(user);
+            }
+            return;
+        }
+
+        String normalized = companyName.toUpperCase(Locale.ROOT).replaceAll("[^A-Z0-9]", "");
+        if (normalized.isBlank()) {
+            normalized = "COMPANY";
+        }
+        if (normalized.length() > 8) {
+            normalized = normalized.substring(0, 8);
+        }
+
+        String next = null;
+        for (int i = 0; i < 10; i++) {
+            String suffix = UUID.randomUUID().toString().replace("-", "").substring(0, 6).toUpperCase(Locale.ROOT);
+            String code = normalized + suffix;
+            if (!userRepository.existsByCompanyCode(code)) {
+                next = code;
+                break;
+            }
+        }
+        if (next == null) {
+            next = normalized + UUID.randomUUID().toString().replace("-", "").substring(0, 10).toUpperCase(Locale.ROOT);
+        }
+
+        user.setCompanyCode(next);
+        userRepository.save(user);
+    }
       public AuthResponse authenticate(String username, String password) {
         log.debug("Attempting authentication for username: {}", username);
         
@@ -39,6 +103,11 @@ public class AuthService {
             log.warn("Inactive user attempted login: {}", username);
             throw new RuntimeException("User account is not active");
         }
+
+        user.setLastAccessAt(LocalDateTime.now());
+        userRepository.save(user);
+
+        ensureCompanyIdentity(user);
         
         // Generate permanent token based on user data
         String token = generatePermanentToken(user);
@@ -53,13 +122,13 @@ public class AuthService {
     public Long getUserIdFromToken(String token) {
         try {
             // Decode the token and extract user ID
-            String decoded = new String(Base64.getDecoder().decode(token));
-            String[] parts = decoded.split(":");
-            if (parts.length >= 2) {
-                return Long.parseLong(parts[0]);
+            String decoded = new String(Base64.getDecoder().decode(token), StandardCharsets.UTF_8);
+            int idx = decoded.indexOf(':');
+            if (idx <= 0) {
+                return null;
             }
-            return null;
-        } catch (Exception e) {
+            return Long.parseLong(decoded, 0, idx, 10);
+        } catch (IllegalArgumentException e) {
             log.debug("Failed to extract user ID from token", e);
             return null;
         }
@@ -82,6 +151,8 @@ public class AuthService {
         }
         
         User user = userOpt.get();
+
+        ensureCompanyIdentity(user);
         
         // Validate token signature
         String expectedToken = generatePermanentToken(user);

@@ -8,6 +8,7 @@ export const config = {
   
   // Auth Configuration
   authLoginEndpoint: process.env.NEXT_PUBLIC_AUTH_LOGIN_ENDPOINT || '/api/auth/login',
+  authMeEndpoint: process.env.NEXT_PUBLIC_AUTH_ME_ENDPOINT || '/api/auth/me',
   // Network Filter Configuration
   networkFilterEnabled: process.env.NEXT_PUBLIC_NETWORK_FILTER_ENABLED === 'true',
   showOnlyBackendCalls: process.env.NEXT_PUBLIC_SHOW_ONLY_BACKEND_CALLS === 'true',

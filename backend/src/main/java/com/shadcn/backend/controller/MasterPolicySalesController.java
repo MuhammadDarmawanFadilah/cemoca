@@ -30,7 +30,7 @@ public class MasterPolicySalesController {
     @GetMapping
     @PreAuthorize("hasRole('ADMIN') or hasRole('MODERATOR') or hasRole('USER')")
     public ResponseEntity<Page<MasterPolicySalesResponse>> findAll(
-            @RequestParam String companyCode,
+            @RequestParam(required = false) String companyCode,
             @RequestParam(required = false) String search,
             @RequestParam(required = false) String agentCode,
             @RequestParam(required = false) String createdBy,
