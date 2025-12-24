@@ -1027,7 +1027,7 @@ public class VideoReportController {
 
             Map<String, Object> sendResult;
             try {
-                sendResult = whatsAppService.sendVideoFileFromLocalWithDetails(phone, caption, outPath);
+                sendResult = whatsAppService.sendVideoFileFromLocalWithDetailsOrUrl(phone, caption, outPath, videoUrl);
             } finally {
                 try {
                     if (outPath != null) {

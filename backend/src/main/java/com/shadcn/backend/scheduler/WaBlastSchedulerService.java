@@ -1,7 +1,6 @@
 package com.shadcn.backend.scheduler;
 
 import com.shadcn.backend.entity.VideoReport;
-import com.shadcn.backend.entity.VideoReportItem;
 import com.shadcn.backend.entity.PdfReport;
 import com.shadcn.backend.entity.PdfReportItem;
 import com.shadcn.backend.repository.VideoReportItemRepository;
@@ -14,11 +13,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Lazy;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
-
-import jakarta.annotation.PostConstruct;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -31,7 +27,7 @@ import java.util.stream.Collectors;
  * This scheduler handles:
  * 1. Send pending WA messages for completed PDF/Video items (every 30 seconds)
  * 2. Recovery stuck PDF items (status PROCESSING > 10 minutes)
- * 3. Recovery stuck Video items (status PROCESSING > 15 minutes)
+ * 3. (disabled) Recovery stuck Video items
  * 
  * NOTE: PDF/Video generation is NOT auto-triggered by scheduler
  * Generation only starts from user action (button click)
@@ -61,21 +57,6 @@ public class WaBlastSchedulerService {
     @Lazy
     private PdfReportService pdfReportService;
 
-    @Value("${app.wa.processing-timeout-minutes}")
-    private int waProcessingTimeoutMinutes;
-
-    @Value("${app.wa.pending-timeout-minutes}")
-    private int waPendingTimeoutMinutes;
-
-    @PostConstruct
-    private void validateTimeouts() {
-        if (waProcessingTimeoutMinutes <= 0) {
-            throw new IllegalStateException("app.wa.processing-timeout-minutes must be > 0");
-        }
-        if (waPendingTimeoutMinutes <= 0) {
-            throw new IllegalStateException("app.wa.pending-timeout-minutes must be > 0");
-        }
-    }
     
     /**
      * Scheduler: Send pending WA messages for completed PDF items every 30 seconds
@@ -143,55 +124,6 @@ public class WaBlastSchedulerService {
         }
     }
     
-    /**
-     * Scheduler: Recover WA items stuck in PROCESSING state for > 2 minutes
-     * Mark as ERROR so UI doesn't stay pending forever
-     */
-    @Scheduled(fixedRate = 60000, initialDelay = 60000) // Every 1 minute, start after 1 min
-    public void recoverStuckWaProcessingItems() {
-        try {
-            LocalDateTime processingThreshold = LocalDateTime.now().minusMinutes(waProcessingTimeoutMinutes);
-            LocalDateTime pendingThreshold = LocalDateTime.now().minusMinutes(waPendingTimeoutMinutes);
-            
-            // PDF items
-            List<PdfReportItem> stuckPdfItems = pdfReportItemRepository.findStuckWaProcessingItems(processingThreshold);
-            if (!stuckPdfItems.isEmpty()) {
-                logger.warn("[WA RECOVERY] Found {} PDF items stuck in WA PROCESSING, marking as ERROR", stuckPdfItems.size());
-                for (PdfReportItem item : stuckPdfItems) {
-                    item.setWaStatus("ERROR");
-                    item.setWaErrorMessage("WA blast timeout: stuck in PROCESSING > " + waProcessingTimeoutMinutes + " minutes");
-                    pdfReportItemRepository.save(item);
-                    logger.info("[WA RECOVERY] Marked PDF item {} as ERROR", item.getId());
-                }
-            }
-            
-            // Video items
-            List<VideoReportItem> stuckVideoItems = videoReportItemRepository.findStuckWaProcessingItems(processingThreshold);
-            if (!stuckVideoItems.isEmpty()) {
-                logger.warn("[WA RECOVERY] Found {} Video items stuck in WA PROCESSING, marking as ERROR", stuckVideoItems.size());
-                for (VideoReportItem item : stuckVideoItems) {
-                    item.setWaStatus("ERROR");
-                    item.setWaErrorMessage("WA blast timeout: stuck in PROCESSING > " + waProcessingTimeoutMinutes + " minutes");
-                    videoReportItemRepository.save(item);
-                    logger.info("[WA RECOVERY] Marked Video item {} as ERROR", item.getId());
-                }
-            }
-
-            // Video items stuck in PENDING too long
-            List<VideoReportItem> stuckPendingVideoItems = videoReportItemRepository.findStuckWaPendingItems(pendingThreshold);
-            if (!stuckPendingVideoItems.isEmpty()) {
-                logger.warn("[WA RECOVERY] Found {} Video items stuck in WA PENDING, marking as ERROR", stuckPendingVideoItems.size());
-                for (VideoReportItem item : stuckPendingVideoItems) {
-                    item.setWaStatus("ERROR");
-                    item.setWaErrorMessage("WA blast timeout: stuck in PENDING > " + waPendingTimeoutMinutes + " minutes");
-                    videoReportItemRepository.save(item);
-                    logger.info("[WA RECOVERY] Marked Video item {} as ERROR (PENDING timeout)", item.getId());
-                }
-            }
-        } catch (Exception e) {
-            logger.error("[WA RECOVERY] Error: {}", e.getMessage(), e);
-        }
-    }
 
     /**
      * Scheduler: Sync queued/sent WA message statuses from Wablas every 5 minutes
@@ -275,62 +207,4 @@ public class WaBlastSchedulerService {
         }
     }
     
-    /**
-     * Scheduler: Auto-recover stuck Video items every 10 minutes
-     * Items stuck in status PROCESSING for > 15 minutes will be marked as FAILED
-     * NOTE: This does NOT auto-generate Video - only marks stuck items as FAILED
-     */
-    @Scheduled(fixedRate = 600000, initialDelay = 360000) // 10 minutes, start after 6 min
-    public void recoverStuckVideoItems() {
-        try {
-            LocalDateTime threshold = LocalDateTime.now().minusMinutes(15);
-            List<VideoReportItem> stuckItems = videoReportItemRepository.findStuckProcessingItems(threshold);
-            
-            if (stuckItems.isEmpty()) {
-                return;
-            }
-            
-            logger.warn("[RECOVERY VIDEO] Found {} Video items stuck in PROCESSING, marking as FAILED...", stuckItems.size());
-            
-            for (VideoReportItem item : stuckItems) {
-                item.setStatus("FAILED");
-                item.setErrorMessage("D-ID video generation timeout - stuck in PROCESSING for > 15 minutes");
-                videoReportItemRepository.save(item);
-                logger.info("[RECOVERY VIDEO] Marked item {} (report {}) as FAILED due to timeout", item.getId(), item.getVideoReport().getId());
-            }
-            
-            // Update affected reports status (just update counts, no auto re-generate)
-            Set<Long> affectedReportIds = stuckItems.stream()
-                    .map(item -> item.getVideoReport().getId())
-                    .collect(Collectors.toSet());
-            
-            for (Long reportId : affectedReportIds) {
-                // Just check and update status, don't re-trigger generation
-                VideoReport report = videoReportRepository.findById(reportId).orElse(null);
-                if (report != null) {
-                    int pendingCount = videoReportItemRepository.countByVideoReportIdAndStatus(reportId, "PENDING");
-                    int doneCount = videoReportItemRepository.countByVideoReportIdAndStatus(reportId, "DONE");
-                    int failedCount = videoReportItemRepository.countByVideoReportIdAndStatus(reportId, "FAILED");
-                    int processingCount = videoReportItemRepository.countByVideoReportIdAndStatus(reportId, "PROCESSING");
-                    
-                    report.setSuccessCount(doneCount);
-                    report.setFailedCount(failedCount);
-                    
-                    // Update status based on current state
-                    if (processingCount == 0 && pendingCount == 0) {
-                        report.setStatus("COMPLETED");
-                        report.setCompletedAt(LocalDateTime.now());
-                    } else if (pendingCount > 0) {
-                        report.setStatus("PENDING");
-                    }
-                    videoReportRepository.save(report);
-                    logger.info("[RECOVERY VIDEO] Updated report {} status - Pending: {}, Processing: {}, Done: {}, Failed: {}", 
-                            reportId, pendingCount, processingCount, doneCount, failedCount);
-                }
-            }
-            
-        } catch (Exception e) {
-            logger.error("[RECOVERY VIDEO] Error: {}", e.getMessage(), e);
-        }
-    }
 }

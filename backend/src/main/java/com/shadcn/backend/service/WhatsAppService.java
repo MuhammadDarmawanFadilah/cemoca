@@ -27,6 +27,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.RestTemplate;
+import org.springframework.web.client.HttpStatusCodeException;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -1410,6 +1411,66 @@ public class WhatsAppService {
         );
     }
 
+    public Map<String, Object> sendVideoFileFromLocalWithDetailsOrUrl(
+            String phoneNumber,
+            String caption,
+            Path filePath,
+            String fallbackVideoUrl
+    ) {
+        Map<String, Object> primary = sendVideoFileFromLocalWithDetails(phoneNumber, caption, filePath);
+        if (Boolean.TRUE.equals(primary.get("success"))) {
+            return primary;
+        }
+
+        if (fallbackVideoUrl != null && !fallbackVideoUrl.isBlank() && isPayloadTooLarge(primary)) {
+            Map<String, Object> fallback = sendVideoUrlWithDetails(phoneNumber, caption, fallbackVideoUrl);
+            fallback.put("videoFallback", "send-video-url-after-413");
+            fallback.put("originalError", primary.get("error"));
+            fallback.put("originalHttpStatus", primary.get("httpStatus"));
+            fallback.put("originalRawResponse", primary.get("rawResponse"));
+            fallback.put("fallbackVideoUrl", fallbackVideoUrl);
+            return fallback;
+        }
+
+        return primary;
+    }
+
+    private boolean isPayloadTooLarge(Map<String, Object> result) {
+        if (result == null) {
+            return false;
+        }
+
+        Object httpStatusObj = result.get("httpStatus");
+        if (httpStatusObj != null) {
+            try {
+                int code = Integer.parseInt(String.valueOf(httpStatusObj));
+                if (code == 413) {
+                    return true;
+                }
+            } catch (Exception ignored) {
+            }
+        }
+
+        String err = result.get("error") == null ? "" : String.valueOf(result.get("error"));
+        String raw = result.get("rawResponse") == null ? "" : String.valueOf(result.get("rawResponse"));
+        String combined = (err + "\n" + raw).toLowerCase(Locale.ROOT);
+        if (combined.contains("413") || combined.contains("payload too large") || combined.contains("post data is too large")) {
+            return true;
+        }
+
+        if (raw != null && !raw.isBlank()) {
+            try {
+                JsonNode json = objectMapper.readTree(raw);
+                if (json != null && json.has("code") && json.get("code").asInt(-1) == 413) {
+                    return true;
+                }
+            } catch (Exception ignored) {
+            }
+        }
+
+        return false;
+    }
+
     public Map<String, Object> sendTextMessageWithDetails(String phoneNumber, String message) {
         Map<String, Object> result = new HashMap<>();
         result.put("success", false);
@@ -2313,6 +2374,11 @@ public class WhatsAppService {
             }
 
             return result;
+        } catch (HttpStatusCodeException e) {
+            result.put("httpStatus", e.getStatusCode().value());
+            result.put("rawResponse", e.getResponseBodyAsString());
+            result.put("error", e.getMessage());
+            return result;
         } catch (Exception e) {
             logger.error("[WABLAS] Attachment send failed: {}", e.getMessage());
             result.put("error", e.getMessage());
@@ -2459,6 +2525,11 @@ public class WhatsAppService {
                 return result;
             }
 
+            return result;
+        } catch (HttpStatusCodeException e) {
+            result.put("httpStatus", e.getStatusCode().value());
+            result.put("rawResponse", e.getResponseBodyAsString());
+            result.put("error", e.getMessage());
             return result;
         } catch (Exception e) {
             logger.error("[WABLAS] Attachment(path) send failed: {}", e.getMessage());

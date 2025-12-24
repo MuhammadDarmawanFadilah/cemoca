@@ -9,6 +9,7 @@ import com.shadcn.backend.entity.VideoReport;
 import com.shadcn.backend.entity.VideoReportItem;
 import com.shadcn.backend.repository.VideoReportItemRepository;
 import com.shadcn.backend.repository.VideoReportRepository;
+import com.shadcn.backend.util.VideoLinkEncryptor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -60,6 +61,12 @@ public class VideoReportService {
     
     @Value("${app.frontend.url:http://localhost:3000}")
     private String frontendUrl;
+
+    @Value("${app.backend.url:http://localhost:8080}")
+    private String backendUrl;
+
+    @Value("${server.servlet.context-path:}")
+    private String serverContextPath;
 
     @Value("${app.video.generation.parallelism}")
     private int videoGenerationParallelism;
@@ -603,10 +610,13 @@ public class VideoReportService {
                 Path sharePath = getShareVideoPath(reportId, item.getId());
                 ensureTempVideoExists(item, tempPath, sharePath);
 
-                Map<String, Object> waResult = whatsAppService.sendVideoFileFromLocalWithDetails(
+                String fallbackUrl = buildPublicVideoStreamUrl(reportId, item.getId());
+
+                Map<String, Object> waResult = whatsAppService.sendVideoFileFromLocalWithDetailsOrUrl(
                     item.getPhone(),
                     caption,
-                    tempPath
+                    tempPath,
+                    fallbackUrl
                 );
 
                 boolean ok = Boolean.TRUE.equals(waResult.get("success"));
@@ -697,6 +707,30 @@ public class VideoReportService {
 
         Files.createDirectories(sharePath.getParent());
         Files.copy(tempPath, sharePath, StandardCopyOption.REPLACE_EXISTING);
+    }
+
+    private String buildPublicVideoStreamUrl(Long reportId, Long itemId) {
+        String token = VideoLinkEncryptor.encryptVideoLink(reportId, itemId);
+        if (token == null || token.isBlank()) {
+            return null;
+        }
+
+        String base = backendUrl == null ? "" : backendUrl.trim();
+        if (base.endsWith("/")) {
+            base = base.substring(0, base.length() - 1);
+        }
+
+        String ctx = serverContextPath == null ? "" : serverContextPath.trim();
+        if (ctx.isEmpty() || "/".equals(ctx)) {
+            ctx = "";
+        } else if (!ctx.startsWith("/")) {
+            ctx = "/" + ctx;
+        }
+        if (ctx.endsWith("/")) {
+            ctx = ctx.substring(0, ctx.length() - 1);
+        }
+
+        return base + ctx + "/api/video-reports/stream/" + token + ".mp4";
     }
 
     private static void downloadToFile(
@@ -810,10 +844,13 @@ public class VideoReportService {
                 Path sharePath = getShareVideoPath(reportId, item.getId());
                 ensureTempVideoExists(item, tempPath, sharePath);
 
-                attemptResult = whatsAppService.sendVideoFileFromLocalWithDetails(
+                String fallbackUrl = buildPublicVideoStreamUrl(reportId, item.getId());
+
+                attemptResult = whatsAppService.sendVideoFileFromLocalWithDetailsOrUrl(
                         item.getPhone(),
                         caption,
-                        tempPath
+                    tempPath,
+                    fallbackUrl
                 );
 
                 if (Boolean.TRUE.equals(attemptResult.get("success"))) {
