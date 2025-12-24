@@ -1465,6 +1465,39 @@ public class WhatsAppService {
             return primary;
         }
 
+        if (fallbackVideoUrl != null && !fallbackVideoUrl.isBlank()) {
+            String err = primary.get("error") == null ? "" : String.valueOf(primary.get("error"));
+            String raw = primary.get("rawResponse") == null ? "" : String.valueOf(primary.get("rawResponse"));
+            String combined = (err + "\n" + raw).toLowerCase(Locale.ROOT);
+            boolean localSendError = combined.contains("error sending local file video message");
+
+            Object httpStatusObj = primary.get("httpStatus");
+            boolean is500 = false;
+            if (httpStatusObj != null) {
+                try {
+                    int code = Integer.parseInt(String.valueOf(httpStatusObj));
+                    is500 = (code == 500);
+                } catch (Exception ignored) {
+                }
+            }
+
+            if (localSendError || is500) {
+                Map<String, Object> fallback = fallbackToTextLink(
+                        phoneNumber,
+                        caption,
+                        fallbackVideoUrl,
+                        err.isBlank() ? null : err,
+                        "video-local-send-error"
+                );
+                fallback.put("videoFallback", "text-link-after-local-send-error");
+                fallback.put("originalError", primary.get("error"));
+                fallback.put("originalHttpStatus", primary.get("httpStatus"));
+                fallback.put("originalRawResponse", primary.get("rawResponse"));
+                fallback.put("fallbackVideoUrl", fallbackVideoUrl);
+                return fallback;
+            }
+        }
+
         if (fallbackVideoUrl != null && !fallbackVideoUrl.isBlank() && isPayloadTooLarge(primary)) {
             Map<String, Object> fallback = fallbackToTextLink(
                     phoneNumber,
