@@ -39,11 +39,6 @@ const nextConfig: NextConfig = {
     },
   },
   
-  // ESLint configuration - treat warnings as warnings not errors
-  eslint: {
-    ignoreDuringBuilds: false,
-  },
-  
   // TypeScript configuration
   typescript: {
     ignoreBuildErrors: true,
@@ -201,7 +196,7 @@ const nextConfig: NextConfig = {
       },
       // Workbox files
       {
-        source: '/workbox-:path*.js',
+        source: '/workbox-(.+)\\.js',
         headers: [
           {
             key: 'Content-Type',
@@ -215,7 +210,7 @@ const nextConfig: NextConfig = {
       },
       // API headers
       {
-        source: '/api/:path*',
+        source: '/api/(.*)',
         headers: [
           { key: 'Access-Control-Allow-Origin', value: '*' },
           { key: 'Access-Control-Allow-Methods', value: 'GET, POST, PUT, DELETE, OPTIONS' },
@@ -226,10 +221,11 @@ const nextConfig: NextConfig = {
   },
   // Redirect API calls to backend
   async rewrites() {
+    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8080';
     return [
       {
-        source: '/api/:path*',
-        destination: `${process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8080'}/api/:path*`,
+        source: '/api/:slug*',
+        destination: `${backendUrl}/api/:slug*`,
       },
     ];
   },
