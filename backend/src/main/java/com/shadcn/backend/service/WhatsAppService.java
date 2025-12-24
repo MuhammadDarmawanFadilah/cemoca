@@ -40,10 +40,17 @@ public class WhatsAppService {
     @Value("${whatsapp.api.max-media-bytes}")
     private long wablasMaxMediaBytes;
 
+    @Value("${whatsapp.wablas.max-media-bytes}")
+    private long wablasProviderMaxMediaBytes;
+
     @PostConstruct
     private void validateWablasMaxMediaBytes() {
         if (wablasMaxMediaBytes <= 0) {
             throw new IllegalStateException("whatsapp.api.max-media-bytes must be > 0");
+        }
+
+        if (wablasProviderMaxMediaBytes <= 0) {
+            throw new IllegalStateException("whatsapp.wablas.max-media-bytes must be > 0");
         }
     }
     
@@ -130,6 +137,10 @@ public class WhatsAppService {
 
     private long maxMediaBytes() {
         return wablasMaxMediaBytes;
+    }
+
+    private long wablasHardLimitBytes() {
+        return wablasProviderMaxMediaBytes;
     }
     
     /**
@@ -1417,14 +1428,52 @@ public class WhatsAppService {
             Path filePath,
             String fallbackVideoUrl
     ) {
+        try {
+            if (filePath != null && Files.exists(filePath)) {
+                long size = Files.size(filePath);
+                long limit = wablasHardLimitBytes();
+                if (limit > 0 && size > limit) {
+                    String msg = "Wablas media max size is " + limit + " bytes but file is " + size + " bytes";
+                    if (fallbackVideoUrl != null && !fallbackVideoUrl.isBlank()) {
+                        Map<String, Object> fallback = fallbackToTextLink(
+                                phoneNumber,
+                                caption,
+                                fallbackVideoUrl,
+                                msg,
+                                "video-too-large"
+                        );
+                        fallback.put("videoFallback", "text-link-too-large");
+                        fallback.put("fileSizeBytes", size);
+                        fallback.put("wablasMaxBytes", limit);
+                        return fallback;
+                    }
+
+                    Map<String, Object> tooLarge = new HashMap<>();
+                    tooLarge.put("success", false);
+                    tooLarge.put("phone", phoneNumber);
+                    tooLarge.put("error", msg);
+                    tooLarge.put("fileSizeBytes", size);
+                    tooLarge.put("wablasMaxBytes", limit);
+                    return tooLarge;
+                }
+            }
+        } catch (Exception ignored) {
+        }
+
         Map<String, Object> primary = sendVideoFileFromLocalWithDetails(phoneNumber, caption, filePath);
         if (Boolean.TRUE.equals(primary.get("success"))) {
             return primary;
         }
 
         if (fallbackVideoUrl != null && !fallbackVideoUrl.isBlank() && isPayloadTooLarge(primary)) {
-            Map<String, Object> fallback = sendVideoUrlWithDetails(phoneNumber, caption, fallbackVideoUrl);
-            fallback.put("videoFallback", "send-video-url-after-413");
+            Map<String, Object> fallback = fallbackToTextLink(
+                    phoneNumber,
+                    caption,
+                    fallbackVideoUrl,
+                    java.util.Objects.toString(primary.get("error"), null),
+                    "video-413"
+            );
+            fallback.put("videoFallback", "text-link-after-413");
             fallback.put("originalError", primary.get("error"));
             fallback.put("originalHttpStatus", primary.get("httpStatus"));
             fallback.put("originalRawResponse", primary.get("rawResponse"));
