@@ -517,7 +517,6 @@ public class VideoReportService {
      * 4. Update status to SENT/FAILED
      */
     @Async
-    @Transactional
     public void startWaBlast(Long reportId) {
         java.util.concurrent.locks.ReentrantLock lock = getWaBlastLock(reportId);
         
@@ -528,9 +527,26 @@ public class VideoReportService {
         }
         
         try {
-            processWaBlastForReport(reportId);
+            try {
+                processWaBlastForReport(reportId);
+            } catch (Exception e) {
+                logger.error("[WA BLAST VIDEO] Fatal error while processing report {}: {}", reportId, e.getMessage(), e);
+                markAllReadyWaItemsAsError(reportId, "WA blast fatal error: " + e.getMessage());
+            }
         } finally {
             lock.unlock();
+        }
+    }
+
+    private void markAllReadyWaItemsAsError(Long reportId, String message) {
+        try {
+            List<VideoReportItem> items = videoReportItemRepository.findReadyForWaBlast(reportId);
+            for (VideoReportItem item : items) {
+                item.setWaStatus("ERROR");
+                item.setWaErrorMessage(message);
+                videoReportItemRepository.save(item);
+            }
+        } catch (Exception ignored) {
         }
     }
     
@@ -753,7 +769,6 @@ public class VideoReportService {
     /**
      * Resend WhatsApp to a single item with configurable retry attempts
      */
-    @Transactional
     public VideoReportItem resendWaWithRetry(Long reportId, Long itemId, int maxRetries) {
         VideoReportItem item = videoReportItemRepository.findByIdAndVideoReportId(itemId, reportId);
         if (item == null) {

@@ -14,8 +14,11 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Lazy;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
+
+import jakarta.annotation.PostConstruct;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -57,6 +60,22 @@ public class WaBlastSchedulerService {
     @Autowired
     @Lazy
     private PdfReportService pdfReportService;
+
+    @Value("${app.wa.processing-timeout-minutes}")
+    private int waProcessingTimeoutMinutes;
+
+    @Value("${app.wa.pending-timeout-minutes}")
+    private int waPendingTimeoutMinutes;
+
+    @PostConstruct
+    private void validateTimeouts() {
+        if (waProcessingTimeoutMinutes <= 0) {
+            throw new IllegalStateException("app.wa.processing-timeout-minutes must be > 0");
+        }
+        if (waPendingTimeoutMinutes <= 0) {
+            throw new IllegalStateException("app.wa.pending-timeout-minutes must be > 0");
+        }
+    }
     
     /**
      * Scheduler: Send pending WA messages for completed PDF items every 30 seconds
@@ -126,34 +145,47 @@ public class WaBlastSchedulerService {
     
     /**
      * Scheduler: Recover WA items stuck in PROCESSING state for > 2 minutes
-     * Reset to PENDING so they can be retried
+     * Mark as ERROR so UI doesn't stay pending forever
      */
     @Scheduled(fixedRate = 60000, initialDelay = 60000) // Every 1 minute, start after 1 min
     public void recoverStuckWaProcessingItems() {
         try {
-            LocalDateTime threshold = LocalDateTime.now().minusMinutes(2);
+            LocalDateTime processingThreshold = LocalDateTime.now().minusMinutes(waProcessingTimeoutMinutes);
+            LocalDateTime pendingThreshold = LocalDateTime.now().minusMinutes(waPendingTimeoutMinutes);
             
             // PDF items
-            List<PdfReportItem> stuckPdfItems = pdfReportItemRepository.findStuckWaProcessingItems(threshold);
+            List<PdfReportItem> stuckPdfItems = pdfReportItemRepository.findStuckWaProcessingItems(processingThreshold);
             if (!stuckPdfItems.isEmpty()) {
-                logger.warn("[WA RECOVERY] Found {} PDF items stuck in WA PROCESSING, resetting to PENDING", stuckPdfItems.size());
+                logger.warn("[WA RECOVERY] Found {} PDF items stuck in WA PROCESSING, marking as ERROR", stuckPdfItems.size());
                 for (PdfReportItem item : stuckPdfItems) {
-                    item.setWaStatus("PENDING");
-                    item.setWaErrorMessage("Auto-recovered from stuck WA PROCESSING state");
+                    item.setWaStatus("ERROR");
+                    item.setWaErrorMessage("WA blast timeout: stuck in PROCESSING > " + waProcessingTimeoutMinutes + " minutes");
                     pdfReportItemRepository.save(item);
-                    logger.info("[WA RECOVERY] Reset PDF item {} to PENDING", item.getId());
+                    logger.info("[WA RECOVERY] Marked PDF item {} as ERROR", item.getId());
                 }
             }
             
             // Video items
-            List<VideoReportItem> stuckVideoItems = videoReportItemRepository.findStuckWaProcessingItems(threshold);
+            List<VideoReportItem> stuckVideoItems = videoReportItemRepository.findStuckWaProcessingItems(processingThreshold);
             if (!stuckVideoItems.isEmpty()) {
-                logger.warn("[WA RECOVERY] Found {} Video items stuck in WA PROCESSING, resetting to PENDING", stuckVideoItems.size());
+                logger.warn("[WA RECOVERY] Found {} Video items stuck in WA PROCESSING, marking as ERROR", stuckVideoItems.size());
                 for (VideoReportItem item : stuckVideoItems) {
-                    item.setWaStatus("PENDING");
-                    item.setWaErrorMessage("Auto-recovered from stuck WA PROCESSING state");
+                    item.setWaStatus("ERROR");
+                    item.setWaErrorMessage("WA blast timeout: stuck in PROCESSING > " + waProcessingTimeoutMinutes + " minutes");
                     videoReportItemRepository.save(item);
-                    logger.info("[WA RECOVERY] Reset Video item {} to PENDING", item.getId());
+                    logger.info("[WA RECOVERY] Marked Video item {} as ERROR", item.getId());
+                }
+            }
+
+            // Video items stuck in PENDING too long
+            List<VideoReportItem> stuckPendingVideoItems = videoReportItemRepository.findStuckWaPendingItems(pendingThreshold);
+            if (!stuckPendingVideoItems.isEmpty()) {
+                logger.warn("[WA RECOVERY] Found {} Video items stuck in WA PENDING, marking as ERROR", stuckPendingVideoItems.size());
+                for (VideoReportItem item : stuckPendingVideoItems) {
+                    item.setWaStatus("ERROR");
+                    item.setWaErrorMessage("WA blast timeout: stuck in PENDING > " + waPendingTimeoutMinutes + " minutes");
+                    videoReportItemRepository.save(item);
+                    logger.info("[WA RECOVERY] Marked Video item {} as ERROR (PENDING timeout)", item.getId());
                 }
             }
         } catch (Exception e) {

@@ -31,10 +31,20 @@ import org.springframework.web.client.RestTemplate;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import jakarta.annotation.PostConstruct;
+
 @Service
 public class WhatsAppService {
 
-    public static final int WABLAS_MAX_MEDIA_BYTES = 2 * 1024 * 1024;
+    @Value("${whatsapp.api.max-media-bytes}")
+    private long wablasMaxMediaBytes;
+
+    @PostConstruct
+    private void validateWablasMaxMediaBytes() {
+        if (wablasMaxMediaBytes <= 0) {
+            throw new IllegalStateException("whatsapp.api.max-media-bytes must be > 0");
+        }
+    }
     
     // Wablas v2 API batch size limit
     private static final int BULK_BATCH_SIZE = 100;
@@ -101,6 +111,24 @@ public class WhatsAppService {
         }
 
         return token + "." + secret;
+    }
+
+    private String wablasTokenOnly() {
+        String token = whatsappApiToken == null ? "" : whatsappApiToken.trim();
+        if (token.isEmpty()) {
+            return token;
+        }
+
+        int dot = token.indexOf('.');
+        if (dot <= 0) {
+            return token;
+        }
+
+        return token.substring(0, dot);
+    }
+
+    private long maxMediaBytes() {
+        return wablasMaxMediaBytes;
     }
     
     /**
@@ -395,7 +423,7 @@ public class WhatsAppService {
                 
                 if (success) {
                     // Extract message ID from response structure: data.messages[0].id
-                    String messageId = "WA_" + System.currentTimeMillis(); // fallback
+                    String messageId = null;
                     String messageStatus = "unknown";
                     
                     try {
@@ -403,26 +431,22 @@ public class WhatsAppService {
                             JsonNode messages = responseJson.get("data").get("messages");
                             if (messages.isArray() && messages.size() > 0) {
                                 JsonNode firstMessage = messages.get(0);
-                                
-                                // Get message ID
+
                                 if (firstMessage.has("id")) {
                                     String extractedId = firstMessage.get("id").asText();
                                     if (extractedId != null && !extractedId.isEmpty()) {
                                         messageId = extractedId;
                                     }
                                 }
-                                
-                                // Get message status (sent, pending, failed, etc.)
+
                                 if (firstMessage.has("status")) {
                                     messageStatus = firstMessage.get("status").asText();
                                 }
-                                
-                                // Check for Wablas specific error messages
+
                                 if (firstMessage.has("message")) {
                                     String wablasMessage = firstMessage.get("message").asText();
                                     logger.info("[WABLAS] Message detail: {}", wablasMessage);
-                                    
-                                    // Check for common errors
+
                                     if (wablasMessage != null && (
                                         wablasMessage.toLowerCase().contains("not registered") ||
                                         wablasMessage.toLowerCase().contains("invalid") ||
@@ -430,8 +454,6 @@ public class WhatsAppService {
                                         throw new RuntimeException("WhatsApp error: " + wablasMessage);
                                     }
                                 }
-                                
-                                logger.info("[WABLAS] SUCCESS - MessageId: {}, Status: {}, Phone: {}", messageId, messageStatus, cleanPhone);
                             } else {
                                 logger.warn("[WABLAS] Messages array is empty or not an array");
                             }
@@ -443,7 +465,12 @@ public class WhatsAppService {
                     } catch (Exception e) {
                         logger.error("[WABLAS] Error parsing response: {}", e.getMessage());
                     }
-                    
+
+                    if (messageId == null || messageId.isBlank()) {
+                        throw new RuntimeException("Wablas response missing message id");
+                    }
+
+                    logger.info("[WABLAS] SUCCESS - MessageId: {}, Status: {}, Phone: {}", messageId, messageStatus, cleanPhone);
                     return messageId;
                 } else {
                     // API returned status: false
@@ -476,18 +503,8 @@ public class WhatsAppService {
         if (whatsappApiUrl != null && !whatsappApiUrl.isEmpty() && 
             whatsappApiToken != null && !whatsappApiToken.isEmpty()) {
             try {
-                // Simple ping test to check if API is reachable
-                HttpHeaders headers = new HttpHeaders();
-                headers.set("Authorization", authorizationHeaderValue());
-                
-                HttpEntity<String> entity = new HttpEntity<>(headers);
-                ResponseEntity<String> response = restTemplate.exchange(
-                    whatsappApiUrl + "/api/device-status", 
-                    HttpMethod.GET, 
-                    entity, 
-                    String.class
-                );
-                
+                String url = whatsappApiUrl + "/api/device/info?token=" + wablasTokenOnly();
+                ResponseEntity<String> response = restTemplate.exchange(url, HttpMethod.GET, HttpEntity.EMPTY, String.class);
                 return response.getStatusCode() == HttpStatus.OK;
             } catch (Exception e) {
                 logger.warn("WhatsApp API health check failed: {}", e.getMessage());
@@ -505,16 +522,8 @@ public class WhatsAppService {
     public Map<String, Object> getDeviceStatus() {
         Map<String, Object> result = new HashMap<>();
         try {
-            HttpHeaders headers = new HttpHeaders();
-            headers.set("Authorization", authorizationHeaderValue());
-            
-            HttpEntity<String> entity = new HttpEntity<>(headers);
-            ResponseEntity<String> response = restTemplate.exchange(
-                whatsappApiUrl + "/api/device-status", 
-                HttpMethod.GET, 
-                entity, 
-                String.class
-            );
+            String url = whatsappApiUrl + "/api/device/info?token=" + wablasTokenOnly();
+            ResponseEntity<String> response = restTemplate.exchange(url, HttpMethod.GET, HttpEntity.EMPTY, String.class);
             
             logger.info("[WABLAS] Device status response: {}", response.getBody());
             
@@ -1481,11 +1490,13 @@ public class WhatsAppService {
         boolean tooLarge = errLower.contains("payload too large") || errLower.contains("413") || errLower.contains("too large");
 
         // If local-send fails, try: upload to Wablas -> send by URL (more reliable per docs)
-        // Only attempt upload when we actually have bytes and within Wablas 2MB max.
+        // Only attempt upload when we actually have bytes and within configured max.
+        long limit = maxMediaBytes();
         if (!Boolean.TRUE.equals(primary.get("success"))
-                && bytes != null
-                && bytes.length > 0
-                && bytes.length <= WABLAS_MAX_MEDIA_BYTES
+            && bytes != null
+            && bytes.length > 0
+            && limit > 0
+            && bytes.length <= limit
         ) {
             Map<String, Object> upload = uploadFileToWablas("video", filename, bytes, MediaType.valueOf("video/mp4"));
             if (Boolean.TRUE.equals(upload.get("success"))) {
@@ -1927,8 +1938,13 @@ public class WhatsAppService {
                 }
             }
 
-            if (!result.containsKey("messageId")) {
-                result.put("messageId", "WA_MEDIA_URL_" + System.currentTimeMillis());
+            String mid = result.containsKey("messageId") && result.get("messageId") != null
+                    ? result.get("messageId").toString().trim()
+                    : "";
+            if (mid.isBlank()) {
+                result.put("success", false);
+                result.put("error", "Wablas response missing message id");
+                return result;
             }
 
             return result;
@@ -1959,8 +1975,9 @@ public class WhatsAppService {
                 result.put("error", "Attachment is empty");
                 return result;
             }
-            if (bytes.length > WABLAS_MAX_MEDIA_BYTES) {
-                result.put("error", "Attachment exceeds Wablas max size (2MB): " + bytes.length);
+            long limit = maxMediaBytes();
+            if (limit > 0 && bytes.length > limit) {
+                result.put("error", "Attachment exceeds Wablas max size (" + limit + " bytes): " + bytes.length);
                 return result;
             }
 
@@ -2126,25 +2143,43 @@ public class WhatsAppService {
             }
             
             result.put("success", true);
-            
-            if (responseJson.has("data") && responseJson.get("data").has("messages")) {
-                JsonNode messages = responseJson.get("data").get("messages");
-                if (messages.isArray() && messages.size() > 0) {
-                    JsonNode first = messages.get(0);
-                    if (first.has("id")) {
-                        result.put("messageId", first.get("id").asText());
-                    }
-                    if (first.has("status")) {
-                        result.put("messageStatus", first.get("status").asText());
-                    }
-                    if (first.has("message")) {
-                        result.put("messageDetail", first.get("message").asText());
+
+            if (responseJson.has("data") && !responseJson.get("data").isNull()) {
+                JsonNode data = responseJson.get("data");
+                if (data.has("id")) {
+                    result.put("messageId", data.get("id").asText());
+                }
+                if (data.has("status")) {
+                    result.put("messageStatus", data.get("status").asText());
+                }
+                if (data.has("message")) {
+                    result.put("messageDetail", data.get("message").asText());
+                }
+
+                if (!result.containsKey("messageId") && data.has("messages")) {
+                    JsonNode messages = data.get("messages");
+                    if (messages.isArray() && messages.size() > 0) {
+                        JsonNode first = messages.get(0);
+                        if (first.has("id")) {
+                            result.put("messageId", first.get("id").asText());
+                        }
+                        if (first.has("status")) {
+                            result.put("messageStatus", first.get("status").asText());
+                        }
+                        if (first.has("message")) {
+                            result.put("messageDetail", first.get("message").asText());
+                        }
                     }
                 }
             }
-            
-            if (!result.containsKey("messageId")) {
-                result.put("messageId", "WA_BASE64_" + System.currentTimeMillis());
+
+            String mid = result.containsKey("messageId") && result.get("messageId") != null
+                    ? result.get("messageId").toString().trim()
+                    : "";
+            if (mid.isBlank()) {
+                result.put("success", false);
+                result.put("error", "Wablas response missing message id");
+                return result;
             }
             
             return result;
@@ -2239,24 +2274,42 @@ public class WhatsAppService {
 
             result.put("success", true);
 
-            if (responseJson.has("data") && responseJson.get("data").has("messages")) {
-                JsonNode messages = responseJson.get("data").get("messages");
-                if (messages.isArray() && messages.size() > 0) {
-                    JsonNode first = messages.get(0);
-                    if (first.has("id")) {
-                        result.put("messageId", first.get("id").asText());
-                    }
-                    if (first.has("status")) {
-                        result.put("messageStatus", first.get("status").asText());
-                    }
-                    if (first.has("message")) {
-                        result.put("messageDetail", first.get("message").asText());
+            if (responseJson.has("data") && !responseJson.get("data").isNull()) {
+                JsonNode data = responseJson.get("data");
+                if (data.has("id")) {
+                    result.put("messageId", data.get("id").asText());
+                }
+                if (data.has("status")) {
+                    result.put("messageStatus", data.get("status").asText());
+                }
+                if (data.has("message")) {
+                    result.put("messageDetail", data.get("message").asText());
+                }
+
+                if (!result.containsKey("messageId") && data.has("messages")) {
+                    JsonNode messages = data.get("messages");
+                    if (messages.isArray() && messages.size() > 0) {
+                        JsonNode first = messages.get(0);
+                        if (first.has("id")) {
+                            result.put("messageId", first.get("id").asText());
+                        }
+                        if (first.has("status")) {
+                            result.put("messageStatus", first.get("status").asText());
+                        }
+                        if (first.has("message")) {
+                            result.put("messageDetail", first.get("message").asText());
+                        }
                     }
                 }
             }
 
-            if (!result.containsKey("messageId")) {
-                result.put("messageId", "WA_ATTACH_" + System.currentTimeMillis());
+            String mid = result.containsKey("messageId") && result.get("messageId") != null
+                    ? result.get("messageId").toString().trim()
+                    : "";
+            if (mid.isBlank()) {
+                result.put("success", false);
+                result.put("error", "Wablas response missing message id");
+                return result;
             }
 
             return result;
@@ -2299,6 +2352,11 @@ public class WhatsAppService {
             long size = Files.size(filePath);
             if (size <= 0) {
                 result.put("error", "File is empty: " + filePath);
+                return result;
+            }
+            long limit = maxMediaBytes();
+            if (limit > 0 && size > limit) {
+                result.put("error", "Attachment exceeds Wablas max size (" + limit + " bytes): " + size);
                 return result;
             }
 
@@ -2363,24 +2421,42 @@ public class WhatsAppService {
 
             result.put("success", true);
 
-            if (responseJson.has("data") && responseJson.get("data").has("messages")) {
-                JsonNode messages = responseJson.get("data").get("messages");
-                if (messages.isArray() && messages.size() > 0) {
-                    JsonNode first = messages.get(0);
-                    if (first.has("id")) {
-                        result.put("messageId", first.get("id").asText());
-                    }
-                    if (first.has("status")) {
-                        result.put("messageStatus", first.get("status").asText());
-                    }
-                    if (first.has("message")) {
-                        result.put("messageDetail", first.get("message").asText());
+            if (responseJson.has("data") && !responseJson.get("data").isNull()) {
+                JsonNode data = responseJson.get("data");
+                if (data.has("id")) {
+                    result.put("messageId", data.get("id").asText());
+                }
+                if (data.has("status")) {
+                    result.put("messageStatus", data.get("status").asText());
+                }
+                if (data.has("message")) {
+                    result.put("messageDetail", data.get("message").asText());
+                }
+
+                if (!result.containsKey("messageId") && data.has("messages")) {
+                    JsonNode messages = data.get("messages");
+                    if (messages.isArray() && messages.size() > 0) {
+                        JsonNode first = messages.get(0);
+                        if (first.has("id")) {
+                            result.put("messageId", first.get("id").asText());
+                        }
+                        if (first.has("status")) {
+                            result.put("messageStatus", first.get("status").asText());
+                        }
+                        if (first.has("message")) {
+                            result.put("messageDetail", first.get("message").asText());
+                        }
                     }
                 }
             }
 
-            if (!result.containsKey("messageId")) {
-                result.put("messageId", "WA_ATTACH_PATH_" + System.currentTimeMillis());
+            String mid = result.containsKey("messageId") && result.get("messageId") != null
+                    ? result.get("messageId").toString().trim()
+                    : "";
+            if (mid.isBlank()) {
+                result.put("success", false);
+                result.put("error", "Wablas response missing message id");
+                return result;
             }
 
             return result;

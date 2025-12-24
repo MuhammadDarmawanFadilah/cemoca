@@ -10,6 +10,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.RestTemplate;
 
+import jakarta.annotation.PostConstruct;
+
 import java.net.URI;
 import java.nio.file.Files;
 import java.time.LocalDate;
@@ -69,6 +71,16 @@ public class LearningSchedulerExecutionService {
 
     @Value("${learning.scheduler.did.poll-interval-ms:5000}")
     private long didPollIntervalMs;
+
+    @Value("${whatsapp.api.max-media-bytes}")
+    private long wablasMaxMediaBytes;
+
+    @PostConstruct
+    private void validateWablasMaxMediaBytes() {
+        if (wablasMaxMediaBytes <= 0) {
+            throw new IllegalStateException("whatsapp.api.max-media-bytes must be > 0");
+        }
+    }
 
     @Transactional
     public LearningScheduleHistory executeConfig(LearningScheduleConfig config) {
@@ -900,7 +912,7 @@ public class LearningSchedulerExecutionService {
         DidVideoResult video = generateDidVideo(config, script);
 
         boolean hasBytes = video.bytes != null && video.bytes.length > 0;
-        boolean tooLargeForLocal = hasBytes && video.bytes.length > WhatsAppService.WABLAS_MAX_MEDIA_BYTES;
+        boolean tooLargeForLocal = hasBytes && wablasMaxMediaBytes > 0 && video.bytes.length > wablasMaxMediaBytes;
 
         // Prefer sending as an actual WhatsApp video (no URL in caption).
         // If local bytes are too large (or missing), try URL-based video send first.

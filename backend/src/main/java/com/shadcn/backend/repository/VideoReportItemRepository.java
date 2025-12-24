@@ -90,11 +90,11 @@ public interface VideoReportItemRepository extends JpaRepository<VideoReportItem
            Pageable pageable);
     
     // Get items ready for WA blast (video done, wa pending only - not processing, not excluded)
-    @Query("SELECT i FROM VideoReportItem i WHERE i.videoReport.id = :reportId AND i.status = 'DONE' AND i.waStatus = 'PENDING' AND (i.excluded = false OR i.excluded IS NULL) ORDER BY i.rowNumber ASC")
+       @Query("SELECT i FROM VideoReportItem i WHERE i.videoReport.id = :reportId AND i.status = 'DONE' AND (i.waStatus = 'PENDING' OR i.waStatus IS NULL) AND (i.excluded = false OR i.excluded IS NULL) ORDER BY i.rowNumber ASC")
     List<VideoReportItem> findReadyForWaBlast(@Param("reportId") Long reportId);
     
     // Count items ready for WA blast
-    @Query("SELECT COUNT(i) FROM VideoReportItem i WHERE i.videoReport.id = :reportId AND i.status = 'DONE' AND i.waStatus = 'PENDING' AND (i.excluded = false OR i.excluded IS NULL)")
+       @Query("SELECT COUNT(i) FROM VideoReportItem i WHERE i.videoReport.id = :reportId AND i.status = 'DONE' AND (i.waStatus = 'PENDING' OR i.waStatus IS NULL) AND (i.excluded = false OR i.excluded IS NULL)")
     int countReadyForWaBlast(@Param("reportId") Long reportId);
     
     // Get items with completed videos (for step 2)
@@ -110,7 +110,7 @@ public interface VideoReportItemRepository extends JpaRepository<VideoReportItem
     int countNonExcludedByReportIdAndStatus(@Param("reportId") Long reportId, @Param("status") String status);
     
     // Find all items ready for WA blast across all reports (for scheduler) - only PENDING, not PROCESSING
-    @Query("SELECT i FROM VideoReportItem i WHERE i.status = 'DONE' AND i.waStatus = 'PENDING' AND (i.excluded = false OR i.excluded IS NULL) ORDER BY i.videoReport.id ASC, i.rowNumber ASC")
+       @Query("SELECT i FROM VideoReportItem i WHERE i.status = 'DONE' AND (i.waStatus = 'PENDING' OR i.waStatus IS NULL) AND (i.excluded = false OR i.excluded IS NULL) ORDER BY i.videoReport.id ASC, i.rowNumber ASC")
     List<VideoReportItem> findItemsReadyForWaBlast();
     
     // Find items stuck in PROCESSING state for too long (for auto-recovery scheduler)
@@ -120,4 +120,8 @@ public interface VideoReportItemRepository extends JpaRepository<VideoReportItem
     // Find WA items stuck in PROCESSING state for too long (for auto-recovery scheduler)
     @Query("SELECT i FROM VideoReportItem i WHERE i.waStatus = 'PROCESSING' AND i.updatedAt < :threshold")
     List<VideoReportItem> findStuckWaProcessingItems(@Param("threshold") java.time.LocalDateTime threshold);
+
+       // Find WA items stuck in PENDING/QUEUED state for too long (for auto-recovery scheduler)
+       @Query("SELECT i FROM VideoReportItem i WHERE i.status = 'DONE' AND (i.waStatus = 'PENDING' OR i.waStatus = 'QUEUED' OR i.waStatus IS NULL) AND i.updatedAt < :threshold AND (i.excluded = false OR i.excluded IS NULL)")
+       List<VideoReportItem> findStuckWaPendingItems(@Param("threshold") java.time.LocalDateTime threshold);
 }
