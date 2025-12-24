@@ -8,6 +8,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.util.Collection;
 import java.util.List;
 
 @Repository
@@ -44,6 +45,20 @@ public interface VideoReportItemRepository extends JpaRepository<VideoReportItem
     
     // Paginated WA status filter
     Page<VideoReportItem> findByVideoReportIdAndWaStatusOrderByRowNumberAsc(Long videoReportId, String waStatus, Pageable pageable);
+
+    // Paginated WA status IN filter
+    @Query("SELECT i FROM VideoReportItem i WHERE i.videoReport.id = :reportId AND i.waStatus IN :waStatuses ORDER BY i.rowNumber ASC")
+    Page<VideoReportItem> findByReportIdAndWaStatusInOrderByRowNumberAsc(
+           @Param("reportId") Long reportId,
+           @Param("waStatuses") Collection<String> waStatuses,
+           Pageable pageable);
+
+    // Paginated WA status IN filter including NULL
+    @Query("SELECT i FROM VideoReportItem i WHERE i.videoReport.id = :reportId AND (i.waStatus IS NULL OR i.waStatus IN :waStatuses) ORDER BY i.rowNumber ASC")
+    Page<VideoReportItem> findByReportIdAndWaStatusInOrNullOrderByRowNumberAsc(
+           @Param("reportId") Long reportId,
+           @Param("waStatuses") Collection<String> waStatuses,
+           Pageable pageable);
     
     // Search with WA status filter and pagination
     @Query("SELECT i FROM VideoReportItem i WHERE i.videoReport.id = :reportId AND i.waStatus = :waStatus AND " +
@@ -51,6 +66,28 @@ public interface VideoReportItemRepository extends JpaRepository<VideoReportItem
            "LOWER(i.phone) LIKE LOWER(CONCAT('%', :search, '%'))) " +
            "ORDER BY i.rowNumber ASC")
     Page<VideoReportItem> searchByReportIdAndWaStatus(@Param("reportId") Long reportId, @Param("waStatus") String waStatus, @Param("search") String search, Pageable pageable);
+
+    // Search with WA status IN filter and pagination
+    @Query("SELECT i FROM VideoReportItem i WHERE i.videoReport.id = :reportId AND i.waStatus IN :waStatuses AND " +
+           "(LOWER(i.name) LIKE LOWER(CONCAT('%', :search, '%')) OR " +
+           "LOWER(i.phone) LIKE LOWER(CONCAT('%', :search, '%'))) " +
+           "ORDER BY i.rowNumber ASC")
+    Page<VideoReportItem> searchByReportIdAndWaStatusIn(
+           @Param("reportId") Long reportId,
+           @Param("waStatuses") Collection<String> waStatuses,
+           @Param("search") String search,
+           Pageable pageable);
+
+    // Search with WA status IN filter including NULL and pagination
+    @Query("SELECT i FROM VideoReportItem i WHERE i.videoReport.id = :reportId AND (i.waStatus IS NULL OR i.waStatus IN :waStatuses) AND " +
+           "(LOWER(i.name) LIKE LOWER(CONCAT('%', :search, '%')) OR " +
+           "LOWER(i.phone) LIKE LOWER(CONCAT('%', :search, '%'))) " +
+           "ORDER BY i.rowNumber ASC")
+    Page<VideoReportItem> searchByReportIdAndWaStatusInOrNull(
+           @Param("reportId") Long reportId,
+           @Param("waStatuses") Collection<String> waStatuses,
+           @Param("search") String search,
+           Pageable pageable);
     
     // Get items ready for WA blast (video done, wa pending only - not processing, not excluded)
     @Query("SELECT i FROM VideoReportItem i WHERE i.videoReport.id = :reportId AND i.status = 'DONE' AND i.waStatus = 'PENDING' AND (i.excluded = false OR i.excluded IS NULL) ORDER BY i.rowNumber ASC")

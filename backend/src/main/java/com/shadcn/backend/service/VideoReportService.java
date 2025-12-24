@@ -548,11 +548,19 @@ public class VideoReportService {
             if (item == null) continue;
             
             if (result.isSuccess()) {
-                item.setWaStatus("SENT");
+                String wablasStatus = result.getStatus();
+                if (wablasStatus != null && wablasStatus.equalsIgnoreCase("pending")) {
+                    item.setWaStatus("QUEUED");
+                } else if (wablasStatus != null && (wablasStatus.equalsIgnoreCase("delivered") || wablasStatus.equalsIgnoreCase("read"))) {
+                    item.setWaStatus("DELIVERED");
+                    successCount++;
+                } else {
+                    item.setWaStatus("SENT");
+                    successCount++;
+                }
                 item.setWaMessageId(result.getMessageId());
                 item.setWaSentAt(LocalDateTime.now());
                 item.setWaErrorMessage(null);
-                successCount++;
                 logger.debug("[WA BLAST VIDEO] Item {} SENT successfully", item.getId());
             } else {
                 item.setWaStatus("FAILED");
@@ -657,9 +665,11 @@ public class VideoReportService {
         }
         
         String messageId = java.util.Objects.toString(waResult.get("messageId"), null);
+        String messageStatus = java.util.Objects.toString(waResult.get("messageStatus"), null);
         String error = lastError;
         
         if (success) {
+            boolean queued = messageStatus != null && messageStatus.equalsIgnoreCase("pending");
             // Update stats based on previous status
             if ("FAILED".equals(previousStatus)) {
                 Integer currentSentCountObj = java.util.Objects.requireNonNullElse(report.getWaSentCount(), 0);
@@ -667,13 +677,17 @@ public class VideoReportService {
                 int currentSentCount = currentSentCountObj.intValue();
                 int currentFailedCount = currentFailedCountObj.intValue();
                 report.setWaFailedCount(Math.max(0, currentFailedCount - 1));
-                report.setWaSentCount(currentSentCount + 1);
+                if (!queued) {
+                    report.setWaSentCount(currentSentCount + 1);
+                }
             } else if ("PENDING".equals(previousStatus)) {
-                Integer currentSentCountObj = java.util.Objects.requireNonNullElse(report.getWaSentCount(), 0);
-                report.setWaSentCount(currentSentCountObj.intValue() + 1);
+                if (!queued) {
+                    Integer currentSentCountObj = java.util.Objects.requireNonNullElse(report.getWaSentCount(), 0);
+                    report.setWaSentCount(currentSentCountObj.intValue() + 1);
+                }
             }
             
-            item.setWaStatus("SENT");
+            item.setWaStatus(queued ? "QUEUED" : "SENT");
             item.setWaMessageId(messageId);
             item.setWaSentAt(LocalDateTime.now());
             item.setWaErrorMessage(null);
@@ -739,7 +753,7 @@ public class VideoReportService {
         // Get items with waStatus = SENT or PENDING that have messageId
         List<VideoReportItem> pendingItems = videoReportItemRepository.findByVideoReportIdOrderByRowNumberAsc(reportId).stream()
                 .filter(item -> item.getWaMessageId() != null && !item.getWaMessageId().isEmpty())
-                .filter(item -> "SENT".equals(item.getWaStatus()) || "PENDING".equals(item.getWaStatus()))
+            .filter(item -> "SENT".equals(item.getWaStatus()) || "PENDING".equals(item.getWaStatus()) || "QUEUED".equals(item.getWaStatus()))
                 .collect(java.util.stream.Collectors.toList());
         
         logger.info("[WA SYNC] Checking {} items with messageId for report {}", pendingItems.size(), reportId);
@@ -767,10 +781,19 @@ public class VideoReportService {
                     
                     // Update status based on Wablas response
                     // Wablas statuses: pending, sent, delivered, read, cancel, rejected, failed
+                    String oldWaStatus = item.getWaStatus();
+                    int currentSentCount = java.util.Objects.requireNonNullElse(report.getWaSentCount(), 0);
+                    int currentFailedCount = java.util.Objects.requireNonNullElse(report.getWaFailedCount(), 0);
+
                     if ("delivered".equalsIgnoreCase(wablasStatus) || "read".equalsIgnoreCase(wablasStatus)) {
-                        item.setWaStatus("DELIVERED");
-                        item.setWaErrorMessage(null);
-                        updated++;
+                        if (!"DELIVERED".equals(oldWaStatus)) {
+                            item.setWaStatus("DELIVERED");
+                            item.setWaErrorMessage(null);
+                            if (!"SENT".equals(oldWaStatus)) {
+                                report.setWaSentCount(currentSentCount + 1);
+                            }
+                            updated++;
+                        }
                         if ("delivered".equalsIgnoreCase(wablasStatus)) {
                             delivered++;
                         } else {
@@ -778,23 +801,38 @@ public class VideoReportService {
                         }
                         logger.info("[WA SYNC] Item {} delivered/read: {}", item.getId(), wablasStatus);
                     } else if ("sent".equalsIgnoreCase(wablasStatus)) {
-                        // Still sent, not yet delivered - keep as SENT
-                        logger.info("[WA SYNC] Item {} still sent, not delivered yet", item.getId());
+                        if (!"SENT".equals(oldWaStatus) && !"DELIVERED".equals(oldWaStatus)) {
+                            item.setWaStatus("SENT");
+                            item.setWaErrorMessage(null);
+                            report.setWaSentCount(currentSentCount + 1);
+                            updated++;
+                        }
+                        logger.info("[WA SYNC] Item {} sent", item.getId());
                     } else if ("cancel".equalsIgnoreCase(wablasStatus) || "rejected".equalsIgnoreCase(wablasStatus) || "failed".equalsIgnoreCase(wablasStatus)) {
-                        item.setWaStatus("FAILED");
-                        item.setWaErrorMessage("Wablas status: " + wablasStatus);
-                        updated++;
+                        if (!"FAILED".equals(oldWaStatus)) {
+                            item.setWaStatus("FAILED");
+                            item.setWaErrorMessage("Wablas status: " + wablasStatus);
+
+                            if ("SENT".equals(oldWaStatus) || "DELIVERED".equals(oldWaStatus)) {
+                                report.setWaSentCount(Math.max(0, currentSentCount - 1));
+                            }
+                            report.setWaFailedCount(currentFailedCount + 1);
+                            updated++;
+                        }
                         failed++;
-                        
-                        // Update report counters
-                        int currentSentCount = java.util.Objects.requireNonNullElse(report.getWaSentCount(), 0);
-                        int currentFailedCount = java.util.Objects.requireNonNullElse(report.getWaFailedCount(), 0);
-                        report.setWaSentCount(Math.max(0, currentSentCount - 1));
-                        report.setWaFailedCount(currentFailedCount + 1);
-                        
                         logger.warn("[WA SYNC] Item {} failed: {}", item.getId(), wablasStatus);
                     } else if ("pending".equalsIgnoreCase(wablasStatus)) {
-                        // Still pending in Wablas queue
+                        if (!"DELIVERED".equals(oldWaStatus) && !"QUEUED".equals(oldWaStatus) && !"PENDING".equals(oldWaStatus)) {
+                            // Correct legacy statuses (e.g. SENT) back to QUEUED when Wablas still reports pending
+                            if ("SENT".equals(oldWaStatus)) {
+                                report.setWaSentCount(Math.max(0, currentSentCount - 1));
+                            }
+                            item.setWaStatus("QUEUED");
+                            updated++;
+                        } else if ("PENDING".equals(oldWaStatus)) {
+                            item.setWaStatus("QUEUED");
+                            updated++;
+                        }
                         logger.info("[WA SYNC] Item {} still pending in Wablas", item.getId());
                     }
                     
@@ -1066,10 +1104,31 @@ public class VideoReportService {
         
         // Handle waStatus filter
         if (waStatus != null && !waStatus.isEmpty()) {
-            if (search != null && !search.isEmpty()) {
-                itemsPage = videoReportItemRepository.searchByReportIdAndWaStatus(id, waStatus.toUpperCase(), search, pageable);
-            } else {
-                itemsPage = videoReportItemRepository.findByVideoReportIdAndWaStatusOrderByRowNumberAsc(id, waStatus.toUpperCase(), pageable);
+            String waStatusUpper = waStatus.toUpperCase();
+            switch (waStatusUpper) {
+                case "PENDING" -> {
+                    java.util.List<String> waStatuses = java.util.Arrays.asList("PENDING", "PROCESSING", "QUEUED");
+                    if (search != null && !search.isEmpty()) {
+                        itemsPage = videoReportItemRepository.searchByReportIdAndWaStatusInOrNull(id, waStatuses, search, pageable);
+                    } else {
+                        itemsPage = videoReportItemRepository.findByReportIdAndWaStatusInOrNullOrderByRowNumberAsc(id, waStatuses, pageable);
+                    }
+                }
+                case "SENT" -> {
+                    java.util.List<String> waStatuses = java.util.Arrays.asList("SENT", "DELIVERED");
+                    if (search != null && !search.isEmpty()) {
+                        itemsPage = videoReportItemRepository.searchByReportIdAndWaStatusIn(id, waStatuses, search, pageable);
+                    } else {
+                        itemsPage = videoReportItemRepository.findByReportIdAndWaStatusInOrderByRowNumberAsc(id, waStatuses, pageable);
+                    }
+                }
+                default -> {
+                    if (search != null && !search.isEmpty()) {
+                        itemsPage = videoReportItemRepository.searchByReportIdAndWaStatus(id, waStatusUpper, search, pageable);
+                    } else {
+                        itemsPage = videoReportItemRepository.findByVideoReportIdAndWaStatusOrderByRowNumberAsc(id, waStatusUpper, pageable);
+                    }
+                }
             }
         } else if (search != null && !search.isEmpty()) {
             if (status != null && !status.isEmpty() && !status.equals("all")) {
@@ -1185,7 +1244,10 @@ public class VideoReportService {
         response.setWaSentCount(report.getWaSentCount());
         response.setWaFailedCount(report.getWaFailedCount());
         // Calculate WA pending count
-        int waPendingCount = videoReportItemRepository.countByVideoReportIdAndWaStatus(report.getId(), "PENDING");
+        int waPendingCount = 0;
+        waPendingCount += videoReportItemRepository.countByVideoReportIdAndWaStatus(report.getId(), "PENDING");
+        waPendingCount += videoReportItemRepository.countByVideoReportIdAndWaStatus(report.getId(), "PROCESSING");
+        waPendingCount += videoReportItemRepository.countByVideoReportIdAndWaStatus(report.getId(), "QUEUED");
         response.setWaPendingCount(waPendingCount);
         response.setCreatedAt(report.getCreatedAt());
         response.setCompletedAt(report.getCompletedAt());
@@ -1212,7 +1274,10 @@ public class VideoReportService {
         response.setWaSentCount(report.getWaSentCount());
         response.setWaFailedCount(report.getWaFailedCount());
         // Calculate WA pending count
-        int waPendingCount = videoReportItemRepository.countByVideoReportIdAndWaStatus(report.getId(), "PENDING");
+        int waPendingCount = 0;
+        waPendingCount += videoReportItemRepository.countByVideoReportIdAndWaStatus(report.getId(), "PENDING");
+        waPendingCount += videoReportItemRepository.countByVideoReportIdAndWaStatus(report.getId(), "PROCESSING");
+        waPendingCount += videoReportItemRepository.countByVideoReportIdAndWaStatus(report.getId(), "QUEUED");
         response.setWaPendingCount(waPendingCount);
         response.setCreatedAt(report.getCreatedAt());
         response.setCompletedAt(report.getCompletedAt());

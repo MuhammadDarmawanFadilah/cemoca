@@ -160,6 +160,31 @@ public class WaBlastSchedulerService {
             logger.error("[WA RECOVERY] Error: {}", e.getMessage(), e);
         }
     }
+
+    /**
+     * Scheduler: Sync queued/sent WA message statuses from Wablas every 5 minutes
+     * Updates item waStatus based on message_id report endpoint
+     */
+    @Scheduled(fixedRate = 300000, initialDelay = 60000) // Every 5 minutes, start after 1 min
+    public void syncQueuedVideoWaStatuses() {
+        try {
+            List<VideoReport> reports = videoReportRepository.findReportsWithWaItemsToSync();
+            if (reports.isEmpty()) {
+                return;
+            }
+
+            for (VideoReport report : reports) {
+                try {
+                    logger.info("[WA SYNC SCHEDULER VIDEO] Syncing WA statuses for report {}", report.getId());
+                    videoReportService.syncWaStatus(report.getId());
+                } catch (Exception e) {
+                    logger.error("[WA SYNC SCHEDULER VIDEO] Error for report {}: {}", report.getId(), e.getMessage());
+                }
+            }
+        } catch (Exception e) {
+            logger.error("[WA SYNC SCHEDULER VIDEO] Error: {}", e.getMessage(), e);
+        }
+    }
     
     /**
      * Scheduler: Auto-recover stuck PDF items every 10 minutes

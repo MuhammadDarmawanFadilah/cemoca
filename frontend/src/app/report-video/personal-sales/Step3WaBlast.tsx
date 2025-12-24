@@ -83,7 +83,10 @@ export function Step3WaBlast({
   const getWaStatusBadge = (status: string | undefined) => {
     switch (status) {
       case "SENT": return <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-400 flex items-center gap-0.5"><CheckCircle2 className="h-2.5 w-2.5" /> {t("reportVideo.sentStatus")}</span>;
+      case "DELIVERED": return <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-400 flex items-center gap-0.5"><CheckCircle2 className="h-2.5 w-2.5" /> {t("reportVideo.sentStatus")}</span>;
       case "PENDING": return <span className="text-[10px] px-1.5 py-0.5 rounded bg-yellow-100 dark:bg-yellow-900/40 text-yellow-700 dark:text-yellow-400 flex items-center gap-0.5"><Clock className="h-2.5 w-2.5" /> {t("reportVideo.pendingStatus")}</span>;
+      case "QUEUED": return <span className="text-[10px] px-1.5 py-0.5 rounded bg-yellow-100 dark:bg-yellow-900/40 text-yellow-700 dark:text-yellow-400 flex items-center gap-0.5"><Clock className="h-2.5 w-2.5" /> {t("reportVideo.pendingStatus")}</span>;
+      case "PROCESSING": return <span className="text-[10px] px-1.5 py-0.5 rounded bg-yellow-100 dark:bg-yellow-900/40 text-yellow-700 dark:text-yellow-400 flex items-center gap-0.5"><Clock className="h-2.5 w-2.5" /> {t("reportVideo.pendingStatus")}</span>;
       case "FAILED": return <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-400 flex items-center gap-0.5"><XCircle className="h-2.5 w-2.5" /> {t("reportVideo.failedStatus")}</span>;
       default: return <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-500">-</span>;
     }
@@ -146,8 +149,8 @@ export function Step3WaBlast({
   
   // Filter by WA status
   let filteredItems = itemsWithVideo;
-  if (waFilter === "sent") filteredItems = filteredItems.filter(i => i.waStatus === "SENT");
-  else if (waFilter === "pending") filteredItems = filteredItems.filter(i => !i.waStatus || i.waStatus === "PENDING");
+  if (waFilter === "sent") filteredItems = filteredItems.filter(i => i.waStatus === "SENT" || i.waStatus === "DELIVERED");
+  else if (waFilter === "pending") filteredItems = filteredItems.filter(i => !i.waStatus || i.waStatus === "PENDING" || i.waStatus === "QUEUED" || i.waStatus === "PROCESSING");
   else if (waFilter === "failed") filteredItems = filteredItems.filter(i => i.waStatus === "FAILED");
 
   // Search
@@ -156,7 +159,7 @@ export function Step3WaBlast({
     filteredItems = filteredItems.filter(i => i.name.toLowerCase().includes(s) || i.phone.toLowerCase().includes(s));
   }
 
-  const waSentCount = currentReport.waSentCount || itemsWithVideo.filter(i => i.waStatus === "SENT").length;
+  const waSentCount = currentReport.waSentCount || itemsWithVideo.filter(i => i.waStatus === "SENT" || i.waStatus === "DELIVERED").length;
   const waFailedCount = currentReport.waFailedCount || itemsWithVideo.filter(i => i.waStatus === "FAILED").length;
   const waPendingCount = itemsWithVideo.length - waSentCount - waFailedCount;
 

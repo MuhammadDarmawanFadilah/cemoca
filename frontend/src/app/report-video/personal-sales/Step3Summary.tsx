@@ -128,8 +128,8 @@ export function Step3Summary({
   let filteredItems = items;
   if (filter === "success") filteredItems = filteredItems.filter(i => i.status === "DONE");
   else if (filter === "failed") filteredItems = filteredItems.filter(i => i.status === "FAILED");
-  else if (filter === "wa-sent") filteredItems = filteredItems.filter(i => i.waStatus === "SENT");
-  else if (filter === "wa-pending") filteredItems = filteredItems.filter(i => i.waStatus === "PENDING" || !i.waStatus);
+  else if (filter === "wa-sent") filteredItems = filteredItems.filter(i => i.waStatus === "SENT" || i.waStatus === "DELIVERED");
+  else if (filter === "wa-pending") filteredItems = filteredItems.filter(i => i.waStatus === "PENDING" || i.waStatus === "QUEUED" || i.waStatus === "PROCESSING" || !i.waStatus);
   else if (filter === "wa-failed") filteredItems = filteredItems.filter(i => i.waStatus === "FAILED");
 
   if (search) {

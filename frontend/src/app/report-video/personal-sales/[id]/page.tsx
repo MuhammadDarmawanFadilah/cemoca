@@ -146,6 +146,7 @@ export default function ReportDetailPage({ params }: { params: Promise<{ id: str
     try {
       setRefreshing(true);
       const updated = await videoReportAPI.refreshStatus(currentReport.id);
+      await videoReportAPI.syncWaStatus(currentReport.id);
       
       // Reload current page with same filters
       let backendStatus = "";
@@ -262,6 +263,12 @@ export default function ReportDetailPage({ params }: { params: Promise<{ id: str
           {timestamp && <span className="text-[8px] opacity-75">{formatTime(timestamp)}</span>}
         </div>
       );
+      case "DELIVERED": return (
+        <div className={`${base} bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-400`}>
+          <span className="flex items-center gap-0.5"><CheckCircle2 className="h-2.5 w-2.5" /> {t("reportVideo.sentStatus")}</span>
+          {timestamp && <span className="text-[8px] opacity-75">{formatTime(timestamp)}</span>}
+        </div>
+      );
       case "FAILED": return (
         <div className={`${base} bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-400`}>
           <span className="flex items-center gap-0.5"><XCircle className="h-2.5 w-2.5" /> {t("reportVideo.failedStatus")}</span>
@@ -272,6 +279,14 @@ export default function ReportDetailPage({ params }: { params: Promise<{ id: str
           <span className="flex items-center gap-0.5"><Clock className="h-2.5 w-2.5" /> {t("reportVideo.pendingStatus")}</span>
         </div>
       );
+      case "QUEUED":
+      case "PROCESSING":
+        return (
+          <div className={`${base} bg-yellow-100 dark:bg-yellow-900/40 text-yellow-700 dark:text-yellow-400`}>
+            <span className="flex items-center gap-0.5"><Clock className="h-2.5 w-2.5" /> {t("reportVideo.pendingStatus")}</span>
+            {timestamp && <span className="text-[8px] opacity-75">{formatTime(timestamp)}</span>}
+          </div>
+        );
       default: return <span className={`text-[10px] px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800`}>-</span>;
     }
   };

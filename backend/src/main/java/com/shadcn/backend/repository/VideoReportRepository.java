@@ -22,4 +22,8 @@ public interface VideoReportRepository extends JpaRepository<VideoReport, Long> 
     // Find reports with pending WA items (status=DONE, waStatus=PENDING, not excluded)
     @Query("SELECT DISTINCT r FROM VideoReport r JOIN r.items i WHERE i.status = 'DONE' AND i.waStatus = 'PENDING' AND (i.excluded IS NULL OR i.excluded = false)")
     List<VideoReport> findReportsWithPendingWaItems();
+
+    // Find reports with queued/sent WA items that can be synced via messageId
+    @Query("SELECT DISTINCT r FROM VideoReport r JOIN r.items i WHERE r.status = 'COMPLETED' AND i.waMessageId IS NOT NULL AND i.waMessageId <> '' AND (i.waStatus = 'QUEUED' OR i.waStatus = 'SENT')")
+    List<VideoReport> findReportsWithWaItemsToSync();
 }

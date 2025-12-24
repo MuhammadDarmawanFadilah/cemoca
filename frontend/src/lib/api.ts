@@ -2806,6 +2806,12 @@ export const videoReportAPI = {
       method: 'POST',
     }),
 
+  // Sync WA status from Wablas
+  syncWaStatus: (id: number): Promise<{ success: boolean; error?: string; updated?: number; delivered?: number; read?: number; failed?: number }> =>
+    apiCall<{ success: boolean; error?: string; updated?: number; delivered?: number; read?: number; failed?: number }>(`/video-reports/${id}/wa-sync`, {
+      method: 'POST',
+    }),
+
   // Delete video report
   deleteVideoReport: (id: number): Promise<void> =>
     apiCall<void>(`/video-reports/${id}`, {
