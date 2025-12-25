@@ -958,7 +958,7 @@ public class WhatsAppService {
             // Small delay between batches to avoid rate limiting
             if (batchNumber < batches.size()) {
                 try {
-                    Thread.sleep(500); // 500ms between batches
+                    Thread.sleep(200); // 200ms between batches
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                     logger.error("[WABLAS-BULK] Interrupted at batch {}", batchNumber);
@@ -1184,17 +1184,17 @@ public class WhatsAppService {
                             results.add(result);
                             msgIndex++; // Move to next item
                         }
-                    }
-                    
-                    // Handle any items not covered by API response (shouldn't happen normally)
-                    for (int i = results.size(); i < validItems.size(); i++) {
-                        BulkMessageItem item = validItems.get(i);
-                        BulkMessageResult unknownResult = new BulkMessageResult();
-                        unknownResult.setOriginalId(item.getOriginalId());
-                        unknownResult.setPhone(item.getPhone());
-                        unknownResult.setSuccess(false);
-                        unknownResult.setError("No response from API for this item");
-                        results.add(unknownResult);
+
+                        // Handle any items not covered by API response (shouldn't happen, but avoid stuck PROCESSING)
+                        for (int i = msgIndex; i < validItems.size(); i++) {
+                            BulkMessageItem item = validItems.get(i);
+                            BulkMessageResult unknownResult = new BulkMessageResult();
+                            unknownResult.setOriginalId(item.getOriginalId());
+                            unknownResult.setPhone(item.getPhone());
+                            unknownResult.setSuccess(false);
+                            unknownResult.setError("No response from API for this item");
+                            results.add(unknownResult);
+                        }
                     }
                 } else {
                     // API returned error
@@ -1744,7 +1744,7 @@ public class WhatsAppService {
 
             if (batchNumber < batches.size()) {
                 try {
-                    Thread.sleep(500);
+                    Thread.sleep(200);
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                     logger.error("[WABLAS-BULK-VIDEO] Interrupted at batch {}", batchNumber);
@@ -1938,16 +1938,16 @@ public class WhatsAppService {
                             results.add(result);
                             msgIndex++;
                         }
-                    }
 
-                    for (int i = results.size(); i < validItems.size(); i++) {
-                        BulkVideoItem item = validItems.get(i);
-                        BulkVideoResult unknownResult = new BulkVideoResult();
-                        unknownResult.setOriginalId(item.getOriginalId());
-                        unknownResult.setPhone(item.getPhone());
-                        unknownResult.setSuccess(false);
-                        unknownResult.setError("No response from API for this item");
-                        results.add(unknownResult);
+                        for (int i = msgIndex; i < validItems.size(); i++) {
+                            BulkVideoItem item = validItems.get(i);
+                            BulkVideoResult unknownResult = new BulkVideoResult();
+                            unknownResult.setOriginalId(item.getOriginalId());
+                            unknownResult.setPhone(item.getPhone());
+                            unknownResult.setSuccess(false);
+                            unknownResult.setError("No response from API for this item");
+                            results.add(unknownResult);
+                        }
                     }
                 } else {
                     String errorMsg = responseJson.has("message") ? responseJson.get("message").asText() : "Unknown error";

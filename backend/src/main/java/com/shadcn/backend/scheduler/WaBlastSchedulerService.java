@@ -99,7 +99,7 @@ public class WaBlastSchedulerService {
      * Only sends WA for items with status=DONE and waStatus=PENDING
      * Does NOT trigger Video generation - only sends WA for already completed Videos
      */
-    @Scheduled(fixedRate = 30000, initialDelay = 15000) // 30 seconds, start after 15 sec
+    @Scheduled(fixedRate = 10000, initialDelay = 8000) // 10 seconds, start after 8 sec
     public void sendPendingVideoWaMessages() {
         try {
             // Find all Video reports that have items ready for WA blast
@@ -132,7 +132,7 @@ public class WaBlastSchedulerService {
      * Scheduler: Poll D-ID clip statuses for video items in PROCESSING state
      * When D-ID returns done/result_url, items will be marked DONE and WA blast will pick them up.
      */
-    @Scheduled(fixedRate = 30000, initialDelay = 20000) // 30 seconds, start after 20 sec
+    @Scheduled(fixedRate = 10000, initialDelay = 9000) // 10 seconds, start after 9 sec
     public void pollProcessingVideoClips() {
         try {
             List<Long> reportIds = videoReportItemRepository.findDistinctReportIdsByStatus("PROCESSING");

@@ -498,7 +498,12 @@ public class VideoReportService {
 
     private void markAllReadyWaItemsAsError(Long reportId, String message) {
         try {
-            List<VideoReportItem> items = videoReportItemRepository.findReadyForWaBlast(reportId);
+            List<VideoReportItem> items = videoReportItemRepository.findByVideoReportIdOrderByRowNumberAsc(reportId)
+                    .stream()
+                    .filter(i -> "DONE".equals(i.getStatus()))
+                    .filter(i -> !Boolean.TRUE.equals(i.getExcluded()))
+                    .filter(i -> i.getWaStatus() == null || "PENDING".equals(i.getWaStatus()) || "PROCESSING".equals(i.getWaStatus()))
+                    .collect(java.util.stream.Collectors.toList());
             for (VideoReportItem item : items) {
                 item.setWaStatus("ERROR");
                 item.setWaErrorMessage(message);
@@ -566,7 +571,7 @@ public class VideoReportService {
             byId.put(item.getId(), item);
         }
 
-        java.util.List<WhatsAppService.BulkMessageResult> results = whatsAppService.sendBulkMessagesWithRetry(bulk, 5);
+        java.util.List<WhatsAppService.BulkMessageResult> results = whatsAppService.sendBulkMessagesWithRetry(bulk, 3);
 
         int successCount = 0;
         int failCount = 0;
