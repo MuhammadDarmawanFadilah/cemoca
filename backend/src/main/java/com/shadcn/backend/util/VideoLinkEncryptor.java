@@ -23,6 +23,49 @@ public class VideoLinkEncryptor {
     
     // Secret key - should be stored in environment variable in production
     private static final String SECRET_KEY = "CEMOCAPPS_VIDEO_SECRET_KEY_2025!";
+
+    private static final String BASE62_ALPHABET = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+
+    public static String encryptVideoLinkShort(Long reportId, Long itemId) {
+        if (reportId == null || itemId == null) {
+            return null;
+        }
+        if (reportId < 0 || itemId < 0) {
+            return null;
+        }
+
+        return "r" + toBase62(reportId) + "i" + toBase62(itemId);
+    }
+
+    private static String toBase62(long value) {
+        if (value == 0) {
+            return "0";
+        }
+        StringBuilder sb = new StringBuilder();
+        long v = value;
+        while (v > 0) {
+            int idx = (int) (v % 62);
+            sb.append(BASE62_ALPHABET.charAt(idx));
+            v = v / 62;
+        }
+        return sb.reverse().toString();
+    }
+
+    private static long fromBase62(String s) {
+        if (s == null || s.isBlank()) {
+            throw new IllegalArgumentException("empty");
+        }
+        long value = 0;
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            int idx = BASE62_ALPHABET.indexOf(c);
+            if (idx < 0) {
+                throw new IllegalArgumentException("invalid char");
+            }
+            value = (value * 62) + idx;
+        }
+        return value;
+    }
     
     /**
      * Encrypt video item ID and report ID to create a shareable token
@@ -69,6 +112,20 @@ public class VideoLinkEncryptor {
      */
     public static Long[] decryptVideoLink(String token) {
         try {
+            if (token != null) {
+                String t = token.trim();
+                if (t.startsWith("r") && t.contains("i")) {
+                    int iPos = t.indexOf('i');
+                    if (iPos > 1 && iPos < t.length() - 1) {
+                        String rPart = t.substring(1, iPos);
+                        String iPart = t.substring(iPos + 1);
+                        long reportId = fromBase62(rPart);
+                        long itemId = fromBase62(iPart);
+                        return new Long[] { reportId, itemId };
+                    }
+                }
+            }
+
             // Decode from URL-safe Base64
             byte[] combined = Base64.getUrlDecoder().decode(token);
             

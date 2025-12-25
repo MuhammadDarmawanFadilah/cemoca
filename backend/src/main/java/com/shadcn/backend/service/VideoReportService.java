@@ -602,21 +602,19 @@ public class VideoReportService {
                     waTemplate = getDefaultWaMessageTemplate();
                 }
 
+                String shareUrl = buildPublicVideoShareUrl(reportId, item.getId());
+
                 String caption = waTemplate
                         .replace(":name", item.getName() == null ? "" : item.getName())
-                        .replace(":linkvideo", "");
+                        .replace(":linkvideo", shareUrl == null ? "" : shareUrl);
 
-                Path tempPath = getTempVideoPath(reportId, item.getId());
-                Path sharePath = getShareVideoPath(reportId, item.getId());
-                ensureTempVideoExists(item, tempPath, sharePath);
+                if (shareUrl != null && !shareUrl.isBlank() && !caption.contains(shareUrl)) {
+                    caption = caption + "\n\n" + shareUrl;
+                }
 
-                String fallbackUrl = buildPublicVideoStreamUrl(reportId, item.getId());
-
-                Map<String, Object> waResult = whatsAppService.sendVideoFileFromLocalWithDetailsOrUrl(
-                    item.getPhone(),
-                    caption,
-                    tempPath,
-                    fallbackUrl
+                Map<String, Object> waResult = whatsAppService.sendTextMessageWithDetails(
+                        item.getPhone(),
+                        caption
                 );
 
                 boolean ok = Boolean.TRUE.equals(waResult.get("success"));
@@ -638,12 +636,6 @@ public class VideoReportService {
                     item.setWaMessageId(messageId);
                     item.setWaSentAt(LocalDateTime.now());
                     item.setWaErrorMessage(null);
-
-                    // delete local video after WA accepted
-                    try {
-                        Files.deleteIfExists(tempPath);
-                    } catch (Exception ignored) {
-                    }
                 } else {
                     item.setWaStatus("ERROR");
                     item.setWaMessageId(messageId);
@@ -709,6 +701,7 @@ public class VideoReportService {
         Files.copy(tempPath, sharePath, StandardCopyOption.REPLACE_EXISTING);
     }
 
+    @SuppressWarnings("unused")
     private String buildPublicVideoStreamUrl(Long reportId, Long itemId) {
         String token = VideoLinkEncryptor.encryptVideoLink(reportId, itemId);
         if (token == null || token.isBlank()) {
@@ -731,6 +724,30 @@ public class VideoReportService {
         }
 
         return base + ctx + "/api/video-reports/stream/" + token + ".mp4";
+    }
+
+    private String buildPublicVideoShareUrl(Long reportId, Long itemId) {
+        String token = VideoLinkEncryptor.encryptVideoLinkShort(reportId, itemId);
+        if (token == null || token.isBlank()) {
+            return null;
+        }
+
+        String base = backendUrl == null ? "" : backendUrl.trim();
+        if (base.endsWith("/")) {
+            base = base.substring(0, base.length() - 1);
+        }
+
+        String ctx = serverContextPath == null ? "" : serverContextPath.trim();
+        if (ctx.isEmpty() || "/".equals(ctx)) {
+            ctx = "";
+        } else if (!ctx.startsWith("/")) {
+            ctx = "/" + ctx;
+        }
+        if (ctx.endsWith("/")) {
+            ctx = ctx.substring(0, ctx.length() - 1);
+        }
+
+        return base + ctx + "/v/" + token;
     }
 
     private static void downloadToFile(
@@ -824,9 +841,15 @@ public class VideoReportService {
             waTemplate = getDefaultWaMessageTemplate();
         }
 
+        String shareUrl = buildPublicVideoShareUrl(reportId, item.getId());
+
         String caption = waTemplate
             .replace(":name", item.getName() == null ? "" : item.getName())
-            .replace(":linkvideo", "");
+            .replace(":linkvideo", shareUrl == null ? "" : shareUrl);
+
+        if (shareUrl != null && !shareUrl.isBlank() && !caption.contains(shareUrl)) {
+            caption = caption + "\n\n" + shareUrl;
+        }
         
         String previousStatus = item.getWaStatus();
         Map<String, Object> waResult = new java.util.HashMap<>();
@@ -837,28 +860,13 @@ public class VideoReportService {
         for (int attempt = 1; attempt <= maxRetries; attempt++) {
             logger.info("[WA RESEND] Item {} - Attempt {}/{} to {}", itemId, attempt, maxRetries, item.getPhone());
 
-            // Send WhatsApp VIDEO message with detailed response
+            // Send WhatsApp TEXT message with share link
             Map<String, Object> attemptResult;
             try {
-                Path tempPath = getTempVideoPath(reportId, item.getId());
-                Path sharePath = getShareVideoPath(reportId, item.getId());
-                ensureTempVideoExists(item, tempPath, sharePath);
-
-                String fallbackUrl = buildPublicVideoStreamUrl(reportId, item.getId());
-
-                attemptResult = whatsAppService.sendVideoFileFromLocalWithDetailsOrUrl(
+                attemptResult = whatsAppService.sendTextMessageWithDetails(
                         item.getPhone(),
-                        caption,
-                    tempPath,
-                    fallbackUrl
+                        caption
                 );
-
-                if (Boolean.TRUE.equals(attemptResult.get("success"))) {
-                    try {
-                        Files.deleteIfExists(tempPath);
-                    } catch (Exception ignored) {
-                    }
-                }
             } catch (Exception e) {
                 attemptResult = new java.util.HashMap<>();
                 attemptResult.put("success", false);

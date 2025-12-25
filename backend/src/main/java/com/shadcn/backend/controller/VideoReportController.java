@@ -18,6 +18,8 @@ import org.springframework.core.io.Resource;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.core.io.FileSystemResource;
+import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -44,6 +46,8 @@ import java.time.Duration;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import org.springframework.http.HttpRange;
+import org.springframework.core.io.support.ResourceRegion;
 
 @RestController
 @RequestMapping("/api/video-reports")
@@ -743,7 +747,7 @@ public class VideoReportController {
         }
         
         // Generate encrypted token
-        String token = VideoLinkEncryptor.encryptVideoLink(reportId, itemId);
+        String token = VideoLinkEncryptor.encryptVideoLinkShort(reportId, itemId);
         if (token == null) {
             return ResponseEntity.internalServerError().build();
         }
@@ -801,7 +805,7 @@ public class VideoReportController {
     }
 
     @RequestMapping(value = "/stream/{token}.mp4", method = {RequestMethod.GET, RequestMethod.HEAD})
-    public ResponseEntity<Resource> streamVideoByToken(@PathVariable String token, HttpServletRequest request) {
+    public ResponseEntity<?> streamVideoByToken(@PathVariable String token, HttpServletRequest request) {
         Long[] ids = VideoLinkEncryptor.decryptVideoLink(token);
         if (ids == null || ids.length < 2) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).build();
@@ -825,16 +829,41 @@ public class VideoReportController {
 
         try {
             if (Files.exists(localPath) && Files.size(localPath) > 0) {
+                long contentLength = Files.size(localPath);
+
                 HttpHeaders headers = new HttpHeaders();
                 headers.setContentType(MediaType.valueOf("video/mp4"));
                 headers.setCacheControl("no-store");
-                headers.setContentDispositionFormData("inline", localPath.getFileName().toString());
-                headers.setContentLength(Files.size(localPath));
+                headers.setContentDisposition(ContentDisposition.inline().filename(localPath.getFileName().toString()).build());
+                headers.add(HttpHeaders.ACCEPT_RANGES, "bytes");
 
                 if (headOnly) {
+                    headers.setContentLength(contentLength);
                     return new ResponseEntity<>(null, headers, HttpStatus.OK);
                 }
 
+                String rangeHeader = request == null ? null : request.getHeader(HttpHeaders.RANGE);
+                if (rangeHeader != null && !rangeHeader.isBlank()) {
+                    List<HttpRange> ranges = HttpRange.parseRanges(rangeHeader);
+                    if (!ranges.isEmpty()) {
+                        Resource resource = new FileSystemResource(localPath);
+                        ResourceRegion region = ranges.get(0).toResourceRegion(resource);
+                        long regionCount = Math.min(region.getCount(), contentLength - region.getPosition());
+
+                        HttpHeaders partial = new HttpHeaders();
+                        partial.setContentType(MediaType.valueOf("video/mp4"));
+                        partial.setCacheControl("no-store");
+                        partial.setContentDisposition(ContentDisposition.inline().filename(localPath.getFileName().toString()).build());
+                        partial.add(HttpHeaders.ACCEPT_RANGES, "bytes");
+                        partial.add(HttpHeaders.CONTENT_RANGE,
+                                "bytes " + region.getPosition() + "-" + (region.getPosition() + regionCount - 1) + "/" + contentLength);
+                        partial.setContentLength(regionCount);
+
+                        return new ResponseEntity<>(region, partial, HttpStatus.PARTIAL_CONTENT);
+                    }
+                }
+
+                headers.setContentLength(contentLength);
                 InputStream in = Files.newInputStream(localPath);
                 return new ResponseEntity<>(new InputStreamResource(in), headers, HttpStatus.OK);
             }
@@ -964,78 +993,19 @@ public class VideoReportController {
             }
 
             String formattedPhone = whatsAppService.formatPhoneForDebug(phone);
-            Path outPath = null;
-            Path partPath = null;
-            try {
-                outPath = Paths.get(videoTempDir, "wa-test", "wa-test-" + System.currentTimeMillis() + ".mp4");
-                Files.createDirectories(outPath.getParent());
-                partPath = Files.createTempFile(outPath.getParent(), outPath.getFileName().toString(), ".part");
-
-                HttpClient client = HttpClient.newBuilder()
-                        .followRedirects(HttpClient.Redirect.NORMAL)
-                        .connectTimeout(Duration.ofSeconds(videoDownloadConnectTimeoutSeconds))
-                        .build();
-
-                HttpRequest httpRequest2 = HttpRequest.newBuilder()
-                        .uri(URI.create(videoUrl))
-                        .timeout(Duration.ofSeconds(videoDownloadReadTimeoutSeconds))
-                        .header("User-Agent", "Mozilla/5.0")
-                        .header("Accept", "video/*,*/*")
-                        .GET()
-                        .build();
-
-                HttpResponse<InputStream> resp = client.send(httpRequest2, HttpResponse.BodyHandlers.ofInputStream());
-                if (resp.statusCode() < 200 || resp.statusCode() >= 300) {
-                    throw new RuntimeException("HTTP " + resp.statusCode() + " when downloading video");
-                }
-
-                try (InputStream in = resp.body(); java.io.OutputStream out = Files.newOutputStream(partPath)) {
-                    byte[] buf = new byte[8192];
-                    int r;
-                    int total = 0;
-                    while ((r = in.read(buf)) != -1) {
-                        total += r;
-                        if (total > videoDownloadMaxBytes) {
-                            throw new RuntimeException("Video too large (exceeds " + videoDownloadMaxBytes + " bytes)");
-                        }
-                        out.write(buf, 0, r);
-                    }
-                    out.flush();
-                    if (total <= 0) {
-                        throw new RuntimeException("Downloaded video is empty");
-                    }
-                }
-
-                Files.move(partPath, outPath, java.nio.file.StandardCopyOption.REPLACE_EXISTING, java.nio.file.StandardCopyOption.ATOMIC_MOVE);
-            } catch (Exception ex) {
-                try {
-                    if (partPath != null) {
-                        Files.deleteIfExists(partPath);
-                    }
-                } catch (Exception ignored) {
-                }
-                try {
-                    if (outPath != null) {
-                        Files.deleteIfExists(outPath);
-                    }
-                } catch (Exception ignored) {
-                }
+            if (videoUrl == null || videoUrl.isBlank()) {
                 result.put("success", false);
-                result.put("error", "Failed to download video: " + ex.getMessage());
+                result.put("error", "Missing videoUrl");
                 return ResponseEntity.ok(result);
             }
 
-            Map<String, Object> sendResult;
-            try {
-                sendResult = whatsAppService.sendVideoFileFromLocalWithDetailsOrUrl(phone, caption, outPath, videoUrl);
-            } finally {
-                try {
-                    if (outPath != null) {
-                        Files.deleteIfExists(outPath);
-                    }
-                } catch (Exception ignored) {
-                }
+            String msg = caption == null ? "" : caption;
+            if (!msg.isBlank()) {
+                msg = msg + "\n";
             }
+            msg = msg + videoUrl;
+
+            Map<String, Object> sendResult = whatsAppService.sendTextMessageWithDetails(phone, msg);
 
             result.putAll(sendResult);
             result.put("originalPhone", phone);
