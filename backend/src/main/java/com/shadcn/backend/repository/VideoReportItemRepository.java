@@ -124,4 +124,7 @@ public interface VideoReportItemRepository extends JpaRepository<VideoReportItem
        // Find WA items stuck in PENDING/QUEUED state for too long (for auto-recovery scheduler)
        @Query("SELECT i FROM VideoReportItem i WHERE i.status = 'DONE' AND (i.waStatus = 'PENDING' OR i.waStatus = 'QUEUED' OR i.waStatus IS NULL) AND i.updatedAt < :threshold AND (i.excluded = false OR i.excluded IS NULL)")
        List<VideoReportItem> findStuckWaPendingItems(@Param("threshold") java.time.LocalDateTime threshold);
+
+       @Query("SELECT DISTINCT i.videoReport.id FROM VideoReportItem i WHERE i.status = :status AND (i.excluded = false OR i.excluded IS NULL)")
+       List<Long> findDistinctReportIdsByStatus(@Param("status") String status);
 }

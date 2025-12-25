@@ -57,6 +57,9 @@ public class WaBlastSchedulerService {
     @Lazy
     private PdfReportService pdfReportService;
 
+    @org.springframework.beans.factory.annotation.Value("${whatsapp.wablas.status-sync.enabled:false}")
+    private boolean wablasStatusSyncEnabled;
+
     
     /**
      * Scheduler: Send pending WA messages for completed PDF items every 30 seconds
@@ -123,6 +126,31 @@ public class WaBlastSchedulerService {
             logger.error("[WA SCHEDULER VIDEO] Error: {}", e.getMessage(), e);
         }
     }
+
+
+    /**
+     * Scheduler: Poll D-ID clip statuses for video items in PROCESSING state
+     * When D-ID returns done/result_url, items will be marked DONE and WA blast will pick them up.
+     */
+    @Scheduled(fixedRate = 30000, initialDelay = 20000) // 30 seconds, start after 20 sec
+    public void pollProcessingVideoClips() {
+        try {
+            List<Long> reportIds = videoReportItemRepository.findDistinctReportIdsByStatus("PROCESSING");
+            if (reportIds.isEmpty()) {
+                return;
+            }
+
+            for (Long reportId : reportIds) {
+                try {
+                    videoReportService.checkPendingClips(reportId);
+                } catch (Exception e) {
+                    logger.error("[VIDEO CLIP POLL] Error for report {}: {}", reportId, e.getMessage());
+                }
+            }
+        } catch (Exception e) {
+            logger.error("[VIDEO CLIP POLL] Error: {}", e.getMessage(), e);
+        }
+    }
     
 
     /**
@@ -132,6 +160,10 @@ public class WaBlastSchedulerService {
     @Scheduled(fixedRate = 300000, initialDelay = 60000) // Every 5 minutes, start after 1 min
     public void syncQueuedVideoWaStatuses() {
         try {
+            if (!wablasStatusSyncEnabled) {
+                return;
+            }
+
             List<VideoReport> reports = videoReportRepository.findReportsWithWaItemsToSync();
             if (reports.isEmpty()) {
                 return;

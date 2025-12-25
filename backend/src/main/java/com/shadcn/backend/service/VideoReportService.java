@@ -22,19 +22,8 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.BufferedReader;
-import java.io.IOException;
-import java.io.InputStream;
 import java.io.InputStreamReader;
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.nio.file.StandardCopyOption;
-import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
@@ -42,8 +31,6 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
-import jakarta.persistence.EntityManager;
-import jakarta.persistence.PersistenceContext;
 import jakarta.annotation.PostConstruct;
 
 @Service
@@ -56,12 +43,6 @@ public class VideoReportService {
     private final ExcelService excelService;
     private final WhatsAppService whatsAppService;
     
-    @PersistenceContext
-    private EntityManager entityManager;
-    
-    @Value("${app.frontend.url:http://localhost:3000}")
-    private String frontendUrl;
-
     @Value("${app.backend.url:http://localhost:8080}")
     private String backendUrl;
 
@@ -77,21 +58,6 @@ public class VideoReportService {
     @Value("${app.video.generation.batch-delay-ms}")
     private long videoGenerationBatchDelayMs;
 
-    @Value("${app.video.temp-dir}")
-    private String videoTempDir;
-
-    @Value("${app.video.share-dir}")
-    private String videoShareDir;
-
-    @Value("${app.video.download.max-bytes}")
-    private int videoDownloadMaxBytes;
-
-    @Value("${app.video.download.connect-timeout-seconds}")
-    private int videoDownloadConnectTimeoutSeconds;
-
-    @Value("${app.video.download.read-timeout-seconds}")
-    private int videoDownloadReadTimeoutSeconds;
-
     @Value("${app.wa.retry.delay-ms}")
     private long waRetryDelayMs;
 
@@ -105,21 +71,6 @@ public class VideoReportService {
         }
         if (videoGenerationBatchDelayMs < 0) {
             throw new IllegalStateException("Invalid property app.video.generation.batch-delay-ms; must be >= 0");
-        }
-        if (videoTempDir == null || videoTempDir.isBlank()) {
-            throw new IllegalStateException("Missing required property: app.video.temp-dir");
-        }
-        if (videoShareDir == null || videoShareDir.isBlank()) {
-            throw new IllegalStateException("Missing required property: app.video.share-dir");
-        }
-        if (videoDownloadMaxBytes <= 0) {
-            throw new IllegalStateException("Invalid property app.video.download.max-bytes; must be > 0");
-        }
-        if (videoDownloadConnectTimeoutSeconds <= 0) {
-            throw new IllegalStateException("Invalid property app.video.download.connect-timeout-seconds; must be > 0");
-        }
-        if (videoDownloadReadTimeoutSeconds <= 0) {
-            throw new IllegalStateException("Invalid property app.video.download.read-timeout-seconds; must be > 0");
         }
         if (waRetryDelayMs <= 0) {
             throw new IllegalStateException("Invalid property app.wa.retry.delay-ms; must be > 0");
@@ -590,66 +541,66 @@ public class VideoReportService {
         videoReportItemRepository.flush(); // Force flush to DB immediately
         
         logger.info("[WA BLAST VIDEO] Marked {} items as PROCESSING", readyItems.size());
-        
-        // STEP 3: Send per-item using local video file (Wablas send-video-from-local)
+
+        // STEP 3: Send LINK-only using Wablas v2 bulk API (100 per request)
+        // Supports high volume (e.g., 1000) without video upload.
+        java.util.List<WhatsAppService.BulkMessageItem> bulk = new java.util.ArrayList<>();
+        java.util.Map<Long, VideoReportItem> byId = new java.util.HashMap<>();
+
+        String waTemplate = report.getWaMessageTemplate();
+        if (waTemplate == null || waTemplate.isEmpty()) {
+            waTemplate = getDefaultWaMessageTemplate();
+        }
+
+        for (VideoReportItem item : readyItems) {
+            String shareUrl = buildPublicVideoShareUrl(reportId, item.getId());
+            String message = waTemplate
+                    .replace(":name", item.getName() == null ? "" : item.getName())
+                    .replace(":linkvideo", shareUrl == null ? "" : shareUrl);
+
+            if (shareUrl != null && !shareUrl.isBlank() && !message.contains(shareUrl)) {
+                message = message + "\n\n" + shareUrl;
+            }
+
+            bulk.add(new WhatsAppService.BulkMessageItem(item.getPhone(), message, String.valueOf(item.getId())));
+            byId.put(item.getId(), item);
+        }
+
+        java.util.List<WhatsAppService.BulkMessageResult> results = whatsAppService.sendBulkMessagesWithRetry(bulk, 5);
+
         int successCount = 0;
         int failCount = 0;
 
-        for (VideoReportItem item : readyItems) {
+        for (WhatsAppService.BulkMessageResult r : results) {
+            Long itemId;
             try {
-                String waTemplate = report.getWaMessageTemplate();
-                if (waTemplate == null || waTemplate.isEmpty()) {
-                    waTemplate = getDefaultWaMessageTemplate();
-                }
-
-                String shareUrl = buildPublicVideoShareUrl(reportId, item.getId());
-
-                String caption = waTemplate
-                        .replace(":name", item.getName() == null ? "" : item.getName())
-                        .replace(":linkvideo", shareUrl == null ? "" : shareUrl);
-
-                if (shareUrl != null && !shareUrl.isBlank() && !caption.contains(shareUrl)) {
-                    caption = caption + "\n\n" + shareUrl;
-                }
-
-                Map<String, Object> waResult = whatsAppService.sendTextMessageWithDetails(
-                        item.getPhone(),
-                        caption
-                );
-
-                boolean ok = Boolean.TRUE.equals(waResult.get("success"));
-                String messageId = Objects.toString(waResult.get("messageId"), null);
-                String messageStatus = Objects.toString(waResult.get("messageStatus"), null);
-
-                if (ok) {
-                    boolean queued = messageStatus != null && messageStatus.equalsIgnoreCase("pending");
-                    if (queued) {
-                        item.setWaStatus("QUEUED");
-                    } else if (messageStatus != null && (messageStatus.equalsIgnoreCase("delivered") || messageStatus.equalsIgnoreCase("read"))) {
-                        item.setWaStatus("DELIVERED");
-                        successCount++;
-                    } else {
-                        item.setWaStatus("SENT");
-                        successCount++;
-                    }
-
-                    item.setWaMessageId(messageId);
-                    item.setWaSentAt(LocalDateTime.now());
-                    item.setWaErrorMessage(null);
-                } else {
-                    item.setWaStatus("ERROR");
-                    item.setWaMessageId(messageId);
-                    item.setWaErrorMessage(Objects.toString(waResult.get("error"), null));
-                    failCount++;
-                }
-
-                videoReportItemRepository.save(item);
-            } catch (Exception e) {
-                item.setWaStatus("ERROR");
-                item.setWaErrorMessage(e.getMessage());
-                failCount++;
-                videoReportItemRepository.save(item);
+                itemId = r.getOriginalId() == null ? null : Long.parseLong(r.getOriginalId());
+            } catch (Exception ignore) {
+                itemId = null;
             }
+            if (itemId == null) {
+                continue;
+            }
+
+            VideoReportItem item = byId.get(itemId);
+            if (item == null) {
+                continue;
+            }
+
+            if (r.isSuccess()) {
+                item.setWaStatus("QUEUED");
+                item.setWaMessageId(r.getMessageId());
+                item.setWaSentAt(LocalDateTime.now());
+                item.setWaErrorMessage(null);
+                successCount++;
+            } else {
+                item.setWaStatus("ERROR");
+                item.setWaMessageId(r.getMessageId());
+                item.setWaErrorMessage(r.getError());
+                failCount++;
+            }
+
+            videoReportItemRepository.save(item);
         }
         
         // STEP 6: Update report counters
@@ -666,65 +617,6 @@ public class VideoReportService {
         logger.info("[WA BLAST VIDEO] ========================================");
     }
 
-    private Path getTempVideoPath(Long reportId, Long itemId) {
-        return Paths.get(videoTempDir, "report-" + reportId, "item-" + itemId + ".mp4");
-    }
-
-    private Path getShareVideoPath(Long reportId, Long itemId) {
-        return Paths.get(videoShareDir, "report-" + reportId, "item-" + itemId + ".mp4");
-    }
-
-    private void ensureTempVideoExists(VideoReportItem item, Path tempPath, Path sharePath) throws IOException, InterruptedException {
-        if (Files.exists(tempPath) && Files.size(tempPath) > 0) {
-            return;
-        }
-
-        if (Files.exists(sharePath) && Files.size(sharePath) > 0) {
-            Files.createDirectories(tempPath.getParent());
-            Files.copy(sharePath, tempPath, StandardCopyOption.REPLACE_EXISTING);
-            return;
-        }
-
-        String sourceUrl = item.getVideoUrl();
-        if (sourceUrl == null || sourceUrl.isBlank()) {
-            throw new IOException("Video URL is empty; cannot download");
-        }
-        downloadToFile(
-                sourceUrl,
-                tempPath,
-                videoDownloadMaxBytes,
-                videoDownloadConnectTimeoutSeconds,
-                videoDownloadReadTimeoutSeconds
-        );
-
-        Files.createDirectories(sharePath.getParent());
-        Files.copy(tempPath, sharePath, StandardCopyOption.REPLACE_EXISTING);
-    }
-
-    @SuppressWarnings("unused")
-    private String buildPublicVideoStreamUrl(Long reportId, Long itemId) {
-        String token = VideoLinkEncryptor.encryptVideoLink(reportId, itemId);
-        if (token == null || token.isBlank()) {
-            return null;
-        }
-
-        String base = backendUrl == null ? "" : backendUrl.trim();
-        if (base.endsWith("/")) {
-            base = base.substring(0, base.length() - 1);
-        }
-
-        String ctx = serverContextPath == null ? "" : serverContextPath.trim();
-        if (ctx.isEmpty() || "/".equals(ctx)) {
-            ctx = "";
-        } else if (!ctx.startsWith("/")) {
-            ctx = "/" + ctx;
-        }
-        if (ctx.endsWith("/")) {
-            ctx = ctx.substring(0, ctx.length() - 1);
-        }
-
-        return base + ctx + "/api/video-reports/stream/" + token + ".mp4";
-    }
 
     private String buildPublicVideoShareUrl(Long reportId, Long itemId) {
         String token = VideoLinkEncryptor.encryptVideoLinkShort(reportId, itemId);
@@ -750,64 +642,6 @@ public class VideoReportService {
         return base + ctx + "/v/" + token;
     }
 
-    private static void downloadToFile(
-            String url,
-            Path target,
-            int maxBytes,
-            int connectTimeoutSeconds,
-            int readTimeoutSeconds
-    ) throws IOException, InterruptedException {
-        if (Files.exists(target) && Files.size(target) > 0) {
-            return;
-        }
-
-        Files.createDirectories(target.getParent());
-
-        HttpClient client = HttpClient.newBuilder()
-                .followRedirects(HttpClient.Redirect.NORMAL)
-            .connectTimeout(Duration.ofSeconds(Math.max(1, connectTimeoutSeconds)))
-                .build();
-
-        HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(url))
-            .timeout(Duration.ofSeconds(Math.max(1, readTimeoutSeconds)))
-                .header("User-Agent", "Mozilla/5.0")
-                .header("Accept", "video/*,*/*")
-                .GET()
-                .build();
-
-        HttpResponse<InputStream> response = client.send(request, HttpResponse.BodyHandlers.ofInputStream());
-        int status = response.statusCode();
-        if (status < 200 || status >= 300) {
-            throw new IOException("HTTP " + status + " when downloading video");
-        }
-
-        Path tmp = Files.createTempFile(target.getParent(), target.getFileName().toString(), ".part");
-        try (InputStream in = response.body(); java.io.OutputStream out = Files.newOutputStream(tmp)) {
-            byte[] buffer = new byte[8192];
-            int total = 0;
-            int read;
-            while ((read = in.read(buffer)) != -1) {
-                total += read;
-                if (total > maxBytes) {
-                    throw new IOException("Video too large (exceeds " + maxBytes + " bytes)");
-                }
-                out.write(buffer, 0, read);
-            }
-
-            if (total <= 0) {
-                throw new IOException("Downloaded video is empty");
-            }
-
-            out.flush();
-            Files.move(tmp, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
-        } finally {
-            try {
-                Files.deleteIfExists(tmp);
-            } catch (Exception ignored) {
-            }
-        }
-    }
     
     /**
      * Resend WhatsApp to a single item with retry
@@ -1077,27 +911,13 @@ public class VideoReportService {
                     videoReportItemRepository.save(item);
                 } else {
                     itemUpdate.put("error", waResult.get("error"));
-                    String oldWaStatus = item.getWaStatus();
-                    int currentSentCount = java.util.Objects.requireNonNullElse(report.getWaSentCount(), 0);
-                    int currentFailedCount = java.util.Objects.requireNonNullElse(report.getWaFailedCount(), 0);
-
                     String err = waResult.get("error") == null ? null : String.valueOf(waResult.get("error"));
                     String errorMessage = (err == null || err.isBlank()) ? "WA status check failed" : ("WA status check failed: " + err);
 
-                    if (!"FAILED".equals(oldWaStatus) && !"ERROR".equals(oldWaStatus)) {
-                        if ("SENT".equals(oldWaStatus) || "DELIVERED".equals(oldWaStatus)) {
-                            report.setWaSentCount(Math.max(0, currentSentCount - 1));
-                        }
-                        report.setWaFailedCount(currentFailedCount + 1);
-                        updated++;
-                    }
-
-                    item.setWaStatus("ERROR");
-                    item.setWaErrorMessage(errorMessage);
+                    // Do not change waStatus on status-check failure (provider instability)
                     itemUpdate.put("newStatus", item.getWaStatus());
-                    videoReportItemRepository.save(item);
-                    failed++;
-                    logger.warn("[WA SYNC] Failed to get status for item {}: {}", item.getId(), waResult.get("error"));
+                    itemUpdate.put("note", errorMessage);
+                    logger.warn("[WA SYNC] Status check unavailable for item {}: {}", item.getId(), err);
                 }
                 
                 statusUpdates.add(itemUpdate);
@@ -1216,26 +1036,12 @@ public class VideoReportService {
                         item.setStatus("FAILED");
                         item.setErrorMessage("D-ID done but result_url is empty");
                         logger.warn("[CHECK CLIPS] Item {} FAILED: {}", item.getId(), item.getErrorMessage());
-                    } else if (reportId == null) {
-                        item.setStatus("FAILED");
-                        item.setErrorMessage("Missing reportId; cannot save video to local");
-                        logger.warn("[CHECK CLIPS] Item {} FAILED: {}", item.getId(), item.getErrorMessage());
                     } else {
-                        try {
-                            item.setVideoUrl(resultUrl);
-
-                            Path tempPath = getTempVideoPath(reportId, item.getId());
-                            Path sharePath = getShareVideoPath(reportId, item.getId());
-                            ensureTempVideoExists(item, tempPath, sharePath);
-                            item.setStatus("DONE");
-                            item.setVideoGeneratedAt(LocalDateTime.now());
-                            item.setErrorMessage(null);
-                            logger.info("[CHECK CLIPS] Item {} DONE (saved local)", item.getId());
-                        } catch (Exception ex) {
-                            item.setStatus("FAILED");
-                            item.setErrorMessage("Failed to download video to local: " + ex.getMessage());
-                            logger.warn("[CHECK CLIPS] Item {} FAILED: {}", item.getId(), item.getErrorMessage());
-                        }
+                        item.setVideoUrl(resultUrl);
+                        item.setStatus("DONE");
+                        item.setVideoGeneratedAt(LocalDateTime.now());
+                        item.setErrorMessage(null);
+                        logger.info("[CHECK CLIPS] Item {} DONE", item.getId());
                     }
                 } else if ("error".equals(clipStatus)) {
                     item.setStatus("FAILED");
@@ -1486,30 +1292,6 @@ public class VideoReportService {
         ir.setWaSentAt(item.getWaSentAt());
         ir.setExcluded(item.getExcluded());
         return ir;
-    }
-
-    private VideoReportResponse mapToResponse(VideoReport report, List<VideoReportItem> items) {
-        VideoReportResponse response = new VideoReportResponse();
-        response.setId(report.getId());
-        response.setReportName(report.getReportName());
-        response.setMessageTemplate(report.getMessageTemplate());
-        response.setWaMessageTemplate(report.getWaMessageTemplate());
-        response.setStatus(report.getStatus());
-        response.setTotalRecords(report.getTotalRecords());
-        response.setProcessedRecords(report.getProcessedRecords());
-        response.setSuccessCount(report.getSuccessCount());
-        response.setFailedCount(report.getFailedCount());
-        response.setWaSentCount(report.getWaSentCount());
-        response.setWaFailedCount(report.getWaFailedCount());
-        response.setCreatedAt(report.getCreatedAt());
-        response.setCompletedAt(report.getCompletedAt());
-
-        List<VideoReportItemResponse> itemResponses = items.stream()
-                .map(this::mapItemToResponse)
-                .collect(Collectors.toList());
-
-        response.setItems(itemResponses);
-        return response;
     }
 
     private VideoReportResponse mapToResponseWithoutItems(VideoReport report) {

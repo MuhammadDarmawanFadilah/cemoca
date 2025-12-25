@@ -13,13 +13,9 @@ import com.shadcn.backend.util.VideoLinkEncryptor;
 import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.core.io.InputStreamResource;
-import org.springframework.core.io.Resource;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
-import org.springframework.core.io.FileSystemResource;
-import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -34,20 +30,9 @@ import jakarta.servlet.http.HttpServletRequest;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.io.InputStream;
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.time.Duration;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import org.springframework.http.HttpRange;
-import org.springframework.core.io.support.ResourceRegion;
 
 @RestController
 @RequestMapping("/api/video-reports")
@@ -60,21 +45,6 @@ public class VideoReportController {
     private final WhatsAppService whatsAppService;
     private final VideoReportItemRepository videoReportItemRepository;
 
-    @Value("${app.video.temp-dir}")
-    private String videoTempDir;
-
-    @Value("${app.video.share-dir}")
-    private String videoShareDir;
-
-    @Value("${app.video.download.max-bytes}")
-    private int videoDownloadMaxBytes;
-
-    @Value("${app.video.download.connect-timeout-seconds}")
-    private int videoDownloadConnectTimeoutSeconds;
-
-    @Value("${app.video.download.read-timeout-seconds}")
-    private int videoDownloadReadTimeoutSeconds;
-
     @Value("${app.wa.test.timeout-seconds}")
     private int waTestTimeoutSeconds;
 
@@ -83,21 +53,6 @@ public class VideoReportController {
 
     @PostConstruct
     void validateVideoConfig() {
-        if (videoTempDir == null || videoTempDir.isBlank()) {
-            throw new IllegalStateException("Missing required property: app.video.temp-dir");
-        }
-        if (videoShareDir == null || videoShareDir.isBlank()) {
-            throw new IllegalStateException("Missing required property: app.video.share-dir");
-        }
-        if (videoDownloadMaxBytes <= 0) {
-            throw new IllegalStateException("Invalid property app.video.download.max-bytes; must be > 0");
-        }
-        if (videoDownloadConnectTimeoutSeconds <= 0) {
-            throw new IllegalStateException("Invalid property app.video.download.connect-timeout-seconds; must be > 0");
-        }
-        if (videoDownloadReadTimeoutSeconds <= 0) {
-            throw new IllegalStateException("Invalid property app.video.download.read-timeout-seconds; must be > 0");
-        }
         if (waTestTimeoutSeconds <= 0) {
             throw new IllegalStateException("Invalid property app.wa.test.timeout-seconds; must be > 0");
         }
@@ -780,7 +735,7 @@ public class VideoReportController {
         if (item == null) {
             Map<String, Object> error = new HashMap<>();
             error.put("error", "Video tidak ditemukan");
-            return ResponseEntity.notFound().build();
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(error);
         }
         
         // Return video info
@@ -788,7 +743,7 @@ public class VideoReportController {
         response.put("id", item.getId());
         response.put("name", item.getName());
         response.put("status", item.getStatus());
-        response.put("videoUrl", "/api/video-reports/stream/" + token + ".mp4");
+        response.put("videoUrl", item.getVideoUrl());
         response.put("personalizedMessage", item.getPersonalizedMessage());
         
         if (item.getVideoUrl() == null || item.getVideoUrl().isEmpty()) {
@@ -819,91 +774,15 @@ public class VideoReportController {
             return ResponseEntity.notFound().build();
         }
 
-        boolean headOnly = "HEAD".equalsIgnoreCase(request.getMethod());
-
-        Path localPath = Paths.get(
-            videoShareDir,
-                "report-" + reportId,
-                "item-" + itemId + ".mp4"
-        );
-
-        try {
-            if (Files.exists(localPath) && Files.size(localPath) > 0) {
-                long contentLength = Files.size(localPath);
-
-                HttpHeaders headers = new HttpHeaders();
-                headers.setContentType(MediaType.valueOf("video/mp4"));
-                headers.setCacheControl("no-store");
-                headers.setContentDisposition(ContentDisposition.inline().filename(localPath.getFileName().toString()).build());
-                headers.add(HttpHeaders.ACCEPT_RANGES, "bytes");
-
-                if (headOnly) {
-                    headers.setContentLength(contentLength);
-                    return new ResponseEntity<>(null, headers, HttpStatus.OK);
-                }
-
-                String rangeHeader = request == null ? null : request.getHeader(HttpHeaders.RANGE);
-                if (rangeHeader != null && !rangeHeader.isBlank()) {
-                    List<HttpRange> ranges = HttpRange.parseRanges(rangeHeader);
-                    if (!ranges.isEmpty()) {
-                        Resource resource = new FileSystemResource(localPath);
-                        ResourceRegion region = ranges.get(0).toResourceRegion(resource);
-                        long regionCount = Math.min(region.getCount(), contentLength - region.getPosition());
-
-                        HttpHeaders partial = new HttpHeaders();
-                        partial.setContentType(MediaType.valueOf("video/mp4"));
-                        partial.setCacheControl("no-store");
-                        partial.setContentDisposition(ContentDisposition.inline().filename(localPath.getFileName().toString()).build());
-                        partial.add(HttpHeaders.ACCEPT_RANGES, "bytes");
-                        partial.add(HttpHeaders.CONTENT_RANGE,
-                                "bytes " + region.getPosition() + "-" + (region.getPosition() + regionCount - 1) + "/" + contentLength);
-                        partial.setContentLength(regionCount);
-
-                        return new ResponseEntity<>(region, partial, HttpStatus.PARTIAL_CONTENT);
-                    }
-                }
-
-                headers.setContentLength(contentLength);
-                InputStream in = Files.newInputStream(localPath);
-                return new ResponseEntity<>(new InputStreamResource(in), headers, HttpStatus.OK);
-            }
-
-            String sourceUrl = item.getVideoUrl();
-            if (sourceUrl == null || sourceUrl.isBlank()) {
-                return ResponseEntity.notFound().build();
-            }
-
-            HttpHeaders headers = new HttpHeaders();
-            headers.setContentType(MediaType.valueOf("video/mp4"));
-            headers.setCacheControl("no-store");
-            headers.setContentDispositionFormData("inline", "video-" + itemId + ".mp4");
-
-            if (headOnly) {
-                return new ResponseEntity<>(null, headers, HttpStatus.OK);
-            }
-
-            HttpClient client = HttpClient.newBuilder()
-                    .followRedirects(HttpClient.Redirect.NORMAL)
-                    .connectTimeout(Duration.ofSeconds(videoDownloadConnectTimeoutSeconds))
-                    .build();
-
-            HttpRequest httpRequest = HttpRequest.newBuilder()
-                    .uri(URI.create(sourceUrl))
-                    .timeout(Duration.ofSeconds(videoDownloadReadTimeoutSeconds))
-                    .header("User-Agent", "Mozilla/5.0")
-                    .header("Accept", "video/*,*/*")
-                    .GET()
-                    .build();
-
-            HttpResponse<InputStream> resp = client.send(httpRequest, HttpResponse.BodyHandlers.ofInputStream());
-            if (resp.statusCode() < 200 || resp.statusCode() >= 300) {
-                return ResponseEntity.status(HttpStatus.BAD_GATEWAY).build();
-            }
-
-            return new ResponseEntity<>(new InputStreamResource(resp.body()), headers, HttpStatus.OK);
-        } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        String sourceUrl = item.getVideoUrl();
+        if (sourceUrl == null || sourceUrl.isBlank()) {
+            return ResponseEntity.notFound().build();
         }
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setCacheControl("no-store");
+        headers.add(HttpHeaders.LOCATION, sourceUrl);
+        return new ResponseEntity<>(headers, HttpStatus.FOUND);
     }
 
     /**
