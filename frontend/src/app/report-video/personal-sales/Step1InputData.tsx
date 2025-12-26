@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Switch } from "@/components/ui/switch";
 import {
   Select,
   SelectContent,
@@ -54,6 +55,12 @@ interface Step1InputDataProps {
   setAvatarPage: (value: number | ((p: number) => number)) => void;
   avatarSearch: string;
   setAvatarSearch: (value: string) => void;
+  useBackground: boolean;
+  setUseBackground: (value: boolean) => void;
+  backgrounds: string[];
+  loadingBackgrounds: boolean;
+  backgroundName: string;
+  setBackgroundName: (value: string) => void;
   validating: boolean;
   validateAndProceed: () => void;
 }
@@ -73,6 +80,12 @@ export function Step1InputData({
   setAvatarPage,
   avatarSearch,
   setAvatarSearch,
+  useBackground,
+  setUseBackground,
+  backgrounds,
+  loadingBackgrounds,
+  backgroundName,
+  setBackgroundName,
   validating,
   validateAndProceed,
 }: Step1InputDataProps) {
@@ -146,6 +159,45 @@ export function Step1InputData({
       <div className="space-y-1.5">
         <Label className="text-xs font-medium text-slate-700 dark:text-slate-300">{t("reportVideo.reportName")}</Label>
         <Input value={reportName} onChange={e => setReportName(e.target.value)} placeholder="Personal Notification" className="h-9 text-sm" />
+      </div>
+
+      {/* Background */}
+      <div className="space-y-2">
+        <div className="flex items-center justify-between">
+          <Label className="text-xs font-medium text-slate-700 dark:text-slate-300">Background</Label>
+          <Switch checked={useBackground} onCheckedChange={checked => setUseBackground(Boolean(checked))} />
+        </div>
+
+        {useBackground && (
+          <div className="space-y-2">
+            <Select value={backgroundName} onValueChange={setBackgroundName}>
+              <SelectTrigger className="h-9 text-sm">
+                <SelectValue placeholder={loadingBackgrounds ? "Loading..." : "Select background"} />
+              </SelectTrigger>
+              <SelectContent>
+                {(backgrounds || []).map(name => (
+                  <SelectItem key={name} value={name}>
+                    {name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            {backgroundName ? (
+              <div className="rounded-lg border border-slate-200 dark:border-slate-800 overflow-hidden bg-slate-50 dark:bg-slate-950">
+                <img
+                  src={`${config.apiUrl}/video-backgrounds/${encodeURIComponent(backgroundName)}`}
+                  alt={backgroundName}
+                  className="w-full h-40 object-cover"
+                />
+              </div>
+            ) : null}
+
+            {!loadingBackgrounds && (!backgrounds || backgrounds.length === 0) ? (
+              <div className="text-[10px] text-slate-400">No backgrounds found</div>
+            ) : null}
+          </div>
+        )}
       </div>
 
       <div className="space-y-2">

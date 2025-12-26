@@ -28,6 +28,10 @@ public class VideoReport {
     @Column(columnDefinition = "TEXT")
     private String waMessageTemplate; // WhatsApp message template with :linkvideo parameter
 
+    private Boolean useBackground;
+
+    private String backgroundName;
+
     @Column(nullable = false)
     private String status; // PENDING, PROCESSING, COMPLETED, FAILED
 
@@ -60,6 +64,9 @@ public class VideoReport {
         updatedAt = LocalDateTime.now();
         if (status == null) {
             status = "PENDING";
+        }
+        if (useBackground == null) {
+            useBackground = false;
         }
         if (processedRecords == null) {
             processedRecords = 0;

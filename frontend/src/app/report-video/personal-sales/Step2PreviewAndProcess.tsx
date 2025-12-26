@@ -65,6 +65,8 @@ interface Step2PreviewAndProcessProps {
   reportName: string;
   messageTemplate: string;
   waMessageTemplate: string;
+  useBackground: boolean;
+  backgroundName: string;
   setStep: (step: 1 | 2 | 3) => void;
   backToHistory: () => void;
   loadHistory: () => void;
@@ -88,6 +90,8 @@ export function Step2PreviewAndProcess({
   reportName,
   messageTemplate,
   waMessageTemplate,
+  useBackground,
+  backgroundName,
   setStep,
   backToHistory,
   loadHistory,
@@ -125,6 +129,8 @@ export function Step2PreviewAndProcess({
         reportName: `${reportName} (Preview)`,
         messageTemplate,
         waMessageTemplate,
+        useBackground,
+        backgroundName,
         items: [{ rowNumber: firstRow.rowNumber, name: firstRow.name, phone: firstRow.phone, avatar: firstRow.avatar }],
       };
       
@@ -212,6 +218,8 @@ export function Step2PreviewAndProcess({
         reportName,
         messageTemplate,
         waMessageTemplate,
+        useBackground,
+        backgroundName,
         items: validRows.map(row => ({ rowNumber: row.rowNumber, name: row.name, phone: row.phone, avatar: row.avatar })),
       };
       

@@ -13,6 +13,8 @@ public class VideoReportRequest {
     private String reportName;
     private String messageTemplate;
     private String waMessageTemplate; // WhatsApp message template with :linkvideo parameter
+    private Boolean useBackground;
+    private String backgroundName;
     private List<VideoReportItemRequest> items;
 
     @Data

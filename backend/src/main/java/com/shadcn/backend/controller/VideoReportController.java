@@ -5,8 +5,10 @@ import com.shadcn.backend.model.User;
 import com.shadcn.backend.entity.VideoReport;
 import com.shadcn.backend.entity.VideoReportItem;
 import com.shadcn.backend.repository.UserRepository;
+import com.shadcn.backend.repository.VideoReportRepository;
 import com.shadcn.backend.repository.VideoReportItemRepository;
 import com.shadcn.backend.service.DIDService;
+import com.shadcn.backend.service.VideoBackgroundCompositeService;
 import com.shadcn.backend.service.VideoReportService;
 import com.shadcn.backend.service.WhatsAppService;
 import com.shadcn.backend.util.VideoLinkEncryptor;
@@ -44,6 +46,14 @@ public class VideoReportController {
     private final UserRepository userRepository;
     private final WhatsAppService whatsAppService;
     private final VideoReportItemRepository videoReportItemRepository;
+    private final VideoReportRepository videoReportRepository;
+    private final VideoBackgroundCompositeService videoBackgroundCompositeService;
+
+    @Value("${app.backend.url:http://localhost:8080}")
+    private String backendUrl;
+
+    @Value("${server.servlet.context-path:}")
+    private String serverContextPath;
 
     @Value("${app.wa.test.timeout-seconds}")
     private int waTestTimeoutSeconds;
@@ -65,12 +75,16 @@ public class VideoReportController {
                                 DIDService didService,
                                 UserRepository userRepository,
                                 WhatsAppService whatsAppService,
-                                VideoReportItemRepository videoReportItemRepository) {
+                                VideoReportItemRepository videoReportItemRepository,
+                                VideoReportRepository videoReportRepository,
+                                VideoBackgroundCompositeService videoBackgroundCompositeService) {
         this.videoReportService = videoReportService;
         this.didService = didService;
         this.userRepository = userRepository;
         this.whatsAppService = whatsAppService;
         this.videoReportItemRepository = videoReportItemRepository;
+        this.videoReportRepository = videoReportRepository;
+        this.videoBackgroundCompositeService = videoBackgroundCompositeService;
     }
 
     /**
@@ -91,7 +105,12 @@ public class VideoReportController {
     public ResponseEntity<List<DIDPresenter>> getPresenters(
             @RequestParam(defaultValue = "true") boolean includeNotReadyExpress
     ) {
-        return ResponseEntity.ok(didService.getPresentersForListing(includeNotReadyExpress));
+        return ResponseEntity.ok(
+            didService.getPresentersForListing(includeNotReadyExpress)
+                .stream()
+                .filter(p -> p != null && "express".equalsIgnoreCase(p.getAvatar_type()))
+                .toList()
+        );
     }
 
     @GetMapping("/presenters/clips")
@@ -743,7 +762,17 @@ public class VideoReportController {
         response.put("id", item.getId());
         response.put("name", item.getName());
         response.put("status", item.getStatus());
-        response.put("videoUrl", item.getVideoUrl());
+        String videoUrl = item.getVideoUrl();
+        if (videoUrl != null && !videoUrl.isBlank() && "DONE".equals(item.getStatus())) {
+            VideoReport report = videoReportRepository.findById(reportId).orElse(null);
+            if (report != null
+                    && Boolean.TRUE.equals(report.getUseBackground())
+                    && report.getBackgroundName() != null
+                    && !report.getBackgroundName().isBlank()) {
+                videoUrl = "/api/video-reports/stream/" + token + ".mp4";
+            }
+        }
+        response.put("videoUrl", videoUrl);
         response.put("personalizedMessage", item.getPersonalizedMessage());
         
         if (item.getVideoUrl() == null || item.getVideoUrl().isEmpty()) {
@@ -777,6 +806,29 @@ public class VideoReportController {
         String sourceUrl = item.getVideoUrl();
         if (sourceUrl == null || sourceUrl.isBlank()) {
             return ResponseEntity.notFound().build();
+        }
+
+        VideoReport report = videoReportRepository.findById(reportId).orElse(null);
+        if (report != null
+                && "DONE".equals(item.getStatus())
+                && Boolean.TRUE.equals(report.getUseBackground())
+                && report.getBackgroundName() != null
+                && !report.getBackgroundName().isBlank()) {
+            boolean alreadyLocal = sourceUrl.contains("/api/images/") || sourceUrl.contains("/images/");
+            if (!alreadyLocal) {
+                try {
+                    String composed = videoBackgroundCompositeService
+                            .compositeToStoredVideoUrl(sourceUrl, report.getBackgroundName(), backendUrl, serverContextPath)
+                            .orElse(null);
+                    if (composed != null && !composed.isBlank()) {
+                        item.setVideoUrl(composed);
+                        videoReportItemRepository.save(item);
+                        sourceUrl = composed;
+                    }
+                } catch (Exception ignored) {
+                    // keep original
+                }
+            }
         }
 
         HttpHeaders headers = new HttpHeaders();

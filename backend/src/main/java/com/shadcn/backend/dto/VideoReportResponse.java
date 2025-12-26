@@ -15,6 +15,8 @@ public class VideoReportResponse {
     private String reportName;
     private String messageTemplate;
     private String waMessageTemplate;
+    private Boolean useBackground;
+    private String backgroundName;
     private String status;
     private Integer totalRecords;
     private Integer processedRecords;

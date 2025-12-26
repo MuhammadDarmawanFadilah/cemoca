@@ -2631,6 +2631,8 @@ export interface VideoReportRequest {
   reportName: string;
   messageTemplate: string;
   waMessageTemplate?: string;
+  useBackground?: boolean;
+  backgroundName?: string;
   items: VideoReportItemRequest[];
 }
 
@@ -2659,6 +2661,8 @@ export interface VideoReportResponse {
   reportName: string;
   messageTemplate: string;
   waMessageTemplate?: string;
+  useBackground?: boolean;
+  backgroundName?: string;
   status: string;
   totalRecords: number;
   processedRecords: number;
@@ -2741,6 +2745,10 @@ export const videoReportAPI = {
   // Get available D-ID presenters
   getPresenters: (): Promise<DIDPresenter[]> =>
     apiCall<DIDPresenter[]>('/video-reports/presenters'),
+
+  // Get available video backgrounds
+  getBackgrounds: (): Promise<string[]> =>
+    apiCall<string[]>('/video-backgrounds'),
 
   // Validate Excel file
   validateExcel: async (file: File): Promise<ExcelValidationResult> => {

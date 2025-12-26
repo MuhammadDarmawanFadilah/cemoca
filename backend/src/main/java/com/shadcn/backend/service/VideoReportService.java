@@ -42,6 +42,7 @@ public class VideoReportService {
     private final DIDService didService;
     private final ExcelService excelService;
     private final WhatsAppService whatsAppService;
+    private final VideoBackgroundCompositeService videoBackgroundCompositeService;
     
     @Value("${app.backend.url:http://localhost:8080}")
     private String backendUrl;
@@ -81,12 +82,14 @@ public class VideoReportService {
                              VideoReportItemRepository videoReportItemRepository,
                              DIDService didService,
                              ExcelService excelService,
-                             WhatsAppService whatsAppService) {
+                             WhatsAppService whatsAppService,
+                             VideoBackgroundCompositeService videoBackgroundCompositeService) {
         this.videoReportRepository = videoReportRepository;
         this.videoReportItemRepository = videoReportItemRepository;
         this.didService = didService;
         this.excelService = excelService;
         this.whatsAppService = whatsAppService;
+        this.videoBackgroundCompositeService = videoBackgroundCompositeService;
     }
 
     /**
@@ -135,6 +138,8 @@ public class VideoReportService {
         report.setReportName(request.getReportName());
         report.setMessageTemplate(request.getMessageTemplate());
         report.setWaMessageTemplate(request.getWaMessageTemplate());
+        report.setUseBackground(Boolean.TRUE.equals(request.getUseBackground()));
+        report.setBackgroundName(request.getBackgroundName());
         report.setStatus("PENDING");
         report.setTotalRecords(request.getItems().size());
         report.setCreatedBy(user);
@@ -178,6 +183,10 @@ public class VideoReportService {
             return;
         }
 
+        final String backgroundUrl = buildPublicBackgroundUrl(
+                Boolean.TRUE.equals(report.getUseBackground()) ? report.getBackgroundName() : null
+        );
+
         report.setStatus("PROCESSING");
         videoReportRepository.save(report);
 
@@ -216,7 +225,7 @@ public class VideoReportService {
                 
                 // Submit all items in batch for parallel processing
                 List<CompletableFuture<VideoReportItem>> futures = batch.stream()
-                        .map(item -> CompletableFuture.supplyAsync(() -> processVideoItem(item), executor))
+                    .map(item -> CompletableFuture.supplyAsync(() -> processVideoItem(item, backgroundUrl), executor))
                         .collect(Collectors.toList());
                 
                 // Wait for all items in batch to complete
@@ -277,29 +286,21 @@ public class VideoReportService {
     /**
      * Process a single video item (called in parallel)
      */
-    private VideoReportItem processVideoItem(VideoReportItem item) {
+    private VideoReportItem processVideoItem(VideoReportItem item, String backgroundUrl) {
         try {
-            // Convert avatar name to presenter ID
-            String presenterId = null;
-            Optional<com.shadcn.backend.model.DIDAvatar> dbAvatar = didService.getAvatarByName(item.getAvatar());
-            if (dbAvatar.isPresent()) {
-                presenterId = dbAvatar.get().getPresenterId();
-                logger.debug("[VIDEO GEN] Item {} - Avatar '{}' found in DB, presenter_id: '{}'", 
-                    item.getId(), item.getAvatar(), presenterId);
-            } else {
-                presenterId = didService.getPresenterIdByName(item.getAvatar());
-            }
-            
-            if (presenterId == null) {
-                presenterId = item.getAvatar();
-                logger.warn("[VIDEO GEN] Item {} - Avatar '{}' not found, using as direct ID", 
-                    item.getId(), item.getAvatar());
+            String presenterId = didService.resolveExpressPresenterId(item.getAvatar());
+            if (presenterId == null || presenterId.isBlank()) {
+                item.setStatus("FAILED");
+                item.setErrorMessage("Avatar tidak ditemukan (Express Avatar): " + item.getAvatar());
+                videoReportItemRepository.save(item);
+                return item;
             }
             
             // Create clip via D-ID
             Map<String, Object> result = didService.createClip(
                     presenterId,
-                    item.getPersonalizedMessage()
+                    item.getPersonalizedMessage(),
+                    backgroundUrl
             );
 
             if ((Boolean) result.get("success")) {
@@ -347,6 +348,10 @@ public class VideoReportService {
         if (report == null) {
             throw new RuntimeException("Report not found");
         }
+
+        final String backgroundUrl = buildPublicBackgroundUrl(
+            Boolean.TRUE.equals(report.getUseBackground()) ? report.getBackgroundName() : null
+        );
         
         try {
             // Reset item status
@@ -357,22 +362,20 @@ public class VideoReportService {
             videoReportItemRepository.save(item);
             
             // Convert avatar name to presenter ID
-            String presenterId = null;
-            Optional<com.shadcn.backend.model.DIDAvatar> dbAvatar = didService.getAvatarByName(item.getAvatar());
-            if (dbAvatar.isPresent()) {
-                presenterId = dbAvatar.get().getPresenterId();
-            } else {
-                presenterId = didService.getPresenterIdByName(item.getAvatar());
-            }
-            
-            if (presenterId == null) {
-                presenterId = item.getAvatar();
+            String presenterId = didService.resolveExpressPresenterId(item.getAvatar());
+            if (presenterId == null || presenterId.isBlank()) {
+                item.setStatus("FAILED");
+                item.setErrorMessage("Avatar tidak ditemukan (Express Avatar): " + item.getAvatar());
+                videoReportItemRepository.save(item);
+                checkAndUpdateReportStatus(reportId);
+                return item;
             }
             
             // Create clip via D-ID
             Map<String, Object> result = didService.createClip(
                     presenterId,
-                    item.getPersonalizedMessage()
+                    item.getPersonalizedMessage(),
+                    backgroundUrl
             );
 
             if ((Boolean) result.get("success")) {
@@ -1042,7 +1045,23 @@ public class VideoReportService {
                         item.setErrorMessage("D-ID done but result_url is empty");
                         logger.warn("[CHECK CLIPS] Item {} FAILED: {}", item.getId(), item.getErrorMessage());
                     } else {
-                        item.setVideoUrl(resultUrl);
+                        String finalUrl = resultUrl;
+
+                        VideoReport report = videoReportRepository.findById(reportId).orElse(null);
+                        if (report != null
+                                && Boolean.TRUE.equals(report.getUseBackground())
+                                && report.getBackgroundName() != null
+                                && !report.getBackgroundName().isBlank()) {
+                            try {
+                                finalUrl = videoBackgroundCompositeService
+                                        .compositeToStoredVideoUrl(resultUrl, report.getBackgroundName(), backendUrl, serverContextPath)
+                                        .orElse(resultUrl);
+                            } catch (Exception e) {
+                                finalUrl = resultUrl;
+                            }
+                        }
+
+                        item.setVideoUrl(finalUrl);
                         item.setStatus("DONE");
                         item.setVideoGeneratedAt(LocalDateTime.now());
                         item.setErrorMessage(null);
@@ -1305,6 +1324,8 @@ public class VideoReportService {
         response.setReportName(report.getReportName());
         response.setMessageTemplate(report.getMessageTemplate());
         response.setWaMessageTemplate(report.getWaMessageTemplate());
+        response.setUseBackground(Boolean.TRUE.equals(report.getUseBackground()));
+        response.setBackgroundName(report.getBackgroundName());
         response.setStatus(report.getStatus());
         response.setTotalRecords(report.getTotalRecords());
         response.setProcessedRecords(report.getProcessedRecords());
@@ -1335,6 +1356,8 @@ public class VideoReportService {
         response.setReportName(report.getReportName());
         response.setMessageTemplate(report.getMessageTemplate());
         response.setWaMessageTemplate(report.getWaMessageTemplate());
+        response.setUseBackground(Boolean.TRUE.equals(report.getUseBackground()));
+        response.setBackgroundName(report.getBackgroundName());
         response.setStatus(report.getStatus());
         response.setTotalRecords(report.getTotalRecords());
         response.setProcessedRecords(report.getProcessedRecords());
@@ -1367,5 +1390,45 @@ public class VideoReportService {
 
         response.setItems(itemResponses);
         return response;
+    }
+
+    private String buildPublicBackgroundUrl(String backgroundName) {
+        if (backgroundName == null || backgroundName.isBlank()) {
+            return null;
+        }
+
+        try {
+            org.springframework.core.io.Resource r = new org.springframework.core.io.ClassPathResource("background/" + backgroundName);
+            if (!r.exists() || !r.isReadable()) {
+                return null;
+            }
+        } catch (Exception ignore) {
+            return null;
+        }
+
+        String base = backendUrl == null ? "" : backendUrl.trim();
+        if (base.endsWith("/")) {
+            base = base.substring(0, base.length() - 1);
+        }
+
+        String ctx = serverContextPath == null ? "" : serverContextPath.trim();
+        if (ctx.isEmpty() || "/".equals(ctx)) {
+            ctx = "";
+        } else if (!ctx.startsWith("/")) {
+            ctx = "/" + ctx;
+        }
+        if (ctx.endsWith("/")) {
+            ctx = ctx.substring(0, ctx.length() - 1);
+        }
+
+        String encoded;
+        try {
+            encoded = java.net.URLEncoder.encode(backgroundName, java.nio.charset.StandardCharsets.UTF_8)
+                    .replace("+", "%20");
+        } catch (Exception e) {
+            encoded = backgroundName;
+        }
+
+        return base + ctx + "/api/video-backgrounds/" + encoded;
     }
 }

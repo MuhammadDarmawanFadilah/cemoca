@@ -199,26 +199,21 @@ public class ExcelService {
             excelRow.setValidPhone(true);
         }
 
-        // Validate avatar - allow both D-ID presenters and custom avatar names
+        // Validate avatar - only allow Express Avatars created in D-ID Studio
         if (avatarName == null || avatarName.trim().isEmpty()) {
             excelRow.setValidAvatar(false);
             excelRow.setAvatarError("Nama avatar kosong");
         } else {
             String trimmedName = avatarName.trim();
-            logger.info("Row {}: Validating avatar '{}'", rowNum, trimmedName);
-            
-            // Check if it's a D-ID presenter name or custom avatar
-            // Custom avatars are always valid (will be stored as text)
-            boolean isFromAPI = didService.avatarExistsByName(trimmedName);
-            
-            if (isFromAPI) {
-                logger.info("Row {}: Avatar '{}' is a D-ID presenter", rowNum, trimmedName);
+            logger.info("Row {}: Validating express avatar '{}'", rowNum, trimmedName);
+
+            String expressPresenterId = didService.resolveExpressPresenterId(trimmedName);
+            if (expressPresenterId == null || expressPresenterId.isBlank()) {
+                excelRow.setValidAvatar(false);
+                excelRow.setAvatarError("Avatar tidak ditemukan (Express Avatar)");
             } else {
-                logger.info("Row {}: Avatar '{}' is a custom avatar name", rowNum, trimmedName);
+                excelRow.setValidAvatar(true);
             }
-            
-            // All non-empty avatar names are valid (custom or from API)
-            excelRow.setValidAvatar(true);
         }
 
         return excelRow;

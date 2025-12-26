@@ -44,6 +44,12 @@ export default function PersonalSalesPage() {
   const [avatarPage, setAvatarPage] = useState(1);
   const [avatarSearch, setAvatarSearch] = useState("");
 
+  // Background
+  const [useBackground, setUseBackground] = useState(false);
+  const [backgrounds, setBackgrounds] = useState<string[]>([]);
+  const [backgroundName, setBackgroundName] = useState<string>("");
+  const [loadingBackgrounds, setLoadingBackgrounds] = useState(false);
+
   // Step 2
   const [validationResult, setValidationResult] = useState<ExcelValidationResult | null>(null);
   const [validating, setValidating] = useState(false);
@@ -74,15 +80,21 @@ export default function PersonalSalesPage() {
   const loadInitialData = async () => {
     try {
       setLoadingPresenters(true);
-      const [templateRes, presentersList] = await Promise.all([
+      setLoadingBackgrounds(true);
+      const [templateRes, presentersList, backgroundsList] = await Promise.all([
         videoReportAPI.getDefaultTemplate(),
         videoReportAPI.getPresenters(),
+        videoReportAPI.getBackgrounds(),
       ]);
       setMessageTemplate(templateRes.template);
       setWaMessageTemplate(templateRes.waTemplate || "Hello :name, here is your personal video: :linkvideo");
       setPresenters(presentersList);
+      setBackgrounds(backgroundsList);
+      if (!backgroundName && backgroundsList.length > 0) {
+        setBackgroundName(backgroundsList[0]);
+      }
     } catch { toast.error(t("reportVideo.failedLoadData")); }
-    finally { setLoadingPresenters(false); }
+    finally { setLoadingPresenters(false); setLoadingBackgrounds(false); }
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -117,6 +129,7 @@ export default function PersonalSalesPage() {
   const startNewGeneration = () => {
     setCurrentReport(null); setValidationResult(null); setSelectedFile(null);
     setStep(1); setViewMode("generate");
+    setUseBackground(false);
     loadInitialData();
   };
 
@@ -203,6 +216,12 @@ export default function PersonalSalesPage() {
                 setAvatarPage={setAvatarPage}
                 avatarSearch={avatarSearch}
                 setAvatarSearch={setAvatarSearch}
+                useBackground={useBackground}
+                setUseBackground={setUseBackground}
+                backgrounds={backgrounds}
+                loadingBackgrounds={loadingBackgrounds}
+                backgroundName={backgroundName}
+                setBackgroundName={setBackgroundName}
                 validating={validating}
                 validateAndProceed={validateAndProceed}
               />
@@ -227,6 +246,8 @@ export default function PersonalSalesPage() {
                 reportName={reportName}
                 messageTemplate={messageTemplate}
                 waMessageTemplate={waMessageTemplate}
+                useBackground={useBackground}
+                backgroundName={backgroundName}
                 setStep={setStep}
                 backToHistory={backToHistory}
                 loadHistory={loadHistory}
