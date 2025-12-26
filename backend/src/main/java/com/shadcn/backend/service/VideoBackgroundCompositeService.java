@@ -14,6 +14,7 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -31,6 +32,9 @@ public class VideoBackgroundCompositeService {
 
     @Value("${app.video.ffmpeg.path:ffmpeg}")
     private String ffmpegPath;
+
+    @Value("${app.video.backgrounds.dir:}")
+    private String backgroundsDir;
 
     @Value("${app.video.chroma.key:0x00FF00}")
     private String chromaKey;
@@ -56,8 +60,8 @@ public class VideoBackgroundCompositeService {
             return Optional.empty();
         }
 
-        ClassPathResource backgroundResource = new ClassPathResource("background/" + backgroundName);
-        if (!backgroundResource.exists() || !backgroundResource.isReadable()) {
+        BackgroundSource backgroundSource = resolveBackgroundSource(backgroundName);
+        if (backgroundSource == null) {
             return Optional.empty();
         }
 
@@ -73,9 +77,7 @@ public class VideoBackgroundCompositeService {
                 bgExt = "png";
             }
             Path backgroundPath = tempDir.resolve("background." + bgExt);
-            try (InputStream in = backgroundResource.getInputStream()) {
-                Files.copy(in, backgroundPath, StandardCopyOption.REPLACE_EXISTING);
-            }
+            backgroundSource.copyTo(backgroundPath);
 
             Path outputPath = tempDir.resolve("output.mp4");
 
@@ -238,5 +240,78 @@ public class VideoBackgroundCompositeService {
             return s;
         }
         return s.substring(0, Math.max(0, max));
+    }
+
+    private BackgroundSource resolveBackgroundSource(String backgroundName) {
+        if (backgroundName == null || backgroundName.isBlank()) {
+            return null;
+        }
+
+        String safe = backgroundName.trim();
+        if (safe.contains("..") || safe.contains("/") || safe.contains("\\")) {
+            return null;
+        }
+
+        ClassPathResource cp = new ClassPathResource("background/" + safe);
+        if (cp.exists() && cp.isReadable()) {
+            return new ClasspathBackgroundSource(cp);
+        }
+
+        Path dir = resolveBackgroundsDir();
+        if (dir != null && Files.isDirectory(dir)) {
+            Path resolved = dir.resolve(safe).normalize();
+            if (resolved.startsWith(dir) && Files.isRegularFile(resolved) && Files.isReadable(resolved)) {
+                return new FileBackgroundSource(resolved);
+            }
+        }
+
+        return null;
+    }
+
+    private Path resolveBackgroundsDir() {
+        try {
+            if (backgroundsDir == null) {
+                return null;
+            }
+            String raw = backgroundsDir.trim();
+            if (raw.isEmpty()) {
+                return null;
+            }
+            return Paths.get(raw).toAbsolutePath().normalize();
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    private interface BackgroundSource {
+        void copyTo(Path target) throws Exception;
+    }
+
+    private static final class ClasspathBackgroundSource implements BackgroundSource {
+        private final ClassPathResource resource;
+
+        private ClasspathBackgroundSource(ClassPathResource resource) {
+            this.resource = resource;
+        }
+
+        @Override
+        public void copyTo(Path target) throws Exception {
+            try (InputStream in = resource.getInputStream()) {
+                Files.copy(in, target, StandardCopyOption.REPLACE_EXISTING);
+            }
+        }
+    }
+
+    private static final class FileBackgroundSource implements BackgroundSource {
+        private final Path path;
+
+        private FileBackgroundSource(Path path) {
+            this.path = path;
+        }
+
+        @Override
+        public void copyTo(Path target) throws Exception {
+            Files.copy(Files.newInputStream(path), target, StandardCopyOption.REPLACE_EXISTING);
+        }
     }
 }
