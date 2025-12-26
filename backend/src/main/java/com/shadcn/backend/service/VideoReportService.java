@@ -1307,7 +1307,24 @@ public class VideoReportService {
         ir.setPersonalizedMessage(item.getPersonalizedMessage());
         ir.setDidClipId(item.getDidClipId());
         ir.setStatus(item.getStatus());
-        ir.setVideoUrl(item.getVideoUrl());
+        String videoUrl = item.getVideoUrl();
+        try {
+            VideoReport report = item.getVideoReport();
+            if (videoUrl != null
+                    && !videoUrl.isBlank()
+                    && "DONE".equals(item.getStatus())
+                    && report != null
+                    && Boolean.TRUE.equals(report.getUseBackground())
+                    && report.getBackgroundName() != null
+                    && !report.getBackgroundName().isBlank()) {
+                String token = VideoLinkEncryptor.encryptVideoLinkShort(report.getId(), item.getId());
+                if (token != null && !token.isBlank()) {
+                    videoUrl = buildPublicStreamUrl(token);
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        ir.setVideoUrl(videoUrl);
         ir.setVideoGeneratedAt(item.getVideoGeneratedAt());
         ir.setErrorMessage(item.getErrorMessage());
         ir.setWaStatus(item.getWaStatus());
@@ -1316,6 +1333,29 @@ public class VideoReportService {
         ir.setWaSentAt(item.getWaSentAt());
         ir.setExcluded(item.getExcluded());
         return ir;
+    }
+
+    private String buildPublicStreamUrl(String token) {
+        if (token == null || token.isBlank()) {
+            return null;
+        }
+
+        String base = backendUrl == null ? "" : backendUrl.trim();
+        if (base.endsWith("/")) {
+            base = base.substring(0, base.length() - 1);
+        }
+
+        String ctx = serverContextPath == null ? "" : serverContextPath.trim();
+        if (ctx.isEmpty() || "/".equals(ctx)) {
+            ctx = "";
+        } else if (!ctx.startsWith("/")) {
+            ctx = "/" + ctx;
+        }
+        if (ctx.endsWith("/")) {
+            ctx = ctx.substring(0, ctx.length() - 1);
+        }
+
+        return base + ctx + "/api/video-reports/stream/" + token + ".mp4";
     }
 
     private VideoReportResponse mapToResponseWithoutItems(VideoReport report) {

@@ -769,7 +769,17 @@ public class VideoReportController {
                     && Boolean.TRUE.equals(report.getUseBackground())
                     && report.getBackgroundName() != null
                     && !report.getBackgroundName().isBlank()) {
-                videoUrl = "/api/video-reports/stream/" + token + ".mp4";
+                String ctx = serverContextPath == null ? "" : serverContextPath.trim();
+                if (ctx.isEmpty() || "/".equals(ctx)) {
+                    ctx = "";
+                } else if (!ctx.startsWith("/")) {
+                    ctx = "/" + ctx;
+                }
+                if (ctx.endsWith("/")) {
+                    ctx = ctx.substring(0, ctx.length() - 1);
+                }
+
+                videoUrl = ctx + "/api/video-reports/stream/" + token + ".mp4";
             }
         }
         response.put("videoUrl", videoUrl);

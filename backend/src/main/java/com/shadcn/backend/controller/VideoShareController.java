@@ -29,7 +29,14 @@ public class VideoShareController {
             item = videoReportItemRepository.findByIdAndVideoReportId(ids[1], ids[0]);
         }
 
-        String videoSrc = item == null ? null : item.getVideoUrl();
+        String videoSrc = null;
+        if (item != null && "DONE".equals(item.getStatus()) && item.getVideoUrl() != null && !item.getVideoUrl().isBlank()) {
+            String ctx = request == null ? "" : request.getContextPath();
+            if (ctx == null) {
+                ctx = "";
+            }
+            videoSrc = ctx + "/api/video-reports/stream/" + token + ".mp4";
+        }
         if (videoSrc != null) {
             videoSrc = videoSrc.replace("\"", "&quot;");
         }
