@@ -826,29 +826,7 @@ public class VideoReportController {
             return ResponseEntity.notFound().build();
         }
 
-        VideoReport report = videoReportRepository.findById(reportId).orElse(null);
-        if (report != null
-                && "DONE".equals(item.getStatus())
-                && Boolean.TRUE.equals(report.getUseBackground())
-                && report.getBackgroundName() != null
-                && !report.getBackgroundName().isBlank()) {
-            boolean alreadyLocal = sourceUrl.contains("/api/images/") || sourceUrl.contains("/images/");
-            if (!alreadyLocal) {
-                try {
-                    String composed = videoBackgroundCompositeService
-                            .compositeToStoredVideoUrl(sourceUrl, report.getBackgroundName(), backendUrl, serverContextPath)
-                            .orElse(null);
-                    if (composed != null && !composed.isBlank()) {
-                        item.setVideoUrl(composed);
-                        videoReportItemRepository.save(item);
-                        sourceUrl = composed;
-                    }
-                } catch (Exception ignored) {
-                    // keep original
-                }
-            }
-        }
-
+        // D-ID already applies background during generation - just redirect to original URL
         HttpHeaders headers = new HttpHeaders();
         headers.setCacheControl("no-store");
         headers.add(HttpHeaders.LOCATION, sourceUrl);

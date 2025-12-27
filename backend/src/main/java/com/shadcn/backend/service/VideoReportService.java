@@ -1050,28 +1050,13 @@ public class VideoReportService {
                         item.setErrorMessage("D-ID done but result_url is empty");
                         logger.warn("[CHECK CLIPS] Item {} FAILED: {}", item.getId(), item.getErrorMessage());
                     } else {
-                        String finalUrl = resultUrl;
-
-                        VideoReport report = videoReportRepository.findById(reportId).orElse(null);
-                        if (report != null
-                                && Boolean.TRUE.equals(report.getUseBackground())
-                                && report.getBackgroundName() != null
-                                && !report.getBackgroundName().isBlank()) {
-                            try {
-                                finalUrl = videoBackgroundCompositeService
-                                        .compositeToStoredVideoUrl(resultUrl, report.getBackgroundName(), backendUrl, serverContextPath)
-                                        .orElse(resultUrl);
-                            } catch (Exception e) {
-                                logger.warn("[CHECK CLIPS] Background composite failed for item {}: {}", item.getId(), e.getMessage());
-                                finalUrl = resultUrl;
-                            }
-                        }
-
-                        item.setVideoUrl(finalUrl);
+                        // D-ID already applies background during video generation via API
+                        // No need for local ffmpeg composite
+                        item.setVideoUrl(resultUrl);
                         item.setStatus("DONE");
                         item.setVideoGeneratedAt(LocalDateTime.now());
                         item.setErrorMessage(null);
-                        logger.info("[CHECK CLIPS] Item {} DONE with URL: {}", item.getId(), finalUrl);
+                        logger.info("[CHECK CLIPS] Item {} DONE with URL: {}", item.getId(), resultUrl);
                     }
                 } else if ("error".equals(clipStatus)) {
                     item.setStatus("FAILED");
