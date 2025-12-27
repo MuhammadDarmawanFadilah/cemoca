@@ -8,9 +8,13 @@ import com.shadcn.backend.repository.DIDAvatarRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.io.ByteArrayResource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
+import org.springframework.util.LinkedMultiValueMap;
+import org.springframework.util.MultiValueMap;
+import org.springframework.web.reactive.function.BodyInserters;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
 
@@ -651,10 +655,14 @@ public class DIDService {
      * For Clips Presenters: uses /clips endpoint
      */
     public Map<String, Object> createClip(String avatarId, String script) {
-        return createClip(avatarId, script, null);
+        return createClip(avatarId, script, null, null);
     }
 
     public Map<String, Object> createClip(String avatarId, String script, String backgroundUrl) {
+        return createClip(avatarId, script, backgroundUrl, null);
+    }
+
+    public Map<String, Object> createClip(String avatarId, String script, String backgroundUrl, String audioUrl) {
         if (avatarId == null || avatarId.trim().isEmpty()) {
             throw new RuntimeException("Avatar ID is required");
         }
@@ -663,20 +671,20 @@ public class DIDService {
 
         // If explicitly targeting an Express Avatar, never fall back to another avatar.
         if (trimmedAvatarId.startsWith("avt_")) {
-            return createScene(trimmedAvatarId, script, backgroundUrl);
+            return createScene(trimmedAvatarId, script, backgroundUrl, audioUrl);
         }
 
         Optional<DIDAvatar> dbAvatar = avatarRepository.findByPresenterId(trimmedAvatarId);
         if (dbAvatar.isPresent() && "express".equalsIgnoreCase(dbAvatar.get().getAvatarType())) {
-            return createScene(trimmedAvatarId, script, backgroundUrl);
+            return createScene(trimmedAvatarId, script, backgroundUrl, audioUrl);
         }
 
         DIDPresenter cached = presenterCache.get(trimmedAvatarId);
         if (cached != null && "express".equalsIgnoreCase(cached.getAvatar_type())) {
-            return createScene(trimmedAvatarId, script, backgroundUrl);
+            return createScene(trimmedAvatarId, script, backgroundUrl, audioUrl);
         }
 
-        Map<String, Object> clips = createClipsVideo(trimmedAvatarId, script, backgroundUrl);
+        Map<String, Object> clips = createClipsVideo(trimmedAvatarId, script, backgroundUrl, audioUrl);
         if (Boolean.TRUE.equals(clips.get("success"))) {
             return clips;
         }
@@ -689,7 +697,7 @@ public class DIDService {
             if (express != null) {
                 presenterCache.put(trimmedAvatarId, express);
                 logger.warn("Clips presenter_id not found. Using Express Avatar via Scenes for avatar_id={}", trimmedAvatarId);
-                Map<String, Object> scene = createScene(trimmedAvatarId, script, backgroundUrl);
+                Map<String, Object> scene = createScene(trimmedAvatarId, script, backgroundUrl, audioUrl);
                 if (Boolean.TRUE.equals(scene.get("success"))) {
                     return scene;
                 }
@@ -699,13 +707,13 @@ public class DIDService {
             String fallback = resolveFallbackClipsPresenterId();
             if (fallback != null && !fallback.equalsIgnoreCase(trimmedAvatarId)) {
                 logger.warn("Clips presenter_id not found ({}). Falling back to presenter_id={}", truncate(err, 300), fallback);
-                return createClipsVideo(fallback, script, backgroundUrl);
+                return createClipsVideo(fallback, script, backgroundUrl, audioUrl);
             }
         }
 
         if (!err.isBlank() && (err.contains("UnknownError") || err.startsWith("500") || err.contains(" 500 ") || err.contains("500 Internal Server Error"))) {
             logger.warn("Clips creation failed ({}). Falling back to Scenes for avatar_id={}", truncate(err, 500), trimmedAvatarId);
-            Map<String, Object> scene = createSceneWithClipsFallback(trimmedAvatarId, script, backgroundUrl);
+            Map<String, Object> scene = createSceneWithClipsFallback(trimmedAvatarId, script, backgroundUrl, audioUrl);
             if (Boolean.TRUE.equals(scene.get("success"))) {
                 return scene;
             }
@@ -797,7 +805,11 @@ public class DIDService {
     }
 
     private Map<String, Object> createSceneWithClipsFallback(String avatarId, String script, String backgroundUrl) {
-        Map<String, Object> scene = createScene(avatarId, script, backgroundUrl);
+        return createSceneWithClipsFallback(avatarId, script, backgroundUrl, null);
+    }
+
+    private Map<String, Object> createSceneWithClipsFallback(String avatarId, String script, String backgroundUrl, String audioUrl) {
+        Map<String, Object> scene = createScene(avatarId, script, backgroundUrl, audioUrl);
         if (Boolean.TRUE.equals(scene.get("success"))) {
             return scene;
         }
@@ -809,7 +821,7 @@ public class DIDService {
             String fallback = resolveFallbackClipsPresenterId();
             if (fallback != null && !fallback.equalsIgnoreCase(avatarId)) {
                 logger.warn("Scenes avatar_id not found ({}). Falling back to presenter_id={}", truncate(err, 300), fallback);
-                return createClipsVideo(fallback, script, backgroundUrl);
+                return createClipsVideo(fallback, script, backgroundUrl, audioUrl);
             }
         }
 
@@ -846,6 +858,10 @@ public class DIDService {
      * Includes retry logic for transient failures
      */
     private Map<String, Object> createScene(String avatarId, String script, String backgroundUrl) {
+        return createScene(avatarId, script, backgroundUrl, null);
+    }
+
+    private Map<String, Object> createScene(String avatarId, String script, String backgroundUrl, String audioUrl) {
         Map<String, Object> result = new HashMap<>();
         
         for (int attempt = 1; attempt <= MAX_RETRIES; attempt++) {
@@ -893,18 +909,26 @@ public class DIDService {
                 requestBody.put("avatar_id", avatarId);
                 
                 Map<String, Object> scriptObj = new HashMap<>();
-                scriptObj.put("type", "text");
-                scriptObj.put("input", script);
-                
-                // Use cloned voice if available
-                if (voiceId != null && !voiceId.isEmpty()) {
-                    Map<String, Object> provider = new HashMap<>();
-                    provider.put("type", "elevenlabs");
-                    provider.put("voice_id", voiceId);
-                    scriptObj.put("provider", provider);
-                    logger.debug("Creating scene with voice_id: {} for avatar: {}", voiceId, avatarId);
+                boolean usingAudio = audioUrl != null && !audioUrl.isBlank();
+                if (usingAudio) {
+                    scriptObj.put("type", "audio");
+                    scriptObj.put("audio_url", audioUrl);
                 } else {
-                    logger.warn("No voice_id found for avatar '{}', video will use default D-ID voice", avatarId);
+                    scriptObj.put("type", "text");
+                    scriptObj.put("input", script);
+                }
+                
+                // Use cloned voice if available (text-only). Audio script already contains voice.
+                if (!usingAudio) {
+                    if (voiceId != null && !voiceId.isEmpty()) {
+                        Map<String, Object> provider = new HashMap<>();
+                        provider.put("type", "elevenlabs");
+                        provider.put("voice_id", voiceId);
+                        scriptObj.put("provider", provider);
+                        logger.debug("Creating scene with voice_id: {} for avatar: {}", voiceId, avatarId);
+                    } else {
+                        logger.warn("No voice_id found for avatar '{}', video will use default D-ID voice", avatarId);
+                    }
                 }
                 
                 requestBody.put("script", scriptObj);
@@ -929,6 +953,26 @@ public class DIDService {
                     if (backgroundUrl != null && !backgroundUrl.isBlank() && wce.getStatusCode().is4xxClientError()) {
                         logger.warn("Scenes background rejected (status={}). Retrying without background.", wce.getStatusCode().value());
                         requestBody.remove("background");
+                        response = webClient.post()
+                                .uri("/scenes")
+                                .header(HttpHeaders.AUTHORIZATION, getAuthHeader())
+                                .bodyValue(requestBody)
+                                .retrieve()
+                                .bodyToMono(String.class)
+                                .timeout(READ_TIMEOUT)
+                                .block();
+                    } else if (audioUrl != null && !audioUrl.isBlank() && wce.getStatusCode().is4xxClientError()) {
+                        logger.warn("Scenes audio rejected (status={}). Retrying with text script.", wce.getStatusCode().value());
+                        Map<String, Object> textScript = new HashMap<>();
+                        textScript.put("type", "text");
+                        textScript.put("input", script);
+                        if (voiceId != null && !voiceId.isEmpty()) {
+                            Map<String, Object> provider = new HashMap<>();
+                            provider.put("type", "elevenlabs");
+                            provider.put("voice_id", voiceId);
+                            textScript.put("provider", provider);
+                        }
+                        requestBody.put("script", textScript);
                         response = webClient.post()
                                 .uri("/scenes")
                                 .header(HttpHeaders.AUTHORIZATION, getAuthHeader())
@@ -998,6 +1042,10 @@ public class DIDService {
      * Includes retry logic for transient failures
      */
     private Map<String, Object> createClipsVideo(String presenterId, String script, String backgroundUrl) {
+        return createClipsVideo(presenterId, script, backgroundUrl, null);
+    }
+
+    private Map<String, Object> createClipsVideo(String presenterId, String script, String backgroundUrl, String audioUrl) {
         Map<String, Object> result = new HashMap<>();
         
         for (int attempt = 1; attempt <= MAX_RETRIES; attempt++) {
@@ -1006,8 +1054,14 @@ public class DIDService {
                 requestBody.put("presenter_id", presenterId);
                 
                 Map<String, Object> scriptObj = new HashMap<>();
-                scriptObj.put("type", "text");
-                scriptObj.put("input", script);
+                boolean usingAudio = audioUrl != null && !audioUrl.isBlank();
+                if (usingAudio) {
+                    scriptObj.put("type", "audio");
+                    scriptObj.put("audio_url", audioUrl);
+                } else {
+                    scriptObj.put("type", "text");
+                    scriptObj.put("input", script);
+                }
 
                 if (backgroundUrl != null && !backgroundUrl.isBlank()) {
                     Map<String, Object> background = new HashMap<>();
@@ -1015,7 +1069,7 @@ public class DIDService {
                     requestBody.put("background", background);
                 }
 
-                Map<String, Object> provider = resolveClipsVoiceProvider(presenterId);
+                Map<String, Object> provider = usingAudio ? null : resolveClipsVoiceProvider(presenterId);
 
                 Map<String, Object> requestBodyWithProvider = new HashMap<>(requestBody);
                 Map<String, Object> scriptWithProvider = new HashMap<>(scriptObj);
@@ -1042,6 +1096,26 @@ public class DIDService {
                         requestBodyWithProvider.remove("background");
                         requestBodyWithoutProvider.remove("background");
                         response = provider != null ? postClip(requestBodyWithProvider) : postClip(requestBodyWithoutProvider);
+                    } else
+                    if (audioUrl != null && !audioUrl.isBlank() && wce.getStatusCode().is4xxClientError()) {
+                        logger.warn("Clips audio rejected (status={}). Retrying with text script.", wce.getStatusCode().value());
+                        Map<String, Object> textScriptObj = new HashMap<>();
+                        textScriptObj.put("type", "text");
+                        textScriptObj.put("input", script);
+
+                        Map<String, Object> textBody = new HashMap<>(requestBody);
+                        Map<String, Object> textBodyNoProvider = new HashMap<>(requestBody);
+
+                        Map<String, Object> fallbackProvider = resolveClipsVoiceProvider(presenterId);
+                        Map<String, Object> textScriptWithProvider = new HashMap<>(textScriptObj);
+                        if (fallbackProvider != null) {
+                            textScriptWithProvider.put("provider", fallbackProvider);
+                        }
+
+                        textBody.put("script", textScriptWithProvider);
+                        textBodyNoProvider.put("script", textScriptObj);
+
+                        response = fallbackProvider != null ? postClip(textBody) : postClip(textBodyNoProvider);
                     } else
                     if (provider != null && wce.getStatusCode().is5xxServerError()) {
                         logger.warn(
@@ -1103,6 +1177,97 @@ public class DIDService {
         }
         
         return result;
+    }
+
+    public Optional<String> uploadAudio(byte[] bytes, String filename) {
+        if (bytes == null || bytes.length == 0) {
+            return Optional.empty();
+        }
+
+        String safeFilename = filename == null || filename.isBlank()
+                ? ("tts-" + System.currentTimeMillis() + ".mp3")
+                : filename.trim().replaceAll("[^a-zA-Z0-9._-]", "_");
+
+        try {
+            MultiValueMap<String, Object> form = new LinkedMultiValueMap<>();
+            ByteArrayResource audio = new ByteArrayResource(bytes) {
+                @Override
+                public String getFilename() {
+                    return safeFilename;
+                }
+            };
+            form.add("audio", audio);
+            form.add("filename", safeFilename.length() > 50 ? safeFilename.substring(0, 50) : safeFilename);
+
+            String response = webClient.post()
+                    .uri("/audios")
+                    .header(HttpHeaders.AUTHORIZATION, getAuthHeader())
+                    .contentType(MediaType.MULTIPART_FORM_DATA)
+                    .accept(MediaType.APPLICATION_JSON)
+                    .body(BodyInserters.fromMultipartData(form))
+                    .retrieve()
+                    .bodyToMono(String.class)
+                    .timeout(READ_TIMEOUT)
+                    .block();
+
+            if (response == null || response.isBlank()) {
+                return Optional.empty();
+            }
+
+            String url = extractUploadedAudioUrl(response);
+            return url == null || url.isBlank() ? Optional.empty() : Optional.of(url);
+        } catch (WebClientResponseException wce) {
+            logger.warn(
+                    "D-ID audio upload failed: status={} body={}",
+                    wce.getStatusCode().value(),
+                    truncate(wce.getResponseBodyAsString(), 1000)
+            );
+            return Optional.empty();
+        } catch (Exception e) {
+            logger.warn("D-ID audio upload failed: {}", e.getMessage());
+            return Optional.empty();
+        }
+    }
+
+    private String extractUploadedAudioUrl(String response) {
+        String trimmed = response == null ? "" : response.trim();
+        if (trimmed.isEmpty()) {
+            return null;
+        }
+
+        try {
+            JsonNode root = objectMapper.readTree(trimmed);
+            String[] keys = new String[] {"url", "audio_url", "audioUrl", "result_url"};
+            for (String k : keys) {
+                if (root.has(k) && !root.get(k).isNull()) {
+                    String v = root.get(k).asText();
+                    if (v != null && !v.isBlank()) {
+                        return v;
+                    }
+                }
+            }
+
+            if (root.has("data") && root.get("data").isObject()) {
+                JsonNode data = root.get("data");
+                for (String k : keys) {
+                    if (data.has(k) && !data.get(k).isNull()) {
+                        String v = data.get(k).asText();
+                        if (v != null && !v.isBlank()) {
+                            return v;
+                        }
+                    }
+                }
+            }
+        } catch (Exception ignore) {
+            // Not JSON
+        }
+
+        // Some APIs may return plain URL
+        if (trimmed.startsWith("http://") || trimmed.startsWith("https://") || trimmed.startsWith("s3://")) {
+            return trimmed;
+        }
+
+        return null;
     }
 
     private String postClip(Map<String, Object> requestBody) {

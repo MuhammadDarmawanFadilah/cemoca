@@ -8,6 +8,12 @@ import java.util.Locale;
 import java.util.Map;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -78,6 +84,9 @@ public class WhatsAppService {
     
     @Value("${whatsapp.api.secret-key:}")
     private String whatsappApiSecretKey;
+
+    @Value("${whatsapp.wablas.timezone:Asia/Jakarta}")
+    private String wablasTimezone;
     
     @Value("${whatsapp.api.sender}")
     @SuppressWarnings("unused")
@@ -149,6 +158,66 @@ public class WhatsAppService {
 
     private long wablasHardLimitBytes() {
         return wablasProviderMaxMediaBytes;
+    }
+
+    private ZoneId wablasZoneId() {
+        String tz = wablasTimezone == null ? "" : wablasTimezone.trim();
+        if (tz.isEmpty()) {
+            tz = "Asia/Jakarta";
+        }
+        try {
+            return ZoneId.of(tz);
+        } catch (Exception ignored) {
+            return ZoneId.of("Asia/Jakarta");
+        }
+    }
+
+    private LocalDateTime parseWablasDateTime(String value) {
+        if (value == null) {
+            return null;
+        }
+        String s = value.trim();
+        if (s.isEmpty()) {
+            return null;
+        }
+
+        // Common Wablas formats seen in docs: "yyyy-MM-dd HH:mm:ss"
+        try {
+            return LocalDateTime.parse(s, DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
+        } catch (DateTimeParseException ignored) {
+        }
+
+        try {
+            return LocalDateTime.parse(s, DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSS"));
+        } catch (DateTimeParseException ignored) {
+        }
+
+        try {
+            return LocalDateTime.parse(s, DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"));
+        } catch (DateTimeParseException ignored) {
+        }
+
+        try {
+            return LocalDateTime.parse(s, DateTimeFormatter.ISO_LOCAL_DATE_TIME);
+        } catch (DateTimeParseException ignored) {
+        }
+
+        // If provider returns ISO instant/offset, convert to configured timezone
+        try {
+            if (s.endsWith("Z")) {
+                Instant instant = Instant.parse(s);
+                return LocalDateTime.ofInstant(instant, wablasZoneId());
+            }
+        } catch (DateTimeParseException ignored) {
+        }
+
+        try {
+            OffsetDateTime odt = OffsetDateTime.parse(s, DateTimeFormatter.ISO_OFFSET_DATE_TIME);
+            return LocalDateTime.ofInstant(odt.toInstant(), wablasZoneId());
+        } catch (DateTimeParseException ignored) {
+        }
+
+        return null;
     }
     
     /**
@@ -687,10 +756,24 @@ public class WhatsAppService {
                             }
                             if (msg.has("date")) {
                                 if (msg.get("date").has("created_at")) {
-                                    result.put("createdAt", msg.get("date").get("created_at").asText());
+                                    String createdAtRaw = msg.get("date").get("created_at").asText();
+                                    result.put("createdAtRaw", createdAtRaw);
+                                    LocalDateTime createdAt = parseWablasDateTime(createdAtRaw);
+                                    if (createdAt != null) {
+                                        result.put("createdAt", createdAt);
+                                    } else {
+                                        result.put("createdAt", createdAtRaw);
+                                    }
                                 }
                                 if (msg.get("date").has("updated_at")) {
-                                    result.put("updatedAt", msg.get("date").get("updated_at").asText());
+                                    String updatedAtRaw = msg.get("date").get("updated_at").asText();
+                                    result.put("updatedAtRaw", updatedAtRaw);
+                                    LocalDateTime updatedAt = parseWablasDateTime(updatedAtRaw);
+                                    if (updatedAt != null) {
+                                        result.put("updatedAt", updatedAt);
+                                    } else {
+                                        result.put("updatedAt", updatedAtRaw);
+                                    }
                                 }
                             }
                             
