@@ -1035,14 +1035,16 @@ public class VideoReportService {
             logger.info("[CHECK CLIPS] Checking D-ID status for clip: {} (item: {})", item.getDidClipId(), item.getId());
             Map<String, Object> status = didService.getClipStatus(item.getDidClipId());
             
-            logger.info("[CHECK CLIPS] D-ID response for item {}: success={}, status={}, error={}", 
-                item.getId(), status.get("success"), status.get("status"), status.get("error"));
+            logger.info("[CHECK CLIPS] D-ID response for item {}: success={}, status={}, error={}, result_url={}", 
+                item.getId(), status.get("success"), status.get("status"), status.get("error"), status.get("result_url"));
             
             if (Boolean.TRUE.equals(status.get("success"))) {
                 String clipStatus = (String) status.get("status");
+                logger.info("[CHECK CLIPS] Item {} - Processing clipStatus: {}", item.getId(), clipStatus);
                 
                 if ("done".equals(clipStatus)) {
                     String resultUrl = (String) status.get("result_url");
+                    logger.info("[CHECK CLIPS] Item {} - resultUrl: {}", item.getId(), resultUrl);
                     if (resultUrl == null || resultUrl.isBlank()) {
                         item.setStatus("FAILED");
                         item.setErrorMessage("D-ID done but result_url is empty");
