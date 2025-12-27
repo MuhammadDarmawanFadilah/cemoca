@@ -762,9 +762,30 @@ public class VideoReportController {
         response.put("id", item.getId());
         response.put("name", item.getName());
         response.put("status", item.getStatus());
+        
+        // Get the original D-ID video URL (with background already applied during generation)
+        // Don't use local composite stream URL since ffmpeg may not be installed
         String videoUrl = item.getVideoUrl();
-        // Don't use composite stream URL, return original D-ID URL directly
-        // Background composite requires ffmpeg which may not be installed
+        
+        // If videoUrl looks like our stream endpoint, get the original D-ID URL from clip status
+        if (videoUrl != null && videoUrl.contains("/api/video-reports/stream/")) {
+            try {
+                String didClipId = item.getDidClipId();
+                if (didClipId != null && !didClipId.isBlank()) {
+                    Map<String, Object> clipStatus = didService.getClipStatus(didClipId);
+                    if (Boolean.TRUE.equals(clipStatus.get("success")) && "done".equals(clipStatus.get("status"))) {
+                        String originalUrl = (String) clipStatus.get("result_url");
+                        if (originalUrl != null && !originalUrl.isBlank()) {
+                            videoUrl = originalUrl;
+                            logger.info("Using original D-ID URL for video share: {}", originalUrl);
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                logger.warn("Failed to get original D-ID URL, using stored URL: {}", e.getMessage());
+            }
+        }
+        
         response.put("videoUrl", videoUrl);
         response.put("personalizedMessage", item.getPersonalizedMessage());
         
