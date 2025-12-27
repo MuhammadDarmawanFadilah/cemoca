@@ -14,6 +14,8 @@ import com.shadcn.backend.service.WhatsAppService;
 import com.shadcn.backend.util.VideoLinkEncryptor;
 import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -40,6 +42,8 @@ import java.util.Map;
 @RequestMapping("/api/video-reports")
 @CrossOrigin(origins = "*", allowedHeaders = "*", methods = {RequestMethod.GET, RequestMethod.POST, RequestMethod.PUT, RequestMethod.DELETE, RequestMethod.OPTIONS})
 public class VideoReportController {
+
+    private static final Logger logger = LoggerFactory.getLogger(VideoReportController.class);
 
     private final VideoReportService videoReportService;
     private final DIDService didService;
