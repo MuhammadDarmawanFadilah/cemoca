@@ -1032,10 +1032,13 @@ public class VideoReportService {
         if (item.getDidClipId() == null) return;
         
         try {
-            logger.debug("[CHECK CLIPS] Checking D-ID status for clip: {}", item.getDidClipId());
+            logger.info("[CHECK CLIPS] Checking D-ID status for clip: {} (item: {})", item.getDidClipId(), item.getId());
             Map<String, Object> status = didService.getClipStatus(item.getDidClipId());
             
-            if ((Boolean) status.get("success")) {
+            logger.info("[CHECK CLIPS] D-ID response for item {}: success={}, status={}, error={}", 
+                item.getId(), status.get("success"), status.get("status"), status.get("error"));
+            
+            if (Boolean.TRUE.equals(status.get("success"))) {
                 String clipStatus = (String) status.get("status");
                 
                 if ("done".equals(clipStatus)) {
@@ -1057,6 +1060,7 @@ public class VideoReportService {
                                         .compositeToStoredVideoUrl(resultUrl, report.getBackgroundName(), backendUrl, serverContextPath)
                                         .orElse(resultUrl);
                             } catch (Exception e) {
+                                logger.warn("[CHECK CLIPS] Background composite failed for item {}: {}", item.getId(), e.getMessage());
                                 finalUrl = resultUrl;
                             }
                         }
@@ -1065,19 +1069,22 @@ public class VideoReportService {
                         item.setStatus("DONE");
                         item.setVideoGeneratedAt(LocalDateTime.now());
                         item.setErrorMessage(null);
-                        logger.info("[CHECK CLIPS] Item {} DONE", item.getId());
+                        logger.info("[CHECK CLIPS] Item {} DONE with URL: {}", item.getId(), finalUrl);
                     }
                 } else if ("error".equals(clipStatus)) {
                     item.setStatus("FAILED");
                     item.setErrorMessage((String) status.get("error"));
                     logger.warn("[CHECK CLIPS] Item {} FAILED: {}", item.getId(), item.getErrorMessage());
+                } else {
+                    logger.info("[CHECK CLIPS] Item {} still PROCESSING with D-ID status: {}", item.getId(), clipStatus);
                 }
-                // Keep as PROCESSING if still being processed
                 
                 videoReportItemRepository.save(item);
+            } else {
+                logger.error("[CHECK CLIPS] D-ID API call failed for item {}: {}", item.getId(), status.get("error"));
             }
         } catch (Exception e) {
-            logger.error("[CHECK CLIPS] Error checking item {}: {}", item.getId(), e.getMessage());
+            logger.error("[CHECK CLIPS] Exception checking item {} (clip: {}): {}", item.getId(), item.getDidClipId(), e.getMessage(), e);
         }
     }
     
