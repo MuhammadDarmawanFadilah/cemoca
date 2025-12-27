@@ -763,25 +763,8 @@ public class VideoReportController {
         response.put("name", item.getName());
         response.put("status", item.getStatus());
         String videoUrl = item.getVideoUrl();
-        if (videoUrl != null && !videoUrl.isBlank() && "DONE".equals(item.getStatus())) {
-            VideoReport report = videoReportRepository.findById(reportId).orElse(null);
-            if (report != null
-                    && Boolean.TRUE.equals(report.getUseBackground())
-                    && report.getBackgroundName() != null
-                    && !report.getBackgroundName().isBlank()) {
-                String ctx = serverContextPath == null ? "" : serverContextPath.trim();
-                if (ctx.isEmpty() || "/".equals(ctx)) {
-                    ctx = "";
-                } else if (!ctx.startsWith("/")) {
-                    ctx = "/" + ctx;
-                }
-                if (ctx.endsWith("/")) {
-                    ctx = ctx.substring(0, ctx.length() - 1);
-                }
-
-                videoUrl = ctx + "/api/video-reports/stream/" + token + ".mp4";
-            }
-        }
+        // Don't use composite stream URL, return original D-ID URL directly
+        // Background composite requires ffmpeg which may not be installed
         response.put("videoUrl", videoUrl);
         response.put("personalizedMessage", item.getPersonalizedMessage());
         
