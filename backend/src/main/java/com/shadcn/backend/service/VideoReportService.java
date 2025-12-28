@@ -45,7 +45,6 @@ public class VideoReportService {
     private final ExcelService excelService;
     private final WhatsAppService whatsAppService;
     private final VideoBackgroundCompositeService videoBackgroundCompositeService;
-    private final ElevenLabsService elevenLabsService;
     
     @Value("${app.backend.url:http://localhost:8080}")
     private String backendUrl;
@@ -86,15 +85,13 @@ public class VideoReportService {
                              DIDService didService,
                              ExcelService excelService,
                              WhatsAppService whatsAppService,
-                             VideoBackgroundCompositeService videoBackgroundCompositeService,
-                             ElevenLabsService elevenLabsService) {
+                             VideoBackgroundCompositeService videoBackgroundCompositeService) {
         this.videoReportRepository = videoReportRepository;
         this.videoReportItemRepository = videoReportItemRepository;
         this.didService = didService;
         this.excelService = excelService;
         this.whatsAppService = whatsAppService;
         this.videoBackgroundCompositeService = videoBackgroundCompositeService;
-        this.elevenLabsService = elevenLabsService;
     }
 
     /**
@@ -301,26 +298,14 @@ public class VideoReportService {
                 return item;
             }
 
-            String didAudioUrl = null;
-            try {
-                Optional<byte[]> tts = elevenLabsService.tryGenerateSpeechForAvatar(
-                        presenterId,
-                        item.getAvatar(),
-                        item.getPersonalizedMessage()
-                );
-                if (tts.isPresent()) {
-                    didAudioUrl = didService.uploadAudio(tts.get(), "tts-item-" + item.getId() + ".mp3").orElse(null);
-                }
-            } catch (Exception ignored) {
-                didAudioUrl = null;
-            }
+            didService.ensureClonedVoiceIdFromLocalSample(presenterId, item.getAvatar());
             
             // Create clip via D-ID
             Map<String, Object> result = didService.createClip(
                     presenterId,
                     item.getPersonalizedMessage(),
                     backgroundUrl,
-                    didAudioUrl
+                    null
             );
 
             if ((Boolean) result.get("success")) {
@@ -391,26 +376,14 @@ public class VideoReportService {
                 return item;
             }
 
-            String didAudioUrl = null;
-            try {
-                Optional<byte[]> tts = elevenLabsService.tryGenerateSpeechForAvatar(
-                        presenterId,
-                        item.getAvatar(),
-                        item.getPersonalizedMessage()
-                );
-                if (tts.isPresent()) {
-                    didAudioUrl = didService.uploadAudio(tts.get(), "tts-item-" + item.getId() + ".mp3").orElse(null);
-                }
-            } catch (Exception ignored) {
-                didAudioUrl = null;
-            }
+            didService.ensureClonedVoiceIdFromLocalSample(presenterId, item.getAvatar());
             
             // Create clip via D-ID
             Map<String, Object> result = didService.createClip(
                     presenterId,
                     item.getPersonalizedMessage(),
                     backgroundUrl,
-                    didAudioUrl
+                    null
             );
 
             if ((Boolean) result.get("success")) {

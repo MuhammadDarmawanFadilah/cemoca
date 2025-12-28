@@ -9,6 +9,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.ByteArrayResource;
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
@@ -22,6 +23,7 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.time.Duration;
 import java.nio.charset.StandardCharsets;
+import java.io.InputStream;
 import java.util.Base64;
 import java.util.stream.Collectors;
 
@@ -54,6 +56,8 @@ public class DIDService {
 
     @Value("${did.fallback.presenter.id:}")
     private String fallbackPresenterId;
+
+    private static final String CUSTOM_VOICE_PREFIX = "custom:";
 
     public DIDService(ObjectMapper objectMapper, DIDAvatarRepository avatarRepository) {
         this.objectMapper = objectMapper;
@@ -368,8 +372,14 @@ public class DIDService {
                     avatar.setAvatarType(presenter.getAvatar_type());
                     avatar.setThumbnailUrl(presenter.getThumbnail_url());
                     avatar.setPreviewUrl(presenter.getPreview_url());
-                    avatar.setVoiceId(presenter.getVoice_id());
-                    avatar.setVoiceType(presenter.getVoice_type());
+                        boolean keepCustomVoice = avatar.getVoiceType() != null
+                            && avatar.getVoiceType().trim().toLowerCase(Locale.ROOT).startsWith(CUSTOM_VOICE_PREFIX)
+                            && avatar.getVoiceId() != null
+                            && !avatar.getVoiceId().trim().isBlank();
+                    if (!keepCustomVoice) {
+                        avatar.setVoiceId(presenter.getVoice_id());
+                        avatar.setVoiceType(presenter.getVoice_type());
+                    }
                     avatar.setGender(presenter.getGender());
                     avatar.setIsPremium(presenter.is_premium());
                     avatar.setIsActive(true);
@@ -394,6 +404,149 @@ public class DIDService {
             logger.info("Synced {} avatars to database", avatars.size());
         } catch (Exception e) {
             logger.error("Error syncing avatars to database: {}", e.getMessage());
+        }
+    }
+
+    public Optional<String> ensureClonedVoiceIdFromLocalSample(String presenterId, String avatarName) {
+        if (presenterId == null || presenterId.isBlank() || avatarName == null || avatarName.isBlank()) {
+            return Optional.empty();
+        }
+
+        String pid = presenterId.trim();
+        Optional<DIDAvatar> existing = avatarRepository.findByPresenterId(pid);
+        if (existing.isEmpty()) {
+            // Best-effort: refresh/sync so we have a DB row to store the cloned voice_id
+            try {
+                refreshPresenters();
+            } catch (Exception ignored) {
+                // ignore
+            }
+            existing = avatarRepository.findByPresenterId(pid);
+            if (existing.isEmpty()) {
+                return Optional.empty();
+            }
+        }
+
+        DIDAvatar avatar = existing.get();
+        if (avatar.getVoiceId() != null && !avatar.getVoiceId().trim().isBlank()
+            && avatar.getVoiceType() != null
+            && avatar.getVoiceType().trim().toLowerCase(Locale.ROOT).startsWith(CUSTOM_VOICE_PREFIX)) {
+            return Optional.of(avatar.getVoiceId().trim());
+        }
+
+        Optional<ByteArrayResource> sample = loadAvatarSampleFromClasspath(avatarName.trim());
+        if (sample.isEmpty()) {
+            return Optional.empty();
+        }
+
+        Optional<VoiceInfo> created = createClonedVoice(sample.get(), avatarName.trim());
+        Optional<String> voiceId = created.map(v -> v.voiceId);
+        created.ifPresent(v -> {
+            avatar.setVoiceId(v.voiceId);
+            avatar.setVoiceType(CUSTOM_VOICE_PREFIX + normalizeVoiceType(v.voiceType));
+            avatarRepository.save(avatar);
+        });
+        return voiceId;
+    }
+
+    private Optional<ByteArrayResource> loadAvatarSampleFromClasspath(String avatarName) {
+        String n1 = avatarName;
+        String n2 = avatarName.toLowerCase(Locale.ROOT);
+        String n3 = avatarName.trim().replaceAll("\\s+", "").toLowerCase(Locale.ROOT);
+
+        List<String> names = new ArrayList<>();
+        names.add(n1);
+        if (!n2.equals(n1)) names.add(n2);
+        if (!n3.equals(n2)) names.add(n3);
+
+        List<String> candidates = new ArrayList<>();
+        for (String n : names) {
+            String base = "audio/" + n;
+            candidates.add(base + ".mp4");
+            candidates.add(base + ".m4a");
+            candidates.add(base + ".mp3");
+            candidates.add(base + ".wav");
+        }
+
+        for (String path : candidates) {
+            try {
+                ClassPathResource res = new ClassPathResource(path);
+                if (!res.exists()) {
+                    continue;
+                }
+                try (InputStream in = res.getInputStream()) {
+                    byte[] bytes = in.readAllBytes();
+                    String filename = res.getFilename() == null ? (avatarName + ".mp4") : res.getFilename();
+                    ByteArrayResource bar = new ByteArrayResource(bytes) {
+                        @Override
+                        public String getFilename() {
+                            return filename;
+                        }
+                    };
+                    return Optional.of(bar);
+                }
+            } catch (Exception ignored) {
+                // try next
+            }
+        }
+        return Optional.empty();
+    }
+
+    private Optional<VoiceInfo> createClonedVoice(ByteArrayResource file, String name) {
+        try {
+            MultiValueMap<String, Object> form = new LinkedMultiValueMap<>();
+            form.add("name", name);
+            form.add("file", file);
+
+            String response = webClient.post()
+                    .uri("/tts/voices")
+                    .header(HttpHeaders.AUTHORIZATION, getAuthHeader())
+                    .contentType(MediaType.MULTIPART_FORM_DATA)
+                    .accept(MediaType.APPLICATION_JSON)
+                    .body(BodyInserters.fromMultipartData(form))
+                    .retrieve()
+                    .bodyToMono(String.class)
+                    .timeout(READ_TIMEOUT)
+                    .block();
+
+            if (response == null || response.isBlank()) {
+                return Optional.empty();
+            }
+
+            JsonNode root = objectMapper.readTree(response);
+            String id = null;
+            if (root.hasNonNull("id") && !root.get("id").asText().isBlank()) {
+                id = root.get("id").asText();
+            } else if (root.hasNonNull("voice_id") && !root.get("voice_id").asText().isBlank()) {
+                id = root.get("voice_id").asText();
+            }
+
+            if (id == null || id.isBlank()) {
+                return Optional.empty();
+            }
+
+            String type = root.hasNonNull("type") ? root.get("type").asText() : null;
+            return Optional.of(new VoiceInfo(id, type));
+        } catch (WebClientResponseException wce) {
+            logger.warn(
+                    "D-ID create cloned voice failed: status={} body={}",
+                    wce.getStatusCode().value(),
+                    truncate(wce.getResponseBodyAsString(), 1500)
+            );
+            return Optional.empty();
+        } catch (Exception e) {
+            logger.warn("D-ID create cloned voice failed: {}", truncate(e.getMessage(), 300));
+            return Optional.empty();
+        }
+    }
+
+    private static final class VoiceInfo {
+        private final String voiceId;
+        private final String voiceType;
+
+        private VoiceInfo(String voiceId, String voiceType) {
+            this.voiceId = voiceId;
+            this.voiceType = voiceType;
         }
     }
     
@@ -868,11 +1021,13 @@ public class DIDService {
             try {
                 // First get the avatar to retrieve voice_id - check database first, then cache
                 String voiceId = null;
+                String voiceType = null;
                 
                 // 1. Try to get voice_id from database (most reliable)
                 Optional<DIDAvatar> dbAvatar = avatarRepository.findByPresenterId(avatarId);
                 if (dbAvatar.isPresent() && dbAvatar.get().getVoiceId() != null && !dbAvatar.get().getVoiceId().isEmpty()) {
                     voiceId = dbAvatar.get().getVoiceId();
+                    voiceType = dbAvatar.get().getVoiceType();
                     logger.debug("Using voice_id '{}' from database for avatar '{}'", voiceId, avatarId);
                 }
                 
@@ -881,6 +1036,7 @@ public class DIDService {
                     DIDPresenter cachedAvatar = presenterCache.get(avatarId);
                     if (cachedAvatar != null && cachedAvatar.getVoice_id() != null && !cachedAvatar.getVoice_id().isEmpty()) {
                         voiceId = cachedAvatar.getVoice_id();
+                        voiceType = cachedAvatar.getVoice_type();
                         logger.debug("Using voice_id '{}' from cache for avatar '{}'", voiceId, avatarId);
                     }
                 }
@@ -892,6 +1048,7 @@ public class DIDService {
                     dbAvatar = avatarRepository.findByPresenterId(avatarId);
                     if (dbAvatar.isPresent() && dbAvatar.get().getVoiceId() != null && !dbAvatar.get().getVoiceId().isEmpty()) {
                         voiceId = dbAvatar.get().getVoiceId();
+                        voiceType = dbAvatar.get().getVoiceType();
                         logger.info("After refresh, using voice_id '{}' for avatar '{}'", voiceId, avatarId);
                     }
                 }
@@ -922,7 +1079,9 @@ public class DIDService {
                 if (!usingAudio) {
                     if (voiceId != null && !voiceId.isEmpty()) {
                         Map<String, Object> provider = new HashMap<>();
-                        provider.put("type", "elevenlabs");
+                        provider.put("type", (voiceType == null || voiceType.isBlank())
+                                ? guessVoiceTypeFromVoiceId(voiceId)
+                                : normalizeVoiceType(voiceType));
                         provider.put("voice_id", voiceId);
                         scriptObj.put("provider", provider);
                         logger.debug("Creating scene with voice_id: {} for avatar: {}", voiceId, avatarId);
@@ -968,7 +1127,9 @@ public class DIDService {
                         textScript.put("input", script);
                         if (voiceId != null && !voiceId.isEmpty()) {
                             Map<String, Object> provider = new HashMap<>();
-                            provider.put("type", "elevenlabs");
+                            provider.put("type", (voiceType == null || voiceType.isBlank())
+                                    ? guessVoiceTypeFromVoiceId(voiceId)
+                                    : normalizeVoiceType(voiceType));
                             provider.put("voice_id", voiceId);
                             textScript.put("provider", provider);
                         }
@@ -1326,7 +1487,12 @@ public class DIDService {
         if (raw == null || raw.isBlank()) {
             return "microsoft";
         }
-        return raw.trim();
+        String v = raw.trim();
+        if (v.toLowerCase(Locale.ROOT).startsWith(CUSTOM_VOICE_PREFIX)) {
+            String inner = v.substring(CUSTOM_VOICE_PREFIX.length()).trim();
+            return inner.isBlank() ? "microsoft" : inner;
+        }
+        return v;
     }
 
     private String guessVoiceTypeFromVoiceId(String voiceId) {
@@ -1344,11 +1510,7 @@ public class DIDService {
             return "microsoft";
         }
 
-        // Express Avatar cloned voices are returned as an elevenlabs voice_id (alnum, no locale dashes)
-        if (v.matches("^[A-Za-z0-9]{10,}$") && !v.contains("-")) {
-            return "elevenlabs";
-        }
-
+        // Default provider
         return "microsoft";
     }
 
