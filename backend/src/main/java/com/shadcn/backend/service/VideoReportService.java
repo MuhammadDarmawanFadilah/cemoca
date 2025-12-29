@@ -22,8 +22,18 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.BufferedReader;
+import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
@@ -34,6 +44,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import jakarta.annotation.PostConstruct;
+import jakarta.annotation.PreDestroy;
 
 @Service
 public class VideoReportService {
@@ -64,6 +75,24 @@ public class VideoReportService {
     @Value("${app.wa.retry.delay-ms}")
     private long waRetryDelayMs;
 
+    @Value("${app.video.share-dir:${app.video.base-dir}/share}")
+    private String videoShareDir;
+
+    @Value("${app.video.download.max-bytes:157286400}")
+    private long videoDownloadMaxBytes;
+
+    @Value("${app.video.download.connect-timeout-seconds:30}")
+    private int videoDownloadConnectTimeoutSeconds;
+
+    @Value("${app.video.download.read-timeout-seconds:300}")
+    private int videoDownloadReadTimeoutSeconds;
+
+    @Value("${app.video.cache.parallelism:2}")
+    private int videoCacheParallelism;
+
+    private volatile ExecutorService videoCacheExecutor;
+    private volatile HttpClient videoCacheHttpClient;
+
     @PostConstruct
     void validateVideoStorageConfig() {
         if (videoGenerationParallelism <= 0) {
@@ -77,6 +106,41 @@ public class VideoReportService {
         }
         if (waRetryDelayMs <= 0) {
             throw new IllegalStateException("Invalid property app.wa.retry.delay-ms; must be > 0");
+        }
+
+        if (videoCacheParallelism <= 0) {
+            throw new IllegalStateException("Invalid property app.video.cache.parallelism; must be > 0");
+        }
+        if (videoDownloadConnectTimeoutSeconds <= 0) {
+            throw new IllegalStateException("Invalid property app.video.download.connect-timeout-seconds; must be > 0");
+        }
+        if (videoDownloadReadTimeoutSeconds <= 0) {
+            throw new IllegalStateException("Invalid property app.video.download.read-timeout-seconds; must be > 0");
+        }
+        if (videoDownloadMaxBytes <= 0) {
+            throw new IllegalStateException("Invalid property app.video.download.max-bytes; must be > 0");
+        }
+
+        if (videoShareDir != null && !videoShareDir.isBlank()) {
+            try {
+                Files.createDirectories(Paths.get(videoShareDir));
+            } catch (Exception e) {
+                throw new IllegalStateException("Failed to create video share dir: " + videoShareDir, e);
+            }
+        }
+
+        this.videoCacheExecutor = Executors.newFixedThreadPool(videoCacheParallelism);
+        this.videoCacheHttpClient = HttpClient.newBuilder()
+                .connectTimeout(Duration.ofSeconds(videoDownloadConnectTimeoutSeconds))
+                .followRedirects(HttpClient.Redirect.NORMAL)
+                .build();
+    }
+
+    @PreDestroy
+    void shutdownVideoCacheExecutor() {
+        ExecutorService ex = this.videoCacheExecutor;
+        if (ex != null) {
+            ex.shutdown();
         }
     }
 
@@ -1128,6 +1192,8 @@ public class VideoReportService {
                         item.setVideoGeneratedAt(LocalDateTime.now());
                         item.setErrorMessage(null);
                         logger.info("[CHECK CLIPS] Item {} DONE with URL: {}", item.getId(), resultUrl);
+
+                        enqueueShareCacheDownloadIfNeeded(reportId, item.getId(), resultUrl);
                     }
                 } else if ("error".equals(clipStatus)) {
                     item.setStatus("FAILED");
@@ -1144,6 +1210,115 @@ public class VideoReportService {
         } catch (Exception e) {
             logger.error("[CHECK CLIPS] Exception checking item {} (clip: {}): {}", item.getId(), item.getDidClipId(), e.getMessage(), e);
         }
+    }
+
+    public void enqueueShareCacheDownloadIfNeeded(Long reportId, Long itemId, String sourceUrl) {
+        if (reportId == null || itemId == null) {
+            return;
+        }
+        if (sourceUrl == null || sourceUrl.isBlank()) {
+            return;
+        }
+        if (videoShareDir == null || videoShareDir.isBlank()) {
+            return;
+        }
+        ExecutorService ex = this.videoCacheExecutor;
+        HttpClient client = this.videoCacheHttpClient;
+        if (ex == null || client == null) {
+            return;
+        }
+
+        String token = VideoLinkEncryptor.encryptVideoLinkShort(reportId, itemId);
+        if (token == null || token.isBlank()) {
+            return;
+        }
+
+        Path targetPath;
+        Path tmpPath;
+        try {
+            targetPath = Paths.get(videoShareDir, token + ".mp4");
+            tmpPath = Paths.get(videoShareDir, token + ".mp4.tmp");
+        } catch (Exception e) {
+            return;
+        }
+
+        try {
+            if (Files.exists(targetPath) && Files.size(targetPath) > 0) {
+                return;
+            }
+        } catch (Exception ignore) {
+        }
+
+        ex.submit(() -> {
+            try {
+                if (Files.exists(targetPath) && Files.size(targetPath) > 0) {
+                    return;
+                }
+                Files.createDirectories(targetPath.getParent());
+
+                URI sourceUri = URI.create(sourceUrl);
+                HttpRequest req = HttpRequest.newBuilder(sourceUri)
+                        .timeout(Duration.ofSeconds(videoDownloadReadTimeoutSeconds))
+                        .GET()
+                        .build();
+
+                HttpResponse<InputStream> resp = client.send(req, HttpResponse.BodyHandlers.ofInputStream());
+                int status = resp.statusCode();
+                if (status != 200 && status != 206) {
+                    InputStream body = resp.body();
+                    if (body != null) {
+                        body.close();
+                    }
+                    return;
+                }
+
+                long expectedLength = -1;
+                try {
+                    expectedLength = resp.headers().firstValueAsLong("content-length").orElse(-1);
+                } catch (Exception ignore) {
+                }
+                if (expectedLength > 0 && expectedLength > videoDownloadMaxBytes) {
+                    InputStream body = resp.body();
+                    if (body != null) {
+                        body.close();
+                    }
+                    return;
+                }
+
+                long copied = 0;
+                try (InputStream in = resp.body(); java.io.OutputStream out = Files.newOutputStream(tmpPath)) {
+                    byte[] buffer = new byte[8192];
+                    int read;
+                    while ((read = in.read(buffer)) >= 0) {
+                        if (read == 0) {
+                            continue;
+                        }
+                        copied += read;
+                        if (copied > videoDownloadMaxBytes) {
+                            throw new IllegalStateException("Video exceeds max bytes: " + copied);
+                        }
+                        out.write(buffer, 0, read);
+                    }
+                }
+
+                if (copied <= 0) {
+                    try {
+                        Files.deleteIfExists(tmpPath);
+                    } catch (Exception ignore) {
+                    }
+                    return;
+                }
+
+                Files.move(tmpPath, targetPath, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+                logger.info("[VIDEO CACHE] Cached video token {} ({} bytes)", token, copied);
+            } catch (Exception e) {
+                try {
+                    Files.deleteIfExists(tmpPath);
+                } catch (Exception ignore) {
+                }
+                logger.warn("[VIDEO CACHE] Failed caching token {}: {}", VideoLinkEncryptor.encryptVideoLinkShort(reportId, itemId), e.getMessage());
+            }
+        });
     }
     
     /**
