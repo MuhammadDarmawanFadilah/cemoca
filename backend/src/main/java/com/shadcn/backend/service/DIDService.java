@@ -434,6 +434,19 @@ public class DIDService {
             return Optional.of(avatar.getVoiceId().trim());
         }
 
+        // If legacy ElevenLabs voice is still stored, clear it so we don't send invalid provider/voice_id.
+        try {
+            String legacyType = avatar.getVoiceType() == null ? "" : avatar.getVoiceType().trim().toLowerCase(Locale.ROOT);
+            String legacyVoiceId = avatar.getVoiceId() == null ? "" : avatar.getVoiceId().trim();
+            if (legacyType.contains("eleven") || isLikelyLegacyElevenLabsVoiceId(legacyVoiceId)) {
+                avatar.setVoiceId(null);
+                avatar.setVoiceType(null);
+                avatarRepository.save(avatar);
+            }
+        } catch (Exception ignored) {
+            // ignore
+        }
+
         Optional<ByteArrayResource> sample = loadAvatarSampleFromClasspath(avatarName.trim());
         if (sample.isEmpty()) {
             return Optional.empty();
@@ -443,7 +456,11 @@ public class DIDService {
         Optional<String> voiceId = created.map(v -> v.voiceId);
         created.ifPresent(v -> {
             avatar.setVoiceId(v.voiceId);
-            avatar.setVoiceType(CUSTOM_VOICE_PREFIX + normalizeVoiceType(v.voiceType));
+            String type = v.voiceType;
+            if (type == null || type.isBlank()) {
+                type = "d-id";
+            }
+            avatar.setVoiceType(CUSTOM_VOICE_PREFIX + normalizeVoiceType(type));
             avatarRepository.save(avatar);
         });
         return voiceId;
@@ -526,6 +543,9 @@ public class DIDService {
             }
 
             String type = root.hasNonNull("type") ? root.get("type").asText() : null;
+            if (type == null || type.isBlank()) {
+                type = "d-id";
+            }
             return Optional.of(new VoiceInfo(id, type));
         } catch (WebClientResponseException wce) {
             logger.warn(
@@ -1078,13 +1098,14 @@ public class DIDService {
                 // Use cloned voice if available (text-only). Audio script already contains voice.
                 if (!usingAudio) {
                     if (voiceId != null && !voiceId.isEmpty()) {
-                        Map<String, Object> provider = new HashMap<>();
-                        provider.put("type", (voiceType == null || voiceType.isBlank())
-                                ? guessVoiceTypeFromVoiceId(voiceId)
-                                : normalizeVoiceType(voiceType));
-                        provider.put("voice_id", voiceId);
-                        scriptObj.put("provider", provider);
-                        logger.debug("Creating scene with voice_id: {} for avatar: {}", voiceId, avatarId);
+                        String providerType = resolveVoiceProviderType(voiceId, voiceType);
+                        if (!shouldSkipProvider(providerType, voiceId)) {
+                            Map<String, Object> provider = new HashMap<>();
+                            provider.put("type", providerType);
+                            provider.put("voice_id", voiceId);
+                            scriptObj.put("provider", provider);
+                            logger.debug("Creating scene with voice_id: {} for avatar: {}", voiceId, avatarId);
+                        }
                     } else {
                         logger.warn("No voice_id found for avatar '{}', video will use default D-ID voice", avatarId);
                     }
@@ -1126,12 +1147,13 @@ public class DIDService {
                         textScript.put("type", "text");
                         textScript.put("input", script);
                         if (voiceId != null && !voiceId.isEmpty()) {
-                            Map<String, Object> provider = new HashMap<>();
-                            provider.put("type", (voiceType == null || voiceType.isBlank())
-                                    ? guessVoiceTypeFromVoiceId(voiceId)
-                                    : normalizeVoiceType(voiceType));
-                            provider.put("voice_id", voiceId);
-                            textScript.put("provider", provider);
+                            String providerType = resolveVoiceProviderType(voiceId, voiceType);
+                            if (!shouldSkipProvider(providerType, voiceId)) {
+                                Map<String, Object> provider = new HashMap<>();
+                                provider.put("type", providerType);
+                                provider.put("voice_id", voiceId);
+                                textScript.put("provider", provider);
+                            }
                         }
                         requestBody.put("script", textScript);
                         response = webClient.post()
@@ -1452,12 +1474,13 @@ public class DIDService {
                 && dbAvatar.get().getVoiceId() != null
                 && !dbAvatar.get().getVoiceId().isBlank()) {
             Map<String, Object> provider = new HashMap<>();
-            String type = normalizeVoiceType(dbAvatar.get().getVoiceType());
-            if (type == null || type.isBlank()) {
-                type = guessVoiceTypeFromVoiceId(dbAvatar.get().getVoiceId());
+            String voiceId = dbAvatar.get().getVoiceId().trim();
+            String type = resolveVoiceProviderType(voiceId, dbAvatar.get().getVoiceType());
+            if (shouldSkipProvider(type, voiceId)) {
+                return null;
             }
             provider.put("type", type);
-            provider.put("voice_id", dbAvatar.get().getVoiceId().trim());
+            provider.put("voice_id", voiceId);
             return provider;
         }
 
@@ -1495,6 +1518,65 @@ public class DIDService {
         return v;
     }
 
+    private String resolveVoiceProviderType(String voiceId, String voiceTypeRaw) {
+        String normalized = normalizeVoiceType(voiceTypeRaw);
+        if (voiceId == null || voiceId.isBlank()) {
+            return normalized == null || normalized.isBlank() ? "microsoft" : normalized;
+        }
+
+        String guessed = guessVoiceTypeFromVoiceId(voiceId);
+        if (normalized == null || normalized.isBlank()) {
+            return guessed;
+        }
+
+        if ("microsoft".equalsIgnoreCase(normalized) && "d-id".equalsIgnoreCase(guessed)) {
+            return "d-id";
+        }
+
+        return normalized;
+    }
+
+    private boolean shouldSkipProvider(String providerType, String voiceId) {
+        if (providerType == null || providerType.isBlank()) {
+            return true;
+        }
+        if (voiceId == null || voiceId.isBlank()) {
+            return true;
+        }
+
+        String type = providerType.trim().toLowerCase(Locale.ROOT);
+        String v = voiceId.trim();
+
+        if (type.equals("elevenlabs")) {
+            return true;
+        }
+
+        if (type.equals("microsoft") && !isMicrosoftVoiceId(v)) {
+            return true;
+        }
+
+        if (type.equals("d-id") && isLikelyLegacyElevenLabsVoiceId(v)) {
+            return true;
+        }
+
+        return false;
+    }
+
+    private boolean isMicrosoftVoiceId(String voiceId) {
+        if (voiceId == null) return false;
+        String v = voiceId.trim();
+        return !v.isEmpty() && (v.contains("Neural") || v.matches("^[a-z]{2}-[A-Z]{2}-.*"));
+    }
+
+    private boolean isLikelyLegacyElevenLabsVoiceId(String voiceId) {
+        if (voiceId == null) return false;
+        String v = voiceId.trim();
+        if (v.isEmpty()) return false;
+        if (isMicrosoftVoiceId(v)) return false;
+        // ElevenLabs voice ids are opaque alphanumeric ids
+        return v.matches("^[A-Za-z0-9]{10,}$") && !v.contains("-");
+    }
+
     private String guessVoiceTypeFromVoiceId(String voiceId) {
         if (voiceId == null) {
             return "microsoft";
@@ -1510,8 +1592,8 @@ public class DIDService {
             return "microsoft";
         }
 
-        // Default provider
-        return "microsoft";
+        // Opaque/custom voices (e.g., cloned voices) should not be sent to Microsoft provider
+        return "d-id";
     }
 
     /**
