@@ -42,6 +42,9 @@ public class DIDService {
     private final ObjectMapper objectMapper;
     private final DIDAvatarRepository avatarRepository;
     private final Map<String, DIDPresenter> presenterCache = new ConcurrentHashMap<>();
+
+    @Value("${app.did.clips.webhook:}")
+    private String clipsWebhookUrl;
     
     // Cache for presenter list with expiry
     private List<DIDPresenter> cachedPresenterList = null;
@@ -1235,6 +1238,10 @@ public class DIDService {
             try {
                 Map<String, Object> requestBody = new HashMap<>();
                 requestBody.put("presenter_id", presenterId);
+
+                if (clipsWebhookUrl != null && !clipsWebhookUrl.isBlank()) {
+                    requestBody.put("webhook", clipsWebhookUrl.trim());
+                }
                 
                 Map<String, Object> scriptObj = new HashMap<>();
                 boolean usingAudio = audioUrl != null && !audioUrl.isBlank();

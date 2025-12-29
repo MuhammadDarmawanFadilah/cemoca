@@ -20,6 +20,10 @@ public interface VideoReportItemRepository extends JpaRepository<VideoReportItem
     
     // Find single item by ID and report ID
     VideoReportItem findByIdAndVideoReportId(Long id, Long videoReportId);
+
+       // Webhook lookup by D-ID clip id
+       @Query("SELECT i FROM VideoReportItem i WHERE i.didClipId = :didClipId")
+       VideoReportItem findByDidClipId(@Param("didClipId") String didClipId);
     
     // Paginated queries for large datasets
     Page<VideoReportItem> findByVideoReportIdOrderByRowNumberAsc(Long videoReportId, Pageable pageable);

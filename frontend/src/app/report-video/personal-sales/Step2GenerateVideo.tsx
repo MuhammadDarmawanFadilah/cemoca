@@ -411,7 +411,10 @@ export function Step2GenerateVideo({
                                     <Button variant="ghost" size="sm" className="h-6 px-1.5 text-[10px]" onClick={async () => {
                                       try {
                                         const res = await videoReportAPI.generateShareLink(currentReport.id, item.id);
-                                        await navigator.clipboard.writeText(`${window.location.origin}/v/${res.token}`);
+                                        const link = res.shareUrl
+                                          ? (res.shareUrl.startsWith("http") ? res.shareUrl : `${window.location.origin}${res.shareUrl}`)
+                                          : `${window.location.origin}/v/${res.token}`;
+                                        await navigator.clipboard.writeText(link);
                                         toast.success(t("reportVideo.linkCopied"));
                                       } catch { toast.error(t("reportVideo.failedCopyLink")); }
                                     }}>

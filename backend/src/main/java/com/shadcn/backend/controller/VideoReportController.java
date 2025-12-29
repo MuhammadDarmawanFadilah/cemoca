@@ -21,34 +21,25 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpRange;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.springframework.http.MediaTypeFactory;
-import org.springframework.core.io.Resource;
-import org.springframework.core.io.FileSystemResource;
-import org.springframework.core.io.support.ResourceRegion;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
-import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 
 import jakarta.annotation.PostConstruct;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.io.InputStream;
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
+import java.io.OutputStream;
+import java.io.RandomAccessFile;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.time.Duration;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -80,16 +71,11 @@ public class VideoReportController {
     @Value("${app.wa.test.poll-interval-seconds}")
     private int waTestPollIntervalSeconds;
 
-    @Value("${app.video.download.connect-timeout-seconds:30}")
-    private int videoProxyConnectTimeoutSeconds;
-
-    @Value("${app.video.download.read-timeout-seconds:300}")
-    private int videoProxyReadTimeoutSeconds;
-
     @Value("${app.video.share-dir:${app.video.base-dir}/share}")
     private String videoShareDir;
 
-    private volatile HttpClient videoHttpClient;
+    @Value("${app.video.cache.retention-days:30}")
+    private int videoCacheRetentionDays;
 
     @PostConstruct
     void validateVideoConfig() {
@@ -99,17 +85,6 @@ public class VideoReportController {
         if (waTestPollIntervalSeconds <= 0) {
             throw new IllegalStateException("Invalid property app.wa.test.poll-interval-seconds; must be > 0");
         }
-        if (videoProxyConnectTimeoutSeconds <= 0) {
-            throw new IllegalStateException("Invalid property app.video.download.connect-timeout-seconds; must be > 0");
-        }
-        if (videoProxyReadTimeoutSeconds <= 0) {
-            throw new IllegalStateException("Invalid property app.video.download.read-timeout-seconds; must be > 0");
-        }
-
-        this.videoHttpClient = HttpClient.newBuilder()
-                .connectTimeout(Duration.ofSeconds(videoProxyConnectTimeoutSeconds))
-                .followRedirects(HttpClient.Redirect.NORMAL)
-                .build();
     }
 
     public VideoReportController(VideoReportService videoReportService,
@@ -769,7 +744,8 @@ public class VideoReportController {
         
         Map<String, String> response = new HashMap<>();
         response.put("token", token);
-        response.put("shareUrl", "/v/" + token);
+        String shareUrl = videoReportService.getPublicVideoShareUrl(reportId, itemId);
+        response.put("shareUrl", (shareUrl == null || shareUrl.isBlank()) ? ("/v/" + token) : shareUrl);
         return ResponseEntity.ok(response);
     }
 
@@ -844,212 +820,164 @@ public class VideoReportController {
     }
 
     @RequestMapping(value = "/stream/{token}.mp4", method = {RequestMethod.GET, RequestMethod.HEAD})
-    public ResponseEntity<?> streamVideoByToken(@PathVariable String token, HttpServletRequest request) {
-        Long[] ids = VideoLinkEncryptor.decryptVideoLink(token);
-        if (ids == null || ids.length < 2) {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).build();
-        }
-
-        Long reportId = ids[0];
-        Long itemId = ids[1];
-
-        VideoReportItem item = videoReportItemRepository.findByIdAndVideoReportId(itemId, reportId);
-        if (item == null) {
-            return ResponseEntity.notFound().build();
-        }
-
-        String sourceUrl = item.getVideoUrl();
-        if (sourceUrl == null || sourceUrl.isBlank()) {
-            return ResponseEntity.notFound().build();
-        }
-
-        ResponseEntity<?> cached = tryServeCachedVideo(token, request);
-        if (cached != null) {
-            return cached;
-        }
-
+    public void streamVideoByToken(@PathVariable String token, HttpServletRequest request, HttpServletResponse response) {
+        String sourceUrl = null;
+        Long reportId;
+        Long itemId;
         try {
-            videoReportService.enqueueShareCacheDownloadIfNeeded(reportId, itemId, sourceUrl);
-        } catch (Exception ignore) {
-        }
+            Long[] ids = VideoLinkEncryptor.decryptVideoLink(token);
+            if (ids == null || ids.length < 2) {
+                response.setStatus(HttpStatus.BAD_REQUEST.value());
+                return;
+            }
 
-        // Avoid proxy loops if stored URL points back to our own stream endpoint
-        if (sourceUrl.contains("/api/video-reports/stream/")) {
+            reportId = ids[0];
+            itemId = ids[1];
+
+            VideoReportItem item = videoReportItemRepository.findByIdAndVideoReportId(itemId, reportId);
+            if (item == null) {
+                response.setStatus(HttpStatus.NOT_FOUND.value());
+                return;
+            }
+
+            sourceUrl = item.getVideoUrl();
+            if (sourceUrl == null || sourceUrl.isBlank()) {
+                response.setStatus(HttpStatus.NOT_FOUND.value());
+                return;
+            }
+
+            boolean withinRetention = true;
             try {
-                String didClipId = item.getDidClipId();
-                if (didClipId != null && !didClipId.isBlank()) {
-                    Map<String, Object> clipStatus = didService.getClipStatus(didClipId);
-                    if (Boolean.TRUE.equals(clipStatus.get("success")) && "done".equals(clipStatus.get("status"))) {
-                        String originalUrl = (String) clipStatus.get("result_url");
-                        if (originalUrl != null && !originalUrl.isBlank()) {
-                            sourceUrl = originalUrl;
+                if (videoCacheRetentionDays > 0 && item.getVideoGeneratedAt() != null) {
+                    withinRetention = item.getVideoGeneratedAt().isAfter(java.time.LocalDateTime.now().minusDays(videoCacheRetentionDays));
+                }
+            } catch (Exception ignore) {
+            }
+
+            if (!withinRetention) {
+                redirectToSource(response, sourceUrl);
+                return;
+            }
+
+            Path filePath = Paths.get(videoShareDir, token + ".mp4");
+            if (!Files.exists(filePath) || !Files.isReadable(filePath)) {
+                try {
+                    videoReportService.enqueueShareCacheDownloadIfNeeded(reportId, itemId, sourceUrl);
+                } catch (Exception ignore) {
+                }
+                redirectToSource(response, sourceUrl);
+                return;
+            }
+
+            long fileSize = Files.size(filePath);
+            if (fileSize <= 0) {
+                redirectToSource(response, sourceUrl);
+                return;
+            }
+
+            if (videoCacheRetentionDays > 0) {
+                try {
+                    java.nio.file.attribute.FileTime ft = Files.getLastModifiedTime(filePath);
+                    if (ft != null) {
+                        long cutoffMs = System.currentTimeMillis() - (videoCacheRetentionDays * 24L * 60L * 60L * 1000L);
+                        if (ft.toMillis() < cutoffMs) {
+                            Files.deleteIfExists(filePath);
+                            redirectToSource(response, sourceUrl);
+                            return;
                         }
                     }
+                } catch (Exception ignore) {
                 }
-            } catch (Exception e) {
-                logger.warn("Failed to resolve original D-ID URL for stream proxy, using stored URL: {}", e.getMessage());
-            }
-        }
-
-        URI sourceUri;
-        try {
-            sourceUri = URI.create(sourceUrl);
-        } catch (Exception e) {
-            logger.warn("Invalid video source URL for token {}: {}", token, e.getMessage());
-            return ResponseEntity.notFound().build();
-        }
-
-        String rangeHeader = request == null ? null : request.getHeader(HttpHeaders.RANGE);
-        boolean isHead = request != null && "HEAD".equalsIgnoreCase(request.getMethod());
-
-        try {
-            if (isHead) {
-                HttpRequest.Builder upstreamBuilder = HttpRequest.newBuilder(sourceUri)
-                        .timeout(Duration.ofSeconds(videoProxyReadTimeoutSeconds))
-                        .method("HEAD", HttpRequest.BodyPublishers.noBody());
-                if (rangeHeader != null && !rangeHeader.isBlank()) {
-                    upstreamBuilder.header(HttpHeaders.RANGE, rangeHeader);
-                }
-
-                HttpResponse<Void> upstream = videoHttpClient.send(upstreamBuilder.build(), HttpResponse.BodyHandlers.discarding());
-                return buildStreamHeadersResponse(upstream.statusCode(), upstream.headers(), null);
             }
 
-            HttpRequest.Builder upstreamBuilder = HttpRequest.newBuilder(sourceUri)
-                    .timeout(Duration.ofSeconds(videoProxyReadTimeoutSeconds))
-                    .GET();
-            if (rangeHeader != null && !rangeHeader.isBlank()) {
-                upstreamBuilder.header(HttpHeaders.RANGE, rangeHeader);
-            }
-
-            HttpResponse<InputStream> upstream = videoHttpClient.send(upstreamBuilder.build(), HttpResponse.BodyHandlers.ofInputStream());
-            int status = upstream.statusCode();
-
-            if (status != 200 && status != 206) {
-                InputStream upstreamBody = upstream.body();
-                if (upstreamBody != null) {
-                    upstreamBody.close();
-                }
-                return buildStreamHeadersResponse(status, upstream.headers(), null);
-            }
-
-            InputStream upstreamBody = upstream.body();
-            StreamingResponseBody body = outputStream -> {
-                try (InputStream in = upstreamBody) {
-                    in.transferTo(outputStream);
-                }
-            };
-
-            return buildStreamHeadersResponse(status, upstream.headers(), body);
-        } catch (Exception e) {
-            logger.warn("Video proxy failed for token {}: {}", token, e.getMessage());
-            HttpHeaders headers = new HttpHeaders();
-            headers.setCacheControl("no-store");
-            headers.add(HttpHeaders.LOCATION, sourceUrl);
-            return new ResponseEntity<>(headers, HttpStatus.FOUND);
-        }
-    }
-
-    private ResponseEntity<?> buildStreamHeadersResponse(int statusCode, java.net.http.HttpHeaders upstreamHeaders, StreamingResponseBody body) {
-        HttpHeaders headers = new HttpHeaders();
-
-        String contentType = upstreamHeaders.firstValue("content-type").orElse(null);
-        if (contentType == null || contentType.isBlank()) {
-            contentType = "video/mp4";
-        }
-        headers.set(HttpHeaders.CONTENT_TYPE, contentType);
-
-        upstreamHeaders.firstValue("content-length").ifPresent(v -> headers.set(HttpHeaders.CONTENT_LENGTH, v));
-        upstreamHeaders.firstValue("content-range").ifPresent(v -> headers.set(HttpHeaders.CONTENT_RANGE, v));
-        upstreamHeaders.firstValue("accept-ranges").ifPresent(v -> headers.set("Accept-Ranges", v));
-        upstreamHeaders.firstValue("etag").ifPresent(v -> headers.set(HttpHeaders.ETAG, v));
-        upstreamHeaders.firstValue("last-modified").ifPresent(v -> headers.set(HttpHeaders.LAST_MODIFIED, v));
-
-        // Force inline playback under our domain
-        headers.set(HttpHeaders.CONTENT_DISPOSITION, "inline");
-        headers.setCacheControl("private, max-age=3600");
-
-        if (body == null) {
-            return ResponseEntity.status(statusCode).headers(headers).build();
-        }
-        return ResponseEntity.status(statusCode).headers(headers).body(body);
-    }
-
-    private ResponseEntity<?> tryServeCachedVideo(String token, HttpServletRequest request) {
-        if (token == null || token.isBlank()) {
-            return null;
-        }
-        if (videoShareDir == null || videoShareDir.isBlank()) {
-            return null;
-        }
-
-        Path filePath;
-        try {
-            filePath = Paths.get(videoShareDir, token + ".mp4");
-        } catch (Exception e) {
-            return null;
-        }
-
-        try {
-            if (!Files.exists(filePath) || !Files.isReadable(filePath)) {
-                return null;
-            }
-            long size = Files.size(filePath);
-            if (size <= 0) {
-                return null;
-            }
-
-            Resource video = new FileSystemResource(filePath);
-            MediaType contentType = MediaTypeFactory.getMediaType(video).orElse(MediaType.valueOf("video/mp4"));
+            response.setHeader(HttpHeaders.ACCEPT_RANGES, "bytes");
+            response.setHeader(HttpHeaders.CONTENT_DISPOSITION, "inline");
+            response.setHeader(HttpHeaders.CACHE_CONTROL, "private, max-age=3600");
+            response.setContentType("video/mp4");
 
             boolean isHead = request != null && "HEAD".equalsIgnoreCase(request.getMethod());
-            String rangeHeader = request == null ? null : request.getHeader(HttpHeaders.RANGE);
+            String range = request == null ? null : request.getHeader(HttpHeaders.RANGE);
 
-            HttpHeaders headers = new HttpHeaders();
-            headers.setContentType(contentType);
-            headers.set(HttpHeaders.ACCEPT_RANGES, "bytes");
-            headers.set(HttpHeaders.CONTENT_DISPOSITION, "inline");
-            headers.setCacheControl("private, max-age=3600");
+            long start = 0;
+            long end = fileSize - 1;
+            boolean partial = false;
 
-            long contentLength = video.contentLength();
+            if (range != null && range.startsWith("bytes=")) {
+                String spec = range.substring("bytes=".length()).trim();
+                int dash = spec.indexOf('-');
+                if (dash >= 0) {
+                    String startPart = spec.substring(0, dash).trim();
+                    String endPart = spec.substring(dash + 1).trim();
+                    try {
+                        if (!startPart.isEmpty()) {
+                            start = Long.parseLong(startPart);
+                        }
+                        if (!endPart.isEmpty()) {
+                            end = Long.parseLong(endPart);
+                        }
+                        if (startPart.isEmpty() && !endPart.isEmpty()) {
+                            long suffixLen = Long.parseLong(endPart);
+                            if (suffixLen > 0) {
+                                start = Math.max(0, fileSize - suffixLen);
+                                end = fileSize - 1;
+                            }
+                        }
+                        if (start < 0) start = 0;
+                        if (end >= fileSize) end = fileSize - 1;
+                        if (start <= end) {
+                            partial = true;
+                        }
+                    } catch (Exception ignore) {
+                        start = 0;
+                        end = fileSize - 1;
+                        partial = false;
+                    }
+                }
+            }
+
+            long contentLength = (end - start) + 1;
+            if (partial) {
+                response.setStatus(HttpStatus.PARTIAL_CONTENT.value());
+                response.setHeader(HttpHeaders.CONTENT_RANGE, "bytes " + start + "-" + end + "/" + fileSize);
+                response.setHeader(HttpHeaders.CONTENT_LENGTH, String.valueOf(contentLength));
+            } else {
+                response.setStatus(HttpStatus.OK.value());
+                response.setHeader(HttpHeaders.CONTENT_LENGTH, String.valueOf(fileSize));
+            }
+
             if (isHead) {
-                headers.setContentLength(contentLength);
-                return ResponseEntity.ok().headers(headers).build();
+                return;
             }
 
-            if (rangeHeader == null || rangeHeader.isBlank()) {
-                headers.setContentLength(contentLength);
-                return ResponseEntity.ok().headers(headers).body(video);
+            try (RandomAccessFile raf = new RandomAccessFile(filePath.toFile(), "r"); OutputStream out = response.getOutputStream()) {
+                raf.seek(start);
+                byte[] buffer = new byte[8192];
+                long remaining = partial ? contentLength : fileSize;
+                while (remaining > 0) {
+                    int read = raf.read(buffer, 0, (int) Math.min(buffer.length, remaining));
+                    if (read < 0) {
+                        break;
+                    }
+                    out.write(buffer, 0, read);
+                    remaining -= read;
+                }
             }
-
-            List<HttpRange> ranges;
-            try {
-                ranges = HttpRange.parseRanges(rangeHeader);
-            } catch (Exception e) {
-                headers.setContentLength(contentLength);
-                return ResponseEntity.ok().headers(headers).body(video);
-            }
-            if (ranges == null || ranges.isEmpty()) {
-                headers.setContentLength(contentLength);
-                return ResponseEntity.ok().headers(headers).body(video);
-            }
-
-            HttpRange range = ranges.get(0);
-            long start = range.getRangeStart(contentLength);
-            long end = range.getRangeEnd(contentLength);
-            long rangeLength = Math.max(0, (end - start) + 1);
-            if (rangeLength <= 0) {
-                headers.setContentLength(contentLength);
-                return ResponseEntity.ok().headers(headers).body(video);
-            }
-
-            ResourceRegion region = new ResourceRegion(video, start, rangeLength);
-            headers.setContentLength(rangeLength);
-            headers.set(HttpHeaders.CONTENT_RANGE, "bytes " + start + "-" + (start + rangeLength - 1) + "/" + contentLength);
-            return ResponseEntity.status(HttpStatus.PARTIAL_CONTENT).headers(headers).body(region);
         } catch (Exception e) {
-            return null;
+            try {
+                if (sourceUrl != null && !sourceUrl.isBlank()) {
+                    redirectToSource(response, sourceUrl);
+                } else {
+                    response.setStatus(HttpStatus.NOT_FOUND.value());
+                }
+            } catch (Exception ignore) {
+            }
         }
+    }
+
+    private void redirectToSource(HttpServletResponse response, String sourceUrl) throws IOException {
+        response.setHeader(HttpHeaders.CACHE_CONTROL, "no-store");
+        response.setHeader(HttpHeaders.LOCATION, sourceUrl);
+        response.setStatus(HttpStatus.FOUND.value());
     }
 
     /**
