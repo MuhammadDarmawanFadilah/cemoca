@@ -1100,6 +1100,10 @@ public class DIDService {
                 
                 // Use cloned voice if available (text-only). Audio script already contains voice.
                 if (!usingAudio) {
+                    if (shouldEnableMicrosoftSsml(script, null)) {
+                        // Default provider is Microsoft; if we later resolve a non-Microsoft provider, we'll remove this.
+                        scriptObj.put("ssml", true);
+                    }
                     if (voiceId != null && !voiceId.isEmpty()) {
                         String providerType = resolveVoiceProviderType(voiceId, voiceType);
                         if (!shouldSkipProvider(providerType, voiceId)) {
@@ -1107,6 +1111,9 @@ public class DIDService {
                             provider.put("type", providerType);
                             provider.put("voice_id", voiceId);
                             scriptObj.put("provider", provider);
+                            if (!shouldEnableMicrosoftSsml(script, provider)) {
+                                scriptObj.remove("ssml");
+                            }
                             logger.debug("Creating scene with voice_id: {} for avatar: {}", voiceId, avatarId);
                         }
                     } else {
@@ -1156,7 +1163,12 @@ public class DIDService {
                                 provider.put("type", providerType);
                                 provider.put("voice_id", voiceId);
                                 textScript.put("provider", provider);
+                                if (shouldEnableMicrosoftSsml(script, provider)) {
+                                    textScript.put("ssml", true);
+                                }
                             }
+                        } else if (shouldEnableMicrosoftSsml(script, null)) {
+                            textScript.put("ssml", true);
                         }
                         requestBody.put("script", textScript);
                         response = webClient.post()
@@ -1260,6 +1272,9 @@ public class DIDService {
                 }
 
                 Map<String, Object> provider = usingAudio ? null : resolveClipsVoiceProvider(presenterId);
+                if (!usingAudio && shouldEnableMicrosoftSsml(script, provider)) {
+                    scriptObj.put("ssml", true);
+                }
 
                 Map<String, Object> requestBodyWithProvider = new HashMap<>(requestBody);
                 Map<String, Object> scriptWithProvider = new HashMap<>(scriptObj);
@@ -1300,6 +1315,11 @@ public class DIDService {
                         Map<String, Object> textScriptWithProvider = new HashMap<>(textScriptObj);
                         if (fallbackProvider != null) {
                             textScriptWithProvider.put("provider", fallbackProvider);
+                        }
+
+                        if (shouldEnableMicrosoftSsml(script, fallbackProvider)) {
+                            textScriptObj.put("ssml", true);
+                            textScriptWithProvider.put("ssml", true);
                         }
 
                         textBody.put("script", textScriptWithProvider);
@@ -1367,6 +1387,31 @@ public class DIDService {
         }
         
         return result;
+    }
+
+    private boolean shouldEnableMicrosoftSsml(String input, Map<String, Object> provider) {
+        if (!containsSsmlMarkup(input)) {
+            return false;
+        }
+
+        if (provider == null) {
+            return true;
+        }
+
+        Object type = provider.get("type");
+        if (type == null) {
+            return true;
+        }
+
+        return "microsoft".equalsIgnoreCase(type.toString().trim());
+    }
+
+    private boolean containsSsmlMarkup(String input) {
+        if (input == null || input.isBlank()) {
+            return false;
+        }
+        String s = input.toLowerCase(Locale.ROOT);
+        return s.contains("<break") || s.contains("<speak") || s.contains("</") || s.contains("<phoneme") || s.contains("<say-as");
     }
 
     public Optional<String> uploadAudio(byte[] bytes, String filename) {
