@@ -4,12 +4,15 @@ import com.shadcn.backend.entity.VideoReportItem;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Collection;
 import java.util.List;
+import java.time.LocalDateTime;
 
 @Repository
 public interface VideoReportItemRepository extends JpaRepository<VideoReportItem, Long> {
@@ -129,6 +132,28 @@ public interface VideoReportItemRepository extends JpaRepository<VideoReportItem
        @Query("SELECT i FROM VideoReportItem i WHERE i.status = 'DONE' AND (i.waStatus = 'PENDING' OR i.waStatus = 'QUEUED' OR i.waStatus IS NULL) AND i.updatedAt < :threshold AND (i.excluded = false OR i.excluded IS NULL)")
        List<VideoReportItem> findStuckWaPendingItems(@Param("threshold") java.time.LocalDateTime threshold);
 
+              @Query("SELECT i FROM VideoReportItem i WHERE i.status = 'DONE' AND i.videoUrl IS NOT NULL AND i.videoUrl <> '' AND (i.excluded = false OR i.excluded IS NULL) AND (i.videoGeneratedAt IS NULL OR i.videoGeneratedAt >= :cutoff) ORDER BY i.id DESC")
+              org.springframework.data.domain.Page<VideoReportItem> findRecentDoneItemsForCacheWarmup(
+                     @Param("cutoff") java.time.LocalDateTime cutoff,
+                     org.springframework.data.domain.Pageable pageable
+              );
+
        @Query("SELECT DISTINCT i.videoReport.id FROM VideoReportItem i WHERE i.status = :status AND (i.excluded = false OR i.excluded IS NULL)")
        List<Long> findDistinctReportIdsByStatus(@Param("status") String status);
+
+       VideoReportItem findByWaMessageId(String waMessageId);
+
+       List<VideoReportItem> findByVideoReportIdAndWaBatchIdOrderByRowNumberAsc(Long videoReportId, String waBatchId);
+
+       @Modifying(clearAutomatically = true, flushAutomatically = true)
+       @Transactional
+       @Query("UPDATE VideoReportItem i SET i.waStatus = 'PROCESSING', i.waBatchId = :batchId, i.waBatchClaimedAt = :claimedAt " +
+              "WHERE i.videoReport.id = :reportId AND i.status = 'DONE' " +
+              "AND (i.waStatus = 'PENDING' OR i.waStatus IS NULL) " +
+              "AND (i.excluded = false OR i.excluded IS NULL)")
+       int claimWaBlastBatch(
+              @Param("reportId") Long reportId,
+              @Param("batchId") String batchId,
+              @Param("claimedAt") LocalDateTime claimedAt
+       );
 }

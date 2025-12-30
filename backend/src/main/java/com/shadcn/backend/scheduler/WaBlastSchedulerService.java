@@ -57,7 +57,7 @@ public class WaBlastSchedulerService {
     @Lazy
     private PdfReportService pdfReportService;
 
-    @org.springframework.beans.factory.annotation.Value("${whatsapp.wablas.status-sync.enabled:false}")
+    @org.springframework.beans.factory.annotation.Value("${whatsapp.wablas.status-sync.enabled:true}")
     private boolean wablasStatusSyncEnabled;
 
     

@@ -97,9 +97,70 @@ public class VideoReportService {
     @Value("${app.video.cache.queue-capacity:200}")
     private int videoCacheQueueCapacity;
 
+    @Value("${app.video.cache.lock-ttl-minutes:120}")
+    private int videoCacheLockTtlMinutes;
+
+    @Value("${app.wa.status-sync.max-items:200}")
+    private int waStatusSyncMaxItems;
+
     private volatile ExecutorService videoCacheExecutor;
     private volatile HttpClient videoCacheHttpClient;
     private final java.util.concurrent.ConcurrentHashMap<String, Boolean> videoCacheInFlight = new java.util.concurrent.ConcurrentHashMap<>();
+
+    private Path cacheLockPath(String token) {
+        try {
+            return Paths.get(videoShareDir, token + ".mp4.lock");
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private boolean tryAcquireCacheLock(Path lockPath) {
+        if (lockPath == null) {
+            return false;
+        }
+
+        try {
+            Files.createDirectories(lockPath.getParent());
+        } catch (Exception ignore) {
+        }
+
+        try {
+            if (Files.exists(lockPath)) {
+                if (videoCacheLockTtlMinutes > 0) {
+                    try {
+                        java.nio.file.attribute.FileTime ft = Files.getLastModifiedTime(lockPath);
+                        long cutoffMs = System.currentTimeMillis() - (videoCacheLockTtlMinutes * 60L * 1000L);
+                        if (ft != null && ft.toMillis() < cutoffMs) {
+                            Files.deleteIfExists(lockPath);
+                        }
+                    } catch (Exception ignore) {
+                    }
+                }
+            }
+
+            Files.createFile(lockPath);
+            try {
+                Files.setLastModifiedTime(lockPath, java.nio.file.attribute.FileTime.fromMillis(System.currentTimeMillis()));
+            } catch (Exception ignore) {
+            }
+            return true;
+        } catch (java.nio.file.FileAlreadyExistsException ignore) {
+            return false;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private void releaseCacheLock(Path lockPath) {
+        if (lockPath == null) {
+            return;
+        }
+        try {
+            Files.deleteIfExists(lockPath);
+        } catch (Exception ignore) {
+        }
+    }
 
     @PostConstruct
     void validateVideoStorageConfig() {
@@ -621,24 +682,27 @@ public class VideoReportService {
             return;
         }
         
-        // STEP 1: Find items ready for WA blast (status=DONE, waStatus=PENDING only)
-        List<VideoReportItem> readyItems = videoReportItemRepository.findReadyForWaBlast(reportId);
-        
-        if (readyItems.isEmpty()) {
+        String batchId = java.util.UUID.randomUUID().toString();
+        LocalDateTime claimedAt = LocalDateTime.now();
+        int claimed = 0;
+        try {
+            claimed = videoReportItemRepository.claimWaBlastBatch(reportId, batchId, claimedAt);
+        } catch (Exception e) {
+            logger.warn("[WA BLAST VIDEO] Failed claiming batch for report {}: {}", reportId, e.getMessage());
+        }
+
+        if (claimed <= 0) {
             logger.info("[WA BLAST VIDEO] No items ready for WA blast (PENDING)");
             return;
         }
-        
-        logger.info("[WA BLAST VIDEO] Found {} items ready for WA blast", readyItems.size());
-        
-        // STEP 2: Mark ALL items as PROCESSING immediately to prevent re-pickup by scheduler
-        for (VideoReportItem item : readyItems) {
-            item.setWaStatus("PROCESSING");
-            videoReportItemRepository.save(item);
+
+        List<VideoReportItem> readyItems = videoReportItemRepository.findByVideoReportIdAndWaBatchIdOrderByRowNumberAsc(reportId, batchId);
+        if (readyItems == null || readyItems.isEmpty()) {
+            logger.info("[WA BLAST VIDEO] Claimed {} items but none loaded for batch {}", claimed, batchId);
+            return;
         }
-        videoReportItemRepository.flush(); // Force flush to DB immediately
-        
-        logger.info("[WA BLAST VIDEO] Marked {} items as PROCESSING", readyItems.size());
+
+        logger.info("[WA BLAST VIDEO] Claimed {} items for batch {}", readyItems.size(), batchId);
 
         // STEP 3: Send LINK-only using Wablas v2 bulk API (100 per request)
         // Supports high volume (e.g., 1000) without video upload.
@@ -989,6 +1053,10 @@ public class VideoReportService {
                 .filter(item -> item.getWaMessageId() != null && !item.getWaMessageId().isEmpty())
             .filter(item -> "SENT".equals(item.getWaStatus()) || "PENDING".equals(item.getWaStatus()) || "QUEUED".equals(item.getWaStatus()) || "PROCESSING".equals(item.getWaStatus()))
                 .collect(java.util.stream.Collectors.toList());
+
+        if (waStatusSyncMaxItems > 0 && pendingItems.size() > waStatusSyncMaxItems) {
+            pendingItems = pendingItems.subList(0, waStatusSyncMaxItems);
+        }
         
         logger.info("[WA SYNC] Checking {} items with messageId for report {}", pendingItems.size(), reportId);
         
@@ -1086,9 +1154,6 @@ public class VideoReportService {
                 }
                 
                 statusUpdates.add(itemUpdate);
-                
-                // Add small delay to avoid rate limiting
-                Thread.sleep(200);
                 
             } catch (Exception e) {
                 logger.error("[WA SYNC] Error checking item {}: {}", item.getId(), e.getMessage());
@@ -1263,14 +1328,22 @@ public class VideoReportService {
         try {
             targetPath = Paths.get(videoShareDir, token + ".mp4");
         } catch (Exception e) {
+            videoCacheInFlight.remove(token);
             return;
         }
 
         try {
             if (Files.exists(targetPath) && Files.size(targetPath) > 0) {
+                videoCacheInFlight.remove(token);
                 return;
             }
         } catch (Exception ignore) {
+        }
+
+        Path lockPath = cacheLockPath(token);
+        if (!tryAcquireCacheLock(lockPath)) {
+            videoCacheInFlight.remove(token);
+            return;
         }
 
         try {
@@ -1342,13 +1415,16 @@ public class VideoReportService {
                 // best-effort tmp cleanup is handled per tmpPath scope
                 logger.warn("[VIDEO CACHE] Failed caching token {}: {}", VideoLinkEncryptor.encryptVideoLinkShort(reportId, itemId), e.getMessage());
             } finally {
+                releaseCacheLock(lockPath);
                 videoCacheInFlight.remove(token);
             }
         });
         } catch (RejectedExecutionException rex) {
+            releaseCacheLock(lockPath);
             videoCacheInFlight.remove(token);
             logger.warn("[VIDEO CACHE] Queue full; skip token {}", token);
         } catch (Exception e) {
+            releaseCacheLock(lockPath);
             videoCacheInFlight.remove(token);
         }
     }
@@ -1373,6 +1449,18 @@ public class VideoReportService {
         try {
             targetPath = Paths.get(videoShareDir, token + ".mp4");
         } catch (Exception e) {
+            return false;
+        }
+
+        try {
+            if (Files.exists(targetPath) && Files.size(targetPath) > 0) {
+                return true;
+            }
+        } catch (Exception ignore) {
+        }
+
+        Path lockPath = cacheLockPath(token);
+        if (!tryAcquireCacheLock(lockPath)) {
             return false;
         }
 
@@ -1458,6 +1546,7 @@ public class VideoReportService {
                 } catch (Exception ignore) {
                 }
             }
+            releaseCacheLock(lockPath);
         }
     }
     

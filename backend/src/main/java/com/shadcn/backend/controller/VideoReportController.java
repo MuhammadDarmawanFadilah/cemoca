@@ -861,10 +861,24 @@ public class VideoReportController {
 
             Path filePath = Paths.get(videoShareDir, token + ".mp4");
             if (!Files.exists(filePath) || !Files.isReadable(filePath)) {
+                boolean cached;
                 try {
-                    videoReportService.enqueueShareCacheDownloadIfNeeded(reportId, itemId, sourceUrl);
+                    cached = videoReportService.cacheVideoBlockingIfNeeded(reportId, itemId, sourceUrl);
                 } catch (Exception ignore) {
+                    cached = false;
                 }
+
+                if (!cached) {
+                    try {
+                        videoReportService.enqueueShareCacheDownloadIfNeeded(reportId, itemId, sourceUrl);
+                    } catch (Exception ignore) {
+                    }
+                    redirectToSource(response, sourceUrl);
+                    return;
+                }
+            }
+
+            if (!Files.exists(filePath) || !Files.isReadable(filePath)) {
                 redirectToSource(response, sourceUrl);
                 return;
             }

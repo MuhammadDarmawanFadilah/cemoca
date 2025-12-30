@@ -46,6 +46,10 @@ public class VideoReportItem {
     // WhatsApp Blast fields
     private String waStatus; // PENDING, SENT, FAILED
     private String waMessageId;
+
+    private String waBatchId;
+    private LocalDateTime waBatchClaimedAt;
+
     @Column(columnDefinition = "TEXT")
     private String waErrorMessage;
     private LocalDateTime waSentAt;

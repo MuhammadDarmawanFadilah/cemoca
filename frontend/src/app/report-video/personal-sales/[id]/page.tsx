@@ -116,16 +116,19 @@ export default function ReportDetailPage({ params }: { params: Promise<{ id: str
     }
   }, [page, filter, search]);
 
-  // Auto-refresh for processing reports
+  // Auto-refresh for processing reports and pending WA
   useEffect(() => {
     if (currentReport) {
-      const hasProcessing = currentReport.processingCount && currentReport.processingCount > 0;
-      if (currentReport.status === "PROCESSING" || hasProcessing) {
-        const interval = setInterval(() => refreshStatus(false), 3000);
+      const hasProcessing = (currentReport.processingCount ?? 0) > 0;
+      const hasWaPending = (currentReport.waPendingCount ?? 0) > 0;
+      const shouldAutoRefresh = currentReport.status === "PROCESSING" || hasProcessing || hasWaPending;
+      if (shouldAutoRefresh) {
+        const delayMs = hasProcessing ? 3000 : 7000;
+        const interval = setInterval(() => refreshStatus(false), delayMs);
         return () => clearInterval(interval);
       }
     }
-  }, [currentReport?.status, currentReport?.processingCount]);
+  }, [currentReport?.status, currentReport?.processingCount, currentReport?.waPendingCount]);
 
   const loadReport = async () => {
     try {
