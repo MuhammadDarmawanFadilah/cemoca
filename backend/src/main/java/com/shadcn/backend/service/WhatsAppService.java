@@ -32,6 +32,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
+import org.springframework.web.util.UriComponentsBuilder;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.client.HttpStatusCodeException;
 
@@ -708,7 +709,14 @@ public class WhatsAppService {
             headers.set("Authorization", authorizationHeaderValue());
             
             HttpEntity<String> entity = new HttpEntity<>(headers);
-            String url = whatsappApiUrl + "/api/report/message?message_id=" + messageId;
+            String url = UriComponentsBuilder
+                .fromUriString(whatsappApiUrl)
+                .path("/api/report/message")
+                .queryParam("message_id", messageId)
+                .queryParam("page", 1)
+                .queryParam("perPage", 1)
+                .build(true)
+                .toUriString();
             
             logger.info("[WABLAS] Getting message status for ID: {}", messageId);
             
@@ -806,11 +814,125 @@ public class WhatsAppService {
             } else {
                 result.put("error", "HTTP " + response.getStatusCode());
             }
+        } catch (HttpStatusCodeException e) {
+            // Preserve server payload for debugging (Wablas often returns JSON with error_id)
+            result.put("httpStatus", e.getStatusCode().value());
+            result.put("rawResponse", e.getResponseBodyAsString());
+
+            boolean serverError = e.getStatusCode().is5xxServerError();
+            logger.error("[WABLAS] Exception getting message status: {} {} serverError={} body={}",
+                e.getStatusCode().value(),
+                e.getStatusText(),
+                serverError,
+                e.getResponseBodyAsString());
+
+            if (serverError) {
+                Map<String, Object> fallback = getMessageStatusFromReportRealtime(messageId);
+                if (Boolean.TRUE.equals(fallback.get("success"))) {
+                    fallback.put("fallbackSource", "report-realtime");
+                    fallback.put("originalHttpStatus", e.getStatusCode().value());
+                    fallback.put("originalRawResponse", e.getResponseBodyAsString());
+                    return fallback;
+                }
+            }
+
+            result.put("error", e.getMessage());
         } catch (Exception e) {
-            logger.error("[WABLAS] Exception getting message status: {}", e.getMessage());
+            logger.error("[WABLAS] Exception getting message status: {}", e.getMessage(), e);
             result.put("error", e.getMessage());
         }
         
+        return result;
+    }
+
+    private Map<String, Object> getMessageStatusFromReportRealtime(String messageId) {
+        Map<String, Object> result = new HashMap<>();
+        result.put("success", false);
+        result.put("messageId", messageId);
+
+        try {
+            HttpHeaders headers = new HttpHeaders();
+            headers.set("Authorization", authorizationHeaderValue());
+
+            HttpEntity<String> entity = new HttpEntity<>(headers);
+
+            String url = UriComponentsBuilder
+                .fromUriString(whatsappApiUrl)
+                .path("/api/report-realtime")
+                .queryParam("message_id", messageId)
+                .queryParam("page", 1)
+                .queryParam("limit", 1)
+                .build(true)
+                .toUriString();
+
+            logger.info("[WABLAS] (fallback) Getting message status (report-realtime) for ID: {}", messageId);
+
+            ResponseEntity<String> response = restTemplate.exchange(url, HttpMethod.GET, entity, String.class);
+            result.put("httpStatus", response.getStatusCode().value());
+            result.put("rawResponse", response.getBody());
+
+            if (response.getStatusCode() != HttpStatus.OK) {
+                result.put("error", "HTTP " + response.getStatusCode());
+                return result;
+            }
+
+            JsonNode responseJson = objectMapper.readTree(response.getBody());
+            boolean apiSuccess = isWablasSuccess(responseJson);
+            if (!apiSuccess) {
+                String errorMsg = responseJson.has("message") ? responseJson.get("message").asText() : "Unknown error";
+                result.put("error", errorMsg);
+                return result;
+            }
+
+            // Similar shape: { status:true, message:[{...status...}] }
+            if (responseJson.has("message") && responseJson.get("message").isArray()) {
+                JsonNode messages = responseJson.get("message");
+                if (messages.size() > 0) {
+                    JsonNode msg = messages.get(0);
+
+                    if (msg.has("status")) {
+                        result.put("status", msg.get("status").asText());
+                    }
+                    if (msg.has("category")) {
+                        result.put("category", msg.get("category").asText());
+                    }
+                    if (msg.has("message")) {
+                        result.put("text", msg.get("message").asText());
+                    }
+                    if (msg.has("phone") && msg.get("phone").has("to")) {
+                        result.put("phoneTo", msg.get("phone").get("to").asText());
+                    }
+                    if (msg.has("phone") && msg.get("phone").has("from")) {
+                        result.put("phoneFrom", msg.get("phone").get("from").asText());
+                    }
+                    if (msg.has("date")) {
+                        if (msg.get("date").has("created_at")) {
+                            String createdAtRaw = msg.get("date").get("created_at").asText();
+                            LocalDateTime createdAt = parseWablasDateTime(createdAtRaw);
+                            result.put("createdAt", createdAt != null ? createdAt : createdAtRaw);
+                        }
+                        if (msg.get("date").has("updated_at")) {
+                            String updatedAtRaw = msg.get("date").get("updated_at").asText();
+                            LocalDateTime updatedAt = parseWablasDateTime(updatedAtRaw);
+                            result.put("updatedAt", updatedAt != null ? updatedAt : updatedAtRaw);
+                        }
+                    }
+
+                    if (result.get("status") != null) {
+                        result.put("success", true);
+                    } else {
+                        result.put("error", "Missing status in report-realtime response");
+                    }
+                } else {
+                    result.put("error", "Message not found in report-realtime response");
+                }
+            } else {
+                result.put("error", "Invalid report-realtime response shape");
+            }
+        } catch (Exception e) {
+            result.put("error", e.getMessage());
+        }
+
         return result;
     }
     

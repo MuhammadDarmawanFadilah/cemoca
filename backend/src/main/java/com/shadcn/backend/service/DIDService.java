@@ -45,6 +45,9 @@ public class DIDService {
 
     @Value("${app.did.clips.webhook:}")
     private String clipsWebhookUrl;
+
+    @Value("${app.did.scenes.webhook:}")
+    private String scenesWebhookUrl;
     
     // Cache for presenter list with expiry
     private List<DIDPresenter> cachedPresenterList = null;
@@ -1087,6 +1090,10 @@ public class DIDService {
                 
                 Map<String, Object> requestBody = new HashMap<>();
                 requestBody.put("avatar_id", avatarId);
+
+                if (scenesWebhookUrl != null && !scenesWebhookUrl.isBlank()) {
+                    requestBody.put("webhook", scenesWebhookUrl.trim());
+                }
                 
                 Map<String, Object> scriptObj = new HashMap<>();
                 boolean usingAudio = audioUrl != null && !audioUrl.isBlank();
@@ -1095,25 +1102,35 @@ public class DIDService {
                     scriptObj.put("audio_url", audioUrl);
                 } else {
                     scriptObj.put("type", "text");
-                    scriptObj.put("input", script);
+                    boolean containsBreak = script != null && script.contains("<break");
+                    String providerTypeForSsml = null;
+                    if (voiceId != null && !voiceId.isEmpty()) {
+                        providerTypeForSsml = resolveVoiceProviderType(voiceId, voiceType);
+                    }
+                    boolean canUseSsml = containsBreak && providerTypeForSsml != null
+                            && providerTypeForSsml.trim().equalsIgnoreCase("microsoft");
+                    String scriptInput = script;
+                    if (containsBreak && !canUseSsml) {
+                        scriptInput = convertSsmlBreakTagsToPunctuation(script);
+                    }
+                    scriptObj.put("input", scriptInput);
+                    if (canUseSsml) {
+                        scriptObj.put("ssml", true);
+                    }
                 }
                 
                 // Use cloned voice if available (text-only). Audio script already contains voice.
                 if (!usingAudio) {
-                    if (shouldEnableMicrosoftSsml(script, null)) {
-                        // Default provider is Microsoft; if we later resolve a non-Microsoft provider, we'll remove this.
-                        scriptObj.put("ssml", true);
-                    }
                     if (voiceId != null && !voiceId.isEmpty()) {
                         String providerType = resolveVoiceProviderType(voiceId, voiceType);
-                        if (!shouldSkipProvider(providerType, voiceId)) {
+                        boolean isCustomVoice = voiceType != null
+                                && !voiceType.isBlank()
+                                && voiceType.trim().toLowerCase(Locale.ROOT).startsWith(CUSTOM_VOICE_PREFIX);
+                        if (isCustomVoice || !shouldSkipProvider(providerType, voiceId)) {
                             Map<String, Object> provider = new HashMap<>();
                             provider.put("type", providerType);
                             provider.put("voice_id", voiceId);
                             scriptObj.put("provider", provider);
-                            if (!shouldEnableMicrosoftSsml(script, provider)) {
-                                scriptObj.remove("ssml");
-                            }
                             logger.debug("Creating scene with voice_id: {} for avatar: {}", voiceId, avatarId);
                         }
                     } else {
@@ -1155,22 +1172,62 @@ public class DIDService {
                         logger.warn("Scenes audio rejected (status={}). Retrying with text script.", wce.getStatusCode().value());
                         Map<String, Object> textScript = new HashMap<>();
                         textScript.put("type", "text");
-                        textScript.put("input", script);
+                        boolean containsBreak = script != null && script.contains("<break");
+                        String providerTypeForSsml = null;
+                        if (voiceId != null && !voiceId.isEmpty()) {
+                            providerTypeForSsml = resolveVoiceProviderType(voiceId, voiceType);
+                        }
+                        boolean canUseSsml = containsBreak && providerTypeForSsml != null
+                                && providerTypeForSsml.trim().equalsIgnoreCase("microsoft");
+                        String scriptInput = script;
+                        if (containsBreak && !canUseSsml) {
+                            scriptInput = convertSsmlBreakTagsToPunctuation(script);
+                        }
+                        textScript.put("input", scriptInput);
+                        if (canUseSsml) {
+                            textScript.put("ssml", true);
+                        }
                         if (voiceId != null && !voiceId.isEmpty()) {
                             String providerType = resolveVoiceProviderType(voiceId, voiceType);
-                            if (!shouldSkipProvider(providerType, voiceId)) {
+                            boolean isCustomVoice = voiceType != null
+                                    && !voiceType.isBlank()
+                                    && voiceType.trim().toLowerCase(Locale.ROOT).startsWith(CUSTOM_VOICE_PREFIX);
+                            if (isCustomVoice || !shouldSkipProvider(providerType, voiceId)) {
                                 Map<String, Object> provider = new HashMap<>();
                                 provider.put("type", providerType);
                                 provider.put("voice_id", voiceId);
                                 textScript.put("provider", provider);
-                                if (shouldEnableMicrosoftSsml(script, provider)) {
-                                    textScript.put("ssml", true);
-                                }
                             }
-                        } else if (shouldEnableMicrosoftSsml(script, null)) {
-                            textScript.put("ssml", true);
                         }
                         requestBody.put("script", textScript);
+                        response = webClient.post()
+                                .uri("/scenes")
+                                .header(HttpHeaders.AUTHORIZATION, getAuthHeader())
+                                .bodyValue(requestBody)
+                                .retrieve()
+                                .bodyToMono(String.class)
+                                .timeout(READ_TIMEOUT)
+                                .block();
+                    } else if (!usingAudio && script != null && script.contains("<break") && wce.getStatusCode().is4xxClientError()) {
+                        logger.warn("Scenes SSML rejected (status={}). Retrying without SSML breaks.", wce.getStatusCode().value());
+                        Map<String, Object> fallbackTextScript = new HashMap<>();
+                        fallbackTextScript.put("type", "text");
+                        fallbackTextScript.put("input", convertSsmlBreakTagsToPunctuation(script));
+
+                        if (voiceId != null && !voiceId.isEmpty()) {
+                            String providerType = resolveVoiceProviderType(voiceId, voiceType);
+                            boolean isCustomVoice = voiceType != null
+                                    && !voiceType.isBlank()
+                                    && voiceType.trim().toLowerCase(Locale.ROOT).startsWith(CUSTOM_VOICE_PREFIX);
+                            if (isCustomVoice || !shouldSkipProvider(providerType, voiceId)) {
+                                Map<String, Object> provider = new HashMap<>();
+                                provider.put("type", providerType);
+                                provider.put("voice_id", voiceId);
+                                fallbackTextScript.put("provider", provider);
+                            }
+                        }
+
+                        requestBody.put("script", fallbackTextScript);
                         response = webClient.post()
                                 .uri("/scenes")
                                 .header(HttpHeaders.AUTHORIZATION, getAuthHeader())
@@ -1257,23 +1314,30 @@ public class DIDService {
                 
                 Map<String, Object> scriptObj = new HashMap<>();
                 boolean usingAudio = audioUrl != null && !audioUrl.isBlank();
+                Map<String, Object> provider = usingAudio ? null : resolveClipsVoiceProvider(presenterId);
                 if (usingAudio) {
                     scriptObj.put("type", "audio");
                     scriptObj.put("audio_url", audioUrl);
                 } else {
                     scriptObj.put("type", "text");
-                    scriptObj.put("input", script);
+                    boolean containsBreak = script != null && script.contains("<break");
+                    String providerTypeForSsml = provider == null ? null : String.valueOf(provider.get("type"));
+                    boolean canUseSsml = containsBreak && providerTypeForSsml != null
+                            && providerTypeForSsml.trim().equalsIgnoreCase("microsoft");
+                    String scriptInput = script;
+                    if (containsBreak && !canUseSsml) {
+                        scriptInput = convertSsmlBreakTagsToPunctuation(script);
+                    }
+                    scriptObj.put("input", scriptInput);
+                    if (canUseSsml) {
+                        scriptObj.put("ssml", true);
+                    }
                 }
 
                 if (backgroundUrl != null && !backgroundUrl.isBlank()) {
                     Map<String, Object> background = new HashMap<>();
                     background.put("source_url", backgroundUrl);
                     requestBody.put("background", background);
-                }
-
-                Map<String, Object> provider = usingAudio ? null : resolveClipsVoiceProvider(presenterId);
-                if (!usingAudio && shouldEnableMicrosoftSsml(script, provider)) {
-                    scriptObj.put("ssml", true);
                 }
 
                 Map<String, Object> requestBodyWithProvider = new HashMap<>(requestBody);
@@ -1306,26 +1370,54 @@ public class DIDService {
                         logger.warn("Clips audio rejected (status={}). Retrying with text script.", wce.getStatusCode().value());
                         Map<String, Object> textScriptObj = new HashMap<>();
                         textScriptObj.put("type", "text");
-                        textScriptObj.put("input", script);
+                        Map<String, Object> fallbackProvider = resolveClipsVoiceProvider(presenterId);
+                        boolean containsBreak = script != null && script.contains("<break");
+                        String providerTypeForSsml = fallbackProvider == null ? null : String.valueOf(fallbackProvider.get("type"));
+                        boolean canUseSsml = containsBreak && providerTypeForSsml != null
+                                && providerTypeForSsml.trim().equalsIgnoreCase("microsoft");
+                        String scriptInput = script;
+                        if (containsBreak && !canUseSsml) {
+                            scriptInput = convertSsmlBreakTagsToPunctuation(script);
+                        }
+                        textScriptObj.put("input", scriptInput);
+                        if (canUseSsml) {
+                            textScriptObj.put("ssml", true);
+                        }
 
                         Map<String, Object> textBody = new HashMap<>(requestBody);
                         Map<String, Object> textBodyNoProvider = new HashMap<>(requestBody);
 
-                        Map<String, Object> fallbackProvider = resolveClipsVoiceProvider(presenterId);
                         Map<String, Object> textScriptWithProvider = new HashMap<>(textScriptObj);
                         if (fallbackProvider != null) {
                             textScriptWithProvider.put("provider", fallbackProvider);
-                        }
-
-                        if (shouldEnableMicrosoftSsml(script, fallbackProvider)) {
-                            textScriptObj.put("ssml", true);
-                            textScriptWithProvider.put("ssml", true);
                         }
 
                         textBody.put("script", textScriptWithProvider);
                         textBodyNoProvider.put("script", textScriptObj);
 
                         response = fallbackProvider != null ? postClip(textBody) : postClip(textBodyNoProvider);
+                    } else
+                    if (!usingAudio && script != null && script.contains("<break") && wce.getStatusCode().is4xxClientError()) {
+                        logger.warn("Clips SSML rejected (status={}). Retrying without SSML breaks.", wce.getStatusCode().value());
+
+                        Map<String, Object> fallbackTextScript = new HashMap<>(scriptObj);
+                        fallbackTextScript.put("type", "text");
+                        fallbackTextScript.put("input", convertSsmlBreakTagsToPunctuation(script));
+                        fallbackTextScript.remove("ssml");
+
+                        Map<String, Object> bodyWithProvider = new HashMap<>(requestBody);
+                        Map<String, Object> bodyWithoutProvider = new HashMap<>(requestBody);
+
+                        Map<String, Object> s1 = new HashMap<>(fallbackTextScript);
+                        Map<String, Object> s2 = new HashMap<>(fallbackTextScript);
+                        if (provider != null) {
+                            s1.put("provider", provider);
+                        }
+
+                        bodyWithProvider.put("script", s1);
+                        bodyWithoutProvider.put("script", s2);
+
+                        response = provider != null ? postClip(bodyWithProvider) : postClip(bodyWithoutProvider);
                     } else
                     if (provider != null && wce.getStatusCode().is5xxServerError()) {
                         logger.warn(
@@ -1387,31 +1479,6 @@ public class DIDService {
         }
         
         return result;
-    }
-
-    private boolean shouldEnableMicrosoftSsml(String input, Map<String, Object> provider) {
-        if (!containsSsmlMarkup(input)) {
-            return false;
-        }
-
-        if (provider == null) {
-            return true;
-        }
-
-        Object type = provider.get("type");
-        if (type == null) {
-            return true;
-        }
-
-        return "microsoft".equalsIgnoreCase(type.toString().trim());
-    }
-
-    private boolean containsSsmlMarkup(String input) {
-        if (input == null || input.isBlank()) {
-            return false;
-        }
-        String s = input.toLowerCase(Locale.ROOT);
-        return s.contains("<break") || s.contains("<speak") || s.contains("</") || s.contains("<phoneme") || s.contains("<say-as");
     }
 
     public Optional<String> uploadAudio(byte[] bytes, String filename) {
@@ -1527,8 +1594,12 @@ public class DIDService {
                 && !dbAvatar.get().getVoiceId().isBlank()) {
             Map<String, Object> provider = new HashMap<>();
             String voiceId = dbAvatar.get().getVoiceId().trim();
-            String type = resolveVoiceProviderType(voiceId, dbAvatar.get().getVoiceType());
-            if (shouldSkipProvider(type, voiceId)) {
+            String voiceTypeRaw = dbAvatar.get().getVoiceType();
+            boolean isCustomVoice = voiceTypeRaw != null
+                    && !voiceTypeRaw.isBlank()
+                    && voiceTypeRaw.trim().toLowerCase(Locale.ROOT).startsWith(CUSTOM_VOICE_PREFIX);
+            String type = resolveVoiceProviderType(voiceId, voiceTypeRaw);
+            if (!isCustomVoice && shouldSkipProvider(type, voiceId)) {
                 return null;
             }
             provider.put("type", type);
@@ -1612,6 +1683,82 @@ public class DIDService {
         }
 
         return false;
+    }
+
+    private String stripSsmlBreakTags(String input) {
+        if (input == null || input.isBlank()) {
+            return input;
+        }
+        try {
+            return input.replaceAll("(?is)<\\s*break\\b[^>]*/\\s*>", " ").replaceAll("\\s+", " ").trim();
+        } catch (Exception ignore) {
+            return input;
+        }
+    }
+
+    private String convertSsmlBreakTagsToPunctuation(String input) {
+        if (input == null || input.isBlank()) {
+            return input;
+        }
+
+        try {
+            java.util.regex.Pattern p = java.util.regex.Pattern.compile("(?is)<\\s*break\\b([^>]*)/\\s*>");
+            java.util.regex.Matcher m = p.matcher(input);
+            StringBuffer sb = new StringBuffer();
+            while (m.find()) {
+                String attrs = m.group(1);
+                long ms = parseSsmlBreakTimeMs(attrs);
+                String repl;
+                if (ms >= 800) {
+                    repl = ". ";
+                } else if (ms >= 350) {
+                    repl = ", ";
+                } else {
+                    repl = " ";
+                }
+                m.appendReplacement(sb, java.util.regex.Matcher.quoteReplacement(repl));
+            }
+            m.appendTail(sb);
+            return sb.toString().replaceAll("\\s+", " ").trim();
+        } catch (Exception ignore) {
+            return stripSsmlBreakTags(input);
+        }
+    }
+
+    private long parseSsmlBreakTimeMs(String attrs) {
+        if (attrs == null || attrs.isBlank()) {
+            return 250;
+        }
+
+        try {
+            java.util.regex.Pattern p = java.util.regex.Pattern.compile("(?is)\\btime\\s*=\\s*['\"]([^'\"]+)['\"]");
+            java.util.regex.Matcher m = p.matcher(attrs);
+            if (!m.find()) {
+                return 250;
+            }
+
+            String raw = m.group(1);
+            if (raw == null) {
+                return 250;
+            }
+            String v = raw.trim().toLowerCase(Locale.ROOT);
+            if (v.isEmpty()) {
+                return 250;
+            }
+
+            if (v.endsWith("ms")) {
+                String n = v.substring(0, v.length() - 2).trim();
+                return (long) Math.max(0, Double.parseDouble(n));
+            }
+            if (v.endsWith("s")) {
+                String n = v.substring(0, v.length() - 1).trim();
+                return (long) Math.max(0, Double.parseDouble(n) * 1000d);
+            }
+
+            return (long) Math.max(0, Double.parseDouble(v));
+        } catch (Exception ignore) {
+            return 250;
+        }
     }
 
     private boolean isMicrosoftVoiceId(String voiceId) {
@@ -1833,9 +1980,17 @@ public class DIDService {
             return presenter;
         }
 
-        DIDPresenter fetched = fetchClipsPresenterById(presenterId);
-        if (fetched == null) {
+        DIDPresenter fetched;
+        if (presenterId.startsWith("avt_")) {
             fetched = fetchExpressAvatarById(presenterId);
+            if (fetched == null) {
+                fetched = fetchClipsPresenterById(presenterId);
+            }
+        } else {
+            fetched = fetchClipsPresenterById(presenterId);
+            if (fetched == null) {
+                fetched = fetchExpressAvatarById(presenterId);
+            }
         }
 
         if (fetched != null) {
@@ -1912,35 +2067,42 @@ public class DIDService {
     private DIDPresenter fetchExpressAvatarById(String avatarId) {
         try {
             String response = webClient.get()
-                    .uri("/scenes/avatars")
+                    .uri("/scenes/avatars/{id}", avatarId)
                     .header(HttpHeaders.AUTHORIZATION, getAuthHeader())
                     .retrieve()
                     .bodyToMono(String.class)
+                    .timeout(READ_TIMEOUT)
                     .block();
 
-            if (response == null) {
+            if (response == null || response.isBlank()) {
                 return null;
             }
 
             JsonNode root = objectMapper.readTree(response);
-            JsonNode avatarsNode = root.has("avatars") ? root.get("avatars") : root;
-            if (avatarsNode != null && avatarsNode.isArray()) {
-                for (JsonNode node : avatarsNode) {
-                    String id = node.has("id") ? node.get("id").asText() : "";
-                    if (avatarId.equalsIgnoreCase(id)) {
-                        DIDPresenter presenter = new DIDPresenter();
-                        presenter.setPresenter_id(id);
-                        presenter.setPresenter_name(node.has("name") ? node.get("name").asText() : "Express Avatar");
-                        presenter.setGender("");
-                        presenter.setThumbnail_url(node.has("thumbnail_url") ? node.get("thumbnail_url").asText() : "");
-                        presenter.setPreview_url(node.has("talking_preview_url") ? node.get("talking_preview_url").asText() : "");
-                        presenter.set_premium(false);
-                        presenter.setAvatar_type("express");
-                        presenter.setVoice_id(node.has("voice_id") ? node.get("voice_id").asText() : "");
-                        return presenter;
-                    }
-                }
+            String id = root.has("id") ? root.get("id").asText() : "";
+            if (id.isBlank()) {
+                return null;
             }
+
+            DIDPresenter presenter = new DIDPresenter();
+            presenter.setPresenter_id(id);
+            presenter.setPresenter_name(root.has("name") ? root.get("name").asText() : "Express Avatar");
+            presenter.setGender("");
+            presenter.setThumbnail_url(root.has("thumbnail_url") ? root.get("thumbnail_url").asText() : "");
+            presenter.setPreview_url(root.has("talking_preview_url") ? root.get("talking_preview_url").asText() : "");
+            presenter.set_premium(false);
+            presenter.setAvatar_type("express");
+            presenter.setVoice_id(root.has("voice_id") ? root.get("voice_id").asText() : "");
+            return presenter;
+        } catch (WebClientResponseException wce) {
+            if (wce.getStatusCode().value() == 404) {
+                return null;
+            }
+            logger.warn(
+                    "Error fetching Express Avatar by id (status={}): {}",
+                    wce.getStatusCode().value(),
+                    truncate(wce.getResponseBodyAsString(), 800)
+            );
         } catch (Exception e) {
             logger.error("Error fetching Express Avatar by id: {}", e.getMessage());
         }
