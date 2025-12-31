@@ -63,6 +63,9 @@ public class DIDService {
     @Value("${did.fallback.presenter.id:}")
     private String fallbackPresenterId;
 
+    @Value("${did.tts.amazon.voice-overrides:}")
+    private String amazonVoiceOverrides;
+
     private static final String CUSTOM_VOICE_PREFIX = "custom:";
 
     public DIDService(ObjectMapper objectMapper, DIDAvatarRepository avatarRepository) {
@@ -391,19 +394,11 @@ public class DIDService {
                     avatar.setAvatarType(presenter.getAvatar_type());
                     avatar.setThumbnailUrl(presenter.getThumbnail_url());
                     avatar.setPreviewUrl(presenter.getPreview_url());
-                    String existingVoiceId = avatar.getVoiceId();
-                    String existingVoiceType = avatar.getVoiceType();
-                    boolean keepVoiceOverride = existingVoiceId != null
-                            && !existingVoiceId.trim().isBlank()
-                            && existingVoiceType != null
-                            && !existingVoiceType.trim().isBlank()
-                            && (
-                                existingVoiceType.trim().toLowerCase(Locale.ROOT).startsWith(CUSTOM_VOICE_PREFIX)
-                                || "amazon".equalsIgnoreCase(existingVoiceType.trim())
-                                || "polly".equalsIgnoreCase(existingVoiceType.trim())
-                            );
-
-                    if (!keepVoiceOverride) {
+                        boolean keepCustomVoice = avatar.getVoiceType() != null
+                            && avatar.getVoiceType().trim().toLowerCase(Locale.ROOT).startsWith(CUSTOM_VOICE_PREFIX)
+                            && avatar.getVoiceId() != null
+                            && !avatar.getVoiceId().trim().isBlank();
+                    if (!keepCustomVoice) {
                         String incomingVoiceId = presenter.getVoice_id();
                         if (incomingVoiceId != null && !incomingVoiceId.isBlank()) {
                             avatar.setVoiceId(incomingVoiceId);
@@ -987,50 +982,100 @@ public class DIDService {
                 String rawType = a.getVoiceType();
                 String rawId = a.getVoiceId();
 
-                if (rawId == null || rawId.trim().isBlank()) {
-                    return null;
-                }
-
-                String type = rawType == null ? "" : rawType.trim();
-                String id = rawId.trim();
-
                 if (rawType != null
                         && rawType.trim().toLowerCase(Locale.ROOT).startsWith(CUSTOM_VOICE_PREFIX)
-                ) {
-                    String providerType = type.substring(CUSTOM_VOICE_PREFIX.length()).trim();
+                        && rawId != null
+                        && !rawId.trim().isBlank()) {
+                    String providerType = rawType.trim().substring(CUSTOM_VOICE_PREFIX.length()).trim();
                     if (providerType.isBlank()) {
                         return null;
                     }
                     Map<String, Object> provider = new HashMap<>();
                     provider.put("type", providerType);
-                    provider.put("voice_id", id);
+                    provider.put("voice_id", rawId.trim());
                     return provider;
                 }
 
-                if (type.isBlank()) {
-                    return null;
-                }
-
-                String normalized = normalizeVoiceType(type);
-                if (normalized == null || normalized.isBlank()) {
-                    return null;
-                }
-
-                // D-ID expects Amazon Polly as provider type "amazon".
-                if ("polly".equalsIgnoreCase(normalized)) {
-                    normalized = "amazon";
-                }
-
-                if ("amazon".equalsIgnoreCase(normalized)) {
+                String overrideVoiceId = resolveAmazonVoiceOverride(pid, a.getPresenterName());
+                if (overrideVoiceId != null && !overrideVoiceId.isBlank()) {
                     Map<String, Object> provider = new HashMap<>();
                     provider.put("type", "amazon");
-                    provider.put("voice_id", id);
+                    provider.put("voice_id", overrideVoiceId.trim());
+                    return provider;
+                }
+
+                if (isAmazonVoiceType(rawType) && isLikelyAmazonPollyVoiceId(rawId)) {
+                    Map<String, Object> provider = new HashMap<>();
+                    provider.put("type", "amazon");
+                    provider.put("voice_id", rawId.trim());
                     return provider;
                 }
             }
         } catch (Exception ignore) {
             // ignore
         }
+        return null;
+    }
+
+    private boolean isLikelyAmazonPollyVoiceId(String voiceId) {
+        if (voiceId == null) {
+            return false;
+        }
+        String v = voiceId.trim();
+        if (v.isEmpty()) {
+            return false;
+        }
+        if (v.length() > 64) {
+            return false;
+        }
+        return v.matches("[A-Za-z]{2,64}");
+    }
+
+    private boolean isAmazonVoiceType(String rawType) {
+        if (rawType == null || rawType.isBlank()) {
+            return false;
+        }
+        String t = rawType.trim().toLowerCase(Locale.ROOT);
+        if (t.startsWith(CUSTOM_VOICE_PREFIX)) {
+            t = t.substring(CUSTOM_VOICE_PREFIX.length()).trim();
+        }
+        return t.equals("amazon") || t.equals("amazon_polly") || t.equals("polly") || t.startsWith("amazon");
+    }
+
+    private String resolveAmazonVoiceOverride(String presenterId, String presenterName) {
+        String raw = amazonVoiceOverrides == null ? "" : amazonVoiceOverrides.trim();
+        if (raw.isBlank()) {
+            return null;
+        }
+
+        String pid = presenterId == null ? "" : presenterId.trim();
+        String pname = presenterName == null ? "" : presenterName.trim();
+        String[] parts = raw.split("[\\n\\r,;]+");
+        for (String part : parts) {
+            if (part == null) {
+                continue;
+            }
+            String p = part.trim();
+            if (p.isEmpty()) {
+                continue;
+            }
+            int eq = p.indexOf('=');
+            if (eq <= 0 || eq >= p.length() - 1) {
+                continue;
+            }
+            String k = p.substring(0, eq).trim();
+            String v = p.substring(eq + 1).trim();
+            if (k.isEmpty() || v.isEmpty()) {
+                continue;
+            }
+            if (!pid.isEmpty() && k.equals(pid)) {
+                return v;
+            }
+            if (!pname.isEmpty() && k.equalsIgnoreCase(pname)) {
+                return v;
+            }
+        }
+
         return null;
     }
 
@@ -1523,20 +1568,7 @@ public class DIDService {
 
                         response = provider != null ? postClip(bodyWithProvider) : postClip(bodyWithoutProvider);
                     } else
-                    if (provider != null && wce.getStatusCode().is5xxServerError()) {
-                        String providerType = String.valueOf(provider.get("type"));
-                        if ("amazon".equalsIgnoreCase(providerType)) {
-                            throw wce;
-                        }
-
-                        logger.warn(
-                                "D-ID clip creation 5xx with provider for presenter {}. Retrying without provider.",
-                                presenterId
-                        );
-                        response = postClip(requestBodyWithoutProvider);
-                    } else {
-                        throw wce;
-                    }
+                    throw wce;
                 }
 
                 if (response != null) {
