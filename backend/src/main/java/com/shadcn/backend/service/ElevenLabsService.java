@@ -97,6 +97,34 @@ public class ElevenLabsService {
         return synthesize(voiceId.get(), text);
     }
 
+    public Optional<String> ensureVoiceIdForAvatar(String presenterId, String avatarValue) {
+        if (presenterId == null || presenterId.isBlank()) {
+            return Optional.empty();
+        }
+        if (apiKey == null || apiKey.isBlank()) {
+            return Optional.empty();
+        }
+
+        Optional<Resource> sample = findVoiceSample(avatarValue, presenterId);
+        if (sample.isEmpty()) {
+            return Optional.empty();
+        }
+
+        String sampleKey = sampleKeyFromResource(sample.get());
+        if (sampleKey == null || sampleKey.isBlank()) {
+            return Optional.empty();
+        }
+
+        return ensureVoiceIdForPresenter(presenterId, sampleKey, sample.get());
+    }
+
+    public Optional<String> getApiKey() {
+        if (apiKey == null || apiKey.isBlank()) {
+            return Optional.empty();
+        }
+        return Optional.of(apiKey.trim());
+    }
+
     private Optional<Resource> findVoiceSample(String avatarValue, String presenterId) {
         String cacheKey = normalizeKey(avatarValue) + "|" + normalizeKey(presenterId);
         String cachedPath = samplePathCache.get(cacheKey);
