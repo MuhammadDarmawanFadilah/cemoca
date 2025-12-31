@@ -383,8 +383,11 @@ public class DIDService {
                             && avatar.getVoiceId() != null
                             && !avatar.getVoiceId().trim().isBlank();
                     if (!keepCustomVoice) {
-                        avatar.setVoiceId(presenter.getVoice_id());
-                        avatar.setVoiceType(presenter.getVoice_type());
+                        String incomingVoiceId = presenter.getVoice_id();
+                        if (incomingVoiceId != null && !incomingVoiceId.isBlank()) {
+                            avatar.setVoiceId(incomingVoiceId);
+                            avatar.setVoiceType(presenter.getVoice_type());
+                        }
                     }
                     avatar.setGender(presenter.getGender());
                     avatar.setIsPremium(presenter.is_premium());
@@ -848,6 +851,9 @@ public class DIDService {
 
         String trimmedAvatarId = avatarId.trim();
 
+        // Best-effort: prefer deterministic local-sample cloned voices when available (e.g. audio/linda.*)
+        ensureLocalSampleVoiceIfAvailable(trimmedAvatarId);
+
         // If explicitly targeting an Express Avatar, never fall back to another avatar.
         if (trimmedAvatarId.startsWith("avt_")) {
             return createScene(trimmedAvatarId, script, backgroundUrl, audioUrl);
@@ -900,6 +906,46 @@ public class DIDService {
         }
 
         return clips;
+    }
+
+    private void ensureLocalSampleVoiceIfAvailable(String presenterId) {
+        if (presenterId == null || presenterId.isBlank()) {
+            return;
+        }
+
+        String pid = presenterId.trim();
+
+        try {
+            String name = null;
+
+            Optional<DIDAvatar> db = avatarRepository.findByPresenterId(pid);
+            if (db.isPresent()) {
+                name = db.get().getPresenterName();
+            }
+
+            if (name == null || name.isBlank()) {
+                DIDPresenter cached = presenterCache.get(pid);
+                if (cached != null) {
+                    name = cached.getPresenter_name();
+                }
+            }
+
+            if (name == null || name.isBlank()) {
+                DIDPresenter fetched = pid.startsWith("avt_") ? fetchExpressAvatarById(pid) : fetchClipsPresenterById(pid);
+                if (fetched != null) {
+                    name = fetched.getPresenter_name();
+                    presenterCache.put(pid, fetched);
+                }
+            }
+
+            if (name == null || name.isBlank()) {
+                return;
+            }
+
+            ensureClonedVoiceIdFromLocalSample(pid, name.trim());
+        } catch (Exception ignored) {
+            // best-effort only
+        }
     }
 
     public Optional<DIDAvatar> getExpressAvatarByName(String name) {
