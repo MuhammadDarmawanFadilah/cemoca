@@ -36,9 +36,6 @@ public class DIDAvatar {
 
     @Column(name = "voice_type")
     private String voiceType;
-
-    @Column(name = "elevenlabs_voice_id")
-    private String elevenlabsVoiceId;
     
     @Column(name = "gender")
     private String gender;

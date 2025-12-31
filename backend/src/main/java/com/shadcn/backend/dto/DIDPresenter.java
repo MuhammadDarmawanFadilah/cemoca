@@ -16,5 +16,5 @@ public class DIDPresenter {
     private boolean is_premium;
     private String avatar_type; // "express" for Express Avatars, "clips" for Clips Presenters
     private String voice_id; // For Express Avatars with cloned voice
-    private String voice_type; // For Clips Presenters voice provider type (e.g. elevenlabs)
+    private String voice_type; // For Clips Presenters voice provider type (e.g. amazon)
 }

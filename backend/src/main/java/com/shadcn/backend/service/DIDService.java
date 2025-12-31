@@ -41,7 +41,6 @@ public class DIDService {
     private final WebClient webClient;
     private final ObjectMapper objectMapper;
     private final DIDAvatarRepository avatarRepository;
-    private final ElevenLabsService elevenLabsService;
     private final Map<String, DIDPresenter> presenterCache = new ConcurrentHashMap<>();
 
     @Value("${app.did.clips.webhook:}")
@@ -64,15 +63,11 @@ public class DIDService {
     @Value("${did.fallback.presenter.id:}")
     private String fallbackPresenterId;
 
-    @Value("${did.tts.elevenlabs.default-voice-id:21m00Tcm4TlvDq8ikWAM}")
-    private String defaultElevenLabsVoiceId;
-
     private static final String CUSTOM_VOICE_PREFIX = "custom:";
 
-    public DIDService(ObjectMapper objectMapper, DIDAvatarRepository avatarRepository, ElevenLabsService elevenLabsService) {
+    public DIDService(ObjectMapper objectMapper, DIDAvatarRepository avatarRepository) {
         this.objectMapper = objectMapper;
         this.avatarRepository = avatarRepository;
-        this.elevenLabsService = elevenLabsService;
         this.webClient = WebClient.builder()
                 .baseUrl("https://api.d-id.com")
                 .defaultHeader(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
@@ -80,53 +75,11 @@ public class DIDService {
                 .build();
     }
 
-    private boolean isElevenLabsProvider(String providerType) {
-        return providerType != null && providerType.trim().equalsIgnoreCase("elevenlabs");
-    }
-
-    private boolean needsExternalElevenLabsHeaderFromRequestBody(Map<String, Object> requestBody) {
-        if (requestBody == null) {
-            return false;
-        }
-        if (elevenLabsService == null || elevenLabsService.getApiKey().isEmpty()) {
-            return false;
-        }
-
-        try {
-            Object scriptObj = requestBody.get("script");
-            if (!(scriptObj instanceof Map<?, ?> script)) {
-                return false;
-            }
-            Object providerObj = script.get("provider");
-            if (!(providerObj instanceof Map<?, ?> provider)) {
-                return false;
-            }
-            Object typeObj = provider.get("type");
-            return typeObj != null && isElevenLabsProvider(String.valueOf(typeObj));
-        } catch (Exception ignore) {
-            return false;
-        }
-    }
-
-    private String externalElevenLabsHeaderValue() {
-        String key = elevenLabsService == null ? null : elevenLabsService.getApiKey().orElse(null);
-        if (key == null || key.isBlank()) {
-            return null;
-        }
-        return "{\"elevenlabs\":\"" + key.trim() + "\"}";
-    }
-
     private String postScene(Map<String, Object> requestBody) {
         return webClient.post()
                 .uri("/scenes")
                 .headers(h -> {
                     h.set(HttpHeaders.AUTHORIZATION, getAuthHeader());
-                    if (needsExternalElevenLabsHeaderFromRequestBody(requestBody)) {
-                        String v = externalElevenLabsHeaderValue();
-                        if (v != null && !v.isBlank()) {
-                            h.set("x-api-key-external", v);
-                        }
-                    }
                 })
                 .bodyValue(requestBody)
                 .retrieve()
@@ -503,20 +456,7 @@ public class DIDService {
             return Optional.of(avatar.getVoiceId().trim());
         }
 
-        // If legacy ElevenLabs voice is still stored, clear it so we don't send invalid provider/voice_id.
-        try {
-            String legacyType = avatar.getVoiceType() == null ? "" : avatar.getVoiceType().trim().toLowerCase(Locale.ROOT);
-            String legacyVoiceId = avatar.getVoiceId() == null ? "" : avatar.getVoiceId().trim();
-            if (legacyType.contains("eleven") || isLikelyLegacyElevenLabsVoiceId(legacyVoiceId)) {
-                avatar.setVoiceId(null);
-                avatar.setVoiceType(null);
-                avatarRepository.save(avatar);
-            }
-        } catch (Exception ignored) {
-            // ignore
-        }
-
-        Optional<ByteArrayResource> sample = loadAvatarSampleFromClasspath(avatarName.trim());
+        Optional<ByteArrayResource> sample = loadAvatarSampleFromClasspath(pid, avatarName.trim());
         if (sample.isEmpty()) {
             return Optional.empty();
         }
@@ -535,19 +475,31 @@ public class DIDService {
         return voiceId;
     }
 
-    private Optional<ByteArrayResource> loadAvatarSampleFromClasspath(String avatarName) {
-        String n1 = avatarName;
-        String n2 = avatarName.toLowerCase(Locale.ROOT);
-        String n3 = avatarName.trim().replaceAll("\\s+", "").toLowerCase(Locale.ROOT);
+    private Optional<ByteArrayResource> loadAvatarSampleFromClasspath(String presenterId, String avatarName) {
+        List<String> keys = new ArrayList<>();
 
-        List<String> names = new ArrayList<>();
-        names.add(n1);
-        if (!n2.equals(n1)) names.add(n2);
-        if (!n3.equals(n2)) names.add(n3);
+        if (avatarName != null && !avatarName.isBlank()) {
+            String n1 = avatarName;
+            String n2 = avatarName.toLowerCase(Locale.ROOT);
+            String n3 = avatarName.trim().replaceAll("\\s+", "").toLowerCase(Locale.ROOT);
+            keys.add(n1);
+            if (!n2.equals(n1)) keys.add(n2);
+            if (!n3.equals(n2)) keys.add(n3);
+        }
+
+        if (presenterId != null && !presenterId.isBlank()) {
+            String p1 = presenterId.trim();
+            String p2 = p1.toLowerCase(Locale.ROOT);
+            keys.add(p1);
+            if (!p2.equals(p1)) keys.add(p2);
+        }
 
         List<String> candidates = new ArrayList<>();
-        for (String n : names) {
-            String base = "audio/" + n;
+        for (String key : keys) {
+            if (key == null || key.isBlank()) {
+                continue;
+            }
+            String base = "audio/" + key;
             candidates.add(base + ".mp4");
             candidates.add(base + ".m4a");
             candidates.add(base + ".mp3");
@@ -562,7 +514,9 @@ public class DIDService {
                 }
                 try (InputStream in = res.getInputStream()) {
                     byte[] bytes = in.readAllBytes();
-                    String filename = res.getFilename() == null ? (avatarName + ".mp4") : res.getFilename();
+                    String filename = res.getFilename() == null
+                            ? ((avatarName == null || avatarName.isBlank() ? "sample" : avatarName) + ".mp4")
+                            : res.getFilename();
                     ByteArrayResource bar = new ByteArrayResource(bytes) {
                         @Override
                         public String getFilename() {
@@ -911,11 +865,12 @@ public class DIDService {
 
         String trimmedAvatarId = avatarId.trim();
 
+        // Voice policy: prefer local-sample cloned voice when available; otherwise use presenter default voice.
+        // Do not use audio_url.
+        audioUrl = null;
+
         // Best-effort: prefer deterministic local-sample cloned voices when available (e.g. audio/linda.*)
         ensureLocalSampleVoiceIfAvailable(trimmedAvatarId);
-
-        // Best-effort: ensure ElevenLabs voice ids exist when local sample available (e.g. audio/linda.*)
-        ensureLocalSampleElevenLabsVoiceIfAvailable(trimmedAvatarId);
 
         // If explicitly targeting an Express Avatar, never fall back to another avatar.
         if (trimmedAvatarId.startsWith("avt_")) {
@@ -1011,82 +966,40 @@ public class DIDService {
         }
     }
 
-    private void ensureLocalSampleElevenLabsVoiceIfAvailable(String presenterId) {
+    private Map<String, Object> resolveProviderForPresenter(String presenterId) {
         if (presenterId == null || presenterId.isBlank()) {
-            return;
-        }
-
-        if (elevenLabsService == null) {
-            return;
+            return null;
         }
 
         String pid = presenterId.trim();
         try {
             Optional<DIDAvatar> db = avatarRepository.findByPresenterId(pid);
             if (db.isPresent()) {
-                DIDAvatar avatar = db.get();
-                if (avatar.getElevenlabsVoiceId() != null && !avatar.getElevenlabsVoiceId().isBlank()) {
-                    return;
-                }
-                String name = avatar.getPresenterName();
-                if (name != null && !name.isBlank()) {
-                    elevenLabsService.ensureVoiceIdForAvatar(pid, name.trim());
-                    return;
-                }
-            }
+                DIDAvatar a = db.get();
+                String rawType = a.getVoiceType();
+                String rawId = a.getVoiceId();
 
-            DIDPresenter cached = presenterCache.get(pid);
-            if (cached != null && cached.getPresenter_name() != null && !cached.getPresenter_name().isBlank()) {
-                elevenLabsService.ensureVoiceIdForAvatar(pid, cached.getPresenter_name().trim());
-            }
-        } catch (Exception ignore) {
-            // best-effort only
-        }
-    }
-
-    private String resolveElevenLabsVoiceIdForPresenter(String presenterId) {
-        if (presenterId == null || presenterId.isBlank()) {
-            return defaultElevenLabsVoiceId == null ? null : defaultElevenLabsVoiceId.trim();
-        }
-
-        String pid = presenterId.trim();
-
-        try {
-            Optional<DIDAvatar> db = avatarRepository.findByPresenterId(pid);
-            if (db.isPresent()) {
-                String existing = db.get().getElevenlabsVoiceId();
-                if (existing != null && !existing.isBlank()) {
-                    return existing.trim();
-                }
-
-                if (elevenLabsService != null) {
-                    String name = db.get().getPresenterName();
-                    if (name != null && !name.isBlank()) {
-                        Optional<String> ensured = elevenLabsService.ensureVoiceIdForAvatar(pid, name.trim());
-                        if (ensured.isPresent()) {
-                            return ensured.get().trim();
-                        }
+                if (rawType != null
+                        && rawType.trim().toLowerCase(Locale.ROOT).startsWith(CUSTOM_VOICE_PREFIX)
+                        && rawId != null
+                        && !rawId.trim().isBlank()) {
+                    String providerType = rawType.trim().substring(CUSTOM_VOICE_PREFIX.length()).trim();
+                    if (providerType.isBlank()) {
+                        return null;
                     }
-                }
-            }
-
-            if (elevenLabsService != null) {
-                DIDPresenter cached = presenterCache.get(pid);
-                if (cached != null && cached.getPresenter_name() != null && !cached.getPresenter_name().isBlank()) {
-                    Optional<String> ensured = elevenLabsService.ensureVoiceIdForAvatar(pid, cached.getPresenter_name().trim());
-                    if (ensured.isPresent()) {
-                        return ensured.get().trim();
-                    }
+                    Map<String, Object> provider = new HashMap<>();
+                    provider.put("type", providerType);
+                    provider.put("voice_id", rawId.trim());
+                    return provider;
                 }
             }
         } catch (Exception ignore) {
-            // fallback below
+            // ignore
         }
-
-        return defaultElevenLabsVoiceId == null ? null : defaultElevenLabsVoiceId.trim();
+        return null;
     }
 
-    private String normalizeSsmlBreakTagsForElevenLabs(String input) {
+    private String normalizeSsmlBreakTagsForAmazon(String input) {
         if (input == null || input.isBlank()) {
             return input;
         }
@@ -1099,8 +1012,8 @@ public class DIDService {
                 String attrs = m.group(1);
                 long ms = parseSsmlBreakTimeMs(attrs);
                 double seconds = Math.max(0d, ms / 1000d);
-                if (seconds > 3.0d) {
-                    seconds = 3.0d;
+                if (seconds > 10.0d) {
+                    seconds = 10.0d;
                 }
                 if (seconds <= 0d) {
                     seconds = 0.1d;
@@ -1317,20 +1230,17 @@ public class DIDService {
                 }
                 
                 Map<String, Object> scriptObj = new HashMap<>();
-                boolean usingAudio = audioUrl != null && !audioUrl.isBlank();
+                boolean usingAudio = false;
                 if (usingAudio) {
                     scriptObj.put("type", "audio");
                     scriptObj.put("audio_url", audioUrl);
                 } else {
                     scriptObj.put("type", "text");
                     boolean containsBreak = script != null && script.contains("<break");
-                    String providerTypeForSsml = "elevenlabs";
                     boolean canUseSsml = containsBreak;
                     String scriptInput = script;
-                    if (containsBreak && !canUseSsml) {
-                        scriptInput = convertSsmlBreakTagsToPunctuation(script);
-                    } else if (containsBreak && canUseSsml && providerTypeForSsml.trim().equalsIgnoreCase("elevenlabs")) {
-                        scriptInput = normalizeSsmlBreakTagsForElevenLabs(script);
+                    if (containsBreak && canUseSsml) {
+                        scriptInput = normalizeSsmlBreakTagsForAmazon(script);
                     }
                     scriptObj.put("input", scriptInput);
                     if (canUseSsml) {
@@ -1338,15 +1248,11 @@ public class DIDService {
                     }
                 }
                 
-                // Use cloned voice if available (text-only). Audio script already contains voice.
+                // Use cloned custom voice when available (text scripts only).
                 if (!usingAudio) {
-                    String elevenVoiceId = resolveElevenLabsVoiceIdForPresenter(avatarId);
-                    if (elevenVoiceId != null && !elevenVoiceId.isBlank()) {
-                        Map<String, Object> provider = new HashMap<>();
-                        provider.put("type", "elevenlabs");
-                        provider.put("voice_id", elevenVoiceId);
+                    Map<String, Object> provider = resolveProviderForPresenter(avatarId);
+                    if (provider != null) {
                         scriptObj.put("provider", provider);
-                        logger.debug("Creating scene with ElevenLabs voice_id: {} for avatar: {}", elevenVoiceId, avatarId);
                     }
                 }
                 
@@ -1371,23 +1277,17 @@ public class DIDService {
                         Map<String, Object> textScript = new HashMap<>();
                         textScript.put("type", "text");
                         boolean containsBreak = script != null && script.contains("<break");
-                        String providerTypeForSsml = "elevenlabs";
                         boolean canUseSsml = containsBreak;
                         String scriptInput = script;
-                        if (containsBreak && !canUseSsml) {
-                            scriptInput = convertSsmlBreakTagsToPunctuation(script);
-                        } else if (containsBreak && canUseSsml && providerTypeForSsml.trim().equalsIgnoreCase("elevenlabs")) {
-                            scriptInput = normalizeSsmlBreakTagsForElevenLabs(script);
+                        if (containsBreak && canUseSsml) {
+                            scriptInput = normalizeSsmlBreakTagsForAmazon(script);
                         }
                         textScript.put("input", scriptInput);
                         if (canUseSsml) {
                             textScript.put("ssml", true);
                         }
-                        String elevenVoiceId = resolveElevenLabsVoiceIdForPresenter(avatarId);
-                        if (elevenVoiceId != null && !elevenVoiceId.isBlank()) {
-                            Map<String, Object> provider = new HashMap<>();
-                            provider.put("type", "elevenlabs");
-                            provider.put("voice_id", elevenVoiceId);
+                        Map<String, Object> provider = resolveProviderForPresenter(avatarId);
+                        if (provider != null) {
                             textScript.put("provider", provider);
                         }
                         requestBody.put("script", textScript);
@@ -1398,11 +1298,8 @@ public class DIDService {
                         fallbackTextScript.put("type", "text");
                         fallbackTextScript.put("input", convertSsmlBreakTagsToPunctuation(script));
 
-                        String elevenVoiceId = resolveElevenLabsVoiceIdForPresenter(avatarId);
-                        if (elevenVoiceId != null && !elevenVoiceId.isBlank()) {
-                            Map<String, Object> provider = new HashMap<>();
-                            provider.put("type", "elevenlabs");
-                            provider.put("voice_id", elevenVoiceId);
+                        Map<String, Object> provider = resolveProviderForPresenter(avatarId);
+                        if (provider != null) {
                             fallbackTextScript.put("provider", provider);
                         }
 
@@ -1485,7 +1382,7 @@ public class DIDService {
                 }
                 
                 Map<String, Object> scriptObj = new HashMap<>();
-                boolean usingAudio = audioUrl != null && !audioUrl.isBlank();
+                boolean usingAudio = false;
                 Map<String, Object> provider = usingAudio ? null : resolveClipsVoiceProvider(presenterId);
                 if (usingAudio) {
                     scriptObj.put("type", "audio");
@@ -1493,15 +1390,12 @@ public class DIDService {
                 } else {
                     scriptObj.put("type", "text");
                     boolean containsBreak = script != null && script.contains("<break");
-                        String providerTypeForSsml = provider == null ? null : String.valueOf(provider.get("type"));
-                        String providerTypeForSsmlNorm = providerTypeForSsml == null ? "" : providerTypeForSsml.trim();
-                        boolean canUseSsml = containsBreak
-                            && "elevenlabs".equalsIgnoreCase(providerTypeForSsmlNorm);
+                    boolean canUseSsml = containsBreak;
                     String scriptInput = script;
                     if (containsBreak && !canUseSsml) {
                         scriptInput = convertSsmlBreakTagsToPunctuation(script);
-                    } else if (containsBreak && canUseSsml && "elevenlabs".equalsIgnoreCase(providerTypeForSsmlNorm)) {
-                        scriptInput = normalizeSsmlBreakTagsForElevenLabs(script);
+                    } else if (containsBreak && canUseSsml) {
+                        scriptInput = normalizeSsmlBreakTagsForAmazon(script);
                     }
                     scriptObj.put("input", scriptInput);
                     if (canUseSsml) {
@@ -1547,15 +1441,12 @@ public class DIDService {
                         textScriptObj.put("type", "text");
                         Map<String, Object> fallbackProvider = resolveClipsVoiceProvider(presenterId);
                         boolean containsBreak = script != null && script.contains("<break");
-                        String providerTypeForSsml = fallbackProvider == null ? null : String.valueOf(fallbackProvider.get("type"));
-                        String providerTypeForSsmlNorm = providerTypeForSsml == null ? "" : providerTypeForSsml.trim();
-                        boolean canUseSsml = containsBreak
-                            && "elevenlabs".equalsIgnoreCase(providerTypeForSsmlNorm);
+                        boolean canUseSsml = containsBreak;
                         String scriptInput = script;
                         if (containsBreak && !canUseSsml) {
                             scriptInput = convertSsmlBreakTagsToPunctuation(script);
-                        } else if (containsBreak && canUseSsml && "elevenlabs".equalsIgnoreCase(providerTypeForSsmlNorm)) {
-                            scriptInput = normalizeSsmlBreakTagsForElevenLabs(script);
+                        } else if (containsBreak && canUseSsml) {
+                            scriptInput = normalizeSsmlBreakTagsForAmazon(script);
                         }
                         textScriptObj.put("input", scriptInput);
                         if (canUseSsml) {
@@ -1755,12 +1646,6 @@ public class DIDService {
                 .uri("/clips")
                 .headers(h -> {
                     h.set(HttpHeaders.AUTHORIZATION, getAuthHeader());
-                    if (needsExternalElevenLabsHeaderFromRequestBody(requestBody)) {
-                        String v = externalElevenLabsHeaderValue();
-                        if (v != null && !v.isBlank()) {
-                            h.set("x-api-key-external", v);
-                        }
-                    }
                 })
                 .bodyValue(requestBody)
                 .retrieve()
@@ -1773,56 +1658,19 @@ public class DIDService {
         if (presenterId == null || presenterId.isBlank()) {
             return null;
         }
-
-        String voiceId = resolveElevenLabsVoiceIdForPresenter(presenterId);
-        if (voiceId == null || voiceId.isBlank()) {
-            return null;
-        }
-
-        Map<String, Object> provider = new HashMap<>();
-        provider.put("type", "elevenlabs");
-        provider.put("voice_id", voiceId.trim());
-        return provider;
+        return resolveProviderForPresenter(presenterId);
     }
 
     private String normalizeVoiceType(String raw) {
         if (raw == null || raw.isBlank()) {
-            return "elevenlabs";
+            return "d-id";
         }
         String v = raw.trim();
         if (v.toLowerCase(Locale.ROOT).startsWith(CUSTOM_VOICE_PREFIX)) {
             String inner = v.substring(CUSTOM_VOICE_PREFIX.length()).trim();
-            return inner.isBlank() ? "elevenlabs" : inner;
+            return inner.isBlank() ? "d-id" : inner;
         }
         return v;
-    }
-
-    private String resolveVoiceProviderType(String voiceId, String voiceTypeRaw) {
-        String normalized = normalizeVoiceType(voiceTypeRaw);
-        if (voiceId == null || voiceId.isBlank()) {
-            return normalized == null || normalized.isBlank() ? "elevenlabs" : normalized;
-        }
-
-        String guessed = guessVoiceTypeFromVoiceId(voiceId);
-        return (normalized == null || normalized.isBlank()) ? guessed : normalized;
-    }
-
-    private boolean shouldSkipProvider(String providerType, String voiceId) {
-        if (providerType == null || providerType.isBlank()) {
-            return true;
-        }
-        if (voiceId == null || voiceId.isBlank()) {
-            return true;
-        }
-
-        String type = providerType.trim().toLowerCase(Locale.ROOT);
-        String v = voiceId.trim();
-
-        if (type.equals("d-id") && isLikelyLegacyElevenLabsVoiceId(v)) {
-            return true;
-        }
-
-        return false;
     }
 
     private String stripSsmlBreakTags(String input) {
@@ -1901,34 +1749,6 @@ public class DIDService {
         }
     }
 
-    private boolean isMicrosoftVoiceId(String voiceId) {
-        if (voiceId == null) return false;
-        String v = voiceId.trim();
-        return !v.isEmpty() && (v.contains("Neural") || v.matches("^[a-z]{2}-[A-Z]{2}-.*"));
-    }
-
-    private boolean isLikelyLegacyElevenLabsVoiceId(String voiceId) {
-        if (voiceId == null) return false;
-        String v = voiceId.trim();
-        if (v.isEmpty()) return false;
-        if (isMicrosoftVoiceId(v)) return false;
-        // ElevenLabs voice ids are opaque alphanumeric ids
-        return v.matches("^[A-Za-z0-9]{10,}$") && !v.contains("-");
-    }
-
-    private String guessVoiceTypeFromVoiceId(String voiceId) {
-        if (voiceId == null) {
-            return "elevenlabs";
-        }
-
-        String v = voiceId.trim();
-        if (v.isEmpty()) {
-            return "elevenlabs";
-        }
-
-        // Opaque/custom voices
-        return "d-id";
-    }
 
     /**
      * Get video status and result URL from D-ID
