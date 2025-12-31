@@ -94,6 +94,7 @@ public class DIDWebhookController {
 
                 if (reportId != null) {
                     videoReportService.enqueueShareCacheDownloadIfNeeded(reportId, item.getId(), resultUrl);
+                    videoReportService.refreshReportStatus(reportId);
                 }
             }
 
@@ -168,6 +169,7 @@ public class DIDWebhookController {
 
                 if (reportId != null) {
                     videoReportService.enqueueShareCacheDownloadIfNeeded(reportId, item.getId(), resultUrl);
+                    videoReportService.refreshReportStatus(reportId);
                 }
             }
 

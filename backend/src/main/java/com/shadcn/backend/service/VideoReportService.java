@@ -1658,6 +1658,11 @@ public class VideoReportService {
         videoReportRepository.save(report);
     }
 
+    @Transactional
+    public void refreshReportStatus(Long reportId) {
+        checkAndUpdateReportStatus(reportId);
+    }
+
     /**
      * Get video report by ID with items
      */

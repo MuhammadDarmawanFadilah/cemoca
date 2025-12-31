@@ -391,11 +391,19 @@ public class DIDService {
                     avatar.setAvatarType(presenter.getAvatar_type());
                     avatar.setThumbnailUrl(presenter.getThumbnail_url());
                     avatar.setPreviewUrl(presenter.getPreview_url());
-                        boolean keepCustomVoice = avatar.getVoiceType() != null
-                            && avatar.getVoiceType().trim().toLowerCase(Locale.ROOT).startsWith(CUSTOM_VOICE_PREFIX)
-                            && avatar.getVoiceId() != null
-                            && !avatar.getVoiceId().trim().isBlank();
-                    if (!keepCustomVoice) {
+                    String existingVoiceId = avatar.getVoiceId();
+                    String existingVoiceType = avatar.getVoiceType();
+                    boolean keepVoiceOverride = existingVoiceId != null
+                            && !existingVoiceId.trim().isBlank()
+                            && existingVoiceType != null
+                            && !existingVoiceType.trim().isBlank()
+                            && (
+                                existingVoiceType.trim().toLowerCase(Locale.ROOT).startsWith(CUSTOM_VOICE_PREFIX)
+                                || "amazon".equalsIgnoreCase(existingVoiceType.trim())
+                                || "polly".equalsIgnoreCase(existingVoiceType.trim())
+                            );
+
+                    if (!keepVoiceOverride) {
                         String incomingVoiceId = presenter.getVoice_id();
                         if (incomingVoiceId != null && !incomingVoiceId.isBlank()) {
                             avatar.setVoiceId(incomingVoiceId);
@@ -979,17 +987,44 @@ public class DIDService {
                 String rawType = a.getVoiceType();
                 String rawId = a.getVoiceId();
 
+                if (rawId == null || rawId.trim().isBlank()) {
+                    return null;
+                }
+
+                String type = rawType == null ? "" : rawType.trim();
+                String id = rawId.trim();
+
                 if (rawType != null
                         && rawType.trim().toLowerCase(Locale.ROOT).startsWith(CUSTOM_VOICE_PREFIX)
-                        && rawId != null
-                        && !rawId.trim().isBlank()) {
-                    String providerType = rawType.trim().substring(CUSTOM_VOICE_PREFIX.length()).trim();
+                ) {
+                    String providerType = type.substring(CUSTOM_VOICE_PREFIX.length()).trim();
                     if (providerType.isBlank()) {
                         return null;
                     }
                     Map<String, Object> provider = new HashMap<>();
                     provider.put("type", providerType);
-                    provider.put("voice_id", rawId.trim());
+                    provider.put("voice_id", id);
+                    return provider;
+                }
+
+                if (type.isBlank()) {
+                    return null;
+                }
+
+                String normalized = normalizeVoiceType(type);
+                if (normalized == null || normalized.isBlank()) {
+                    return null;
+                }
+
+                // D-ID expects Amazon Polly as provider type "amazon".
+                if ("polly".equalsIgnoreCase(normalized)) {
+                    normalized = "amazon";
+                }
+
+                if ("amazon".equalsIgnoreCase(normalized)) {
+                    Map<String, Object> provider = new HashMap<>();
+                    provider.put("type", "amazon");
+                    provider.put("voice_id", id);
                     return provider;
                 }
             }
@@ -1489,6 +1524,11 @@ public class DIDService {
                         response = provider != null ? postClip(bodyWithProvider) : postClip(bodyWithoutProvider);
                     } else
                     if (provider != null && wce.getStatusCode().is5xxServerError()) {
+                        String providerType = String.valueOf(provider.get("type"));
+                        if ("amazon".equalsIgnoreCase(providerType)) {
+                            throw wce;
+                        }
+
                         logger.warn(
                                 "D-ID clip creation 5xx with provider for presenter {}. Retrying without provider.",
                                 presenterId
