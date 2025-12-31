@@ -754,7 +754,7 @@ public class VideoReportController {
      * This endpoint is used for viewing shared videos
      */
     @GetMapping("/view/{token}")
-    public ResponseEntity<Map<String, Object>> getVideoByToken(@PathVariable String token) {
+    public ResponseEntity<Map<String, Object>> getVideoByToken(@PathVariable String token, HttpServletRequest request) {
         // Decrypt token
         Long[] ids = VideoLinkEncryptor.decryptVideoLink(token);
         if (ids == null || ids.length < 2) {
@@ -779,30 +779,20 @@ public class VideoReportController {
         response.put("id", item.getId());
         response.put("name", item.getName());
         response.put("status", item.getStatus());
-        
-        // Get the original D-ID video URL (with background already applied during generation)
-        // Don't use local composite stream URL since ffmpeg may not be installed
-        String videoUrl = item.getVideoUrl();
-        
-        // If videoUrl looks like our stream endpoint, get the original D-ID URL from clip status
-        if (videoUrl != null && videoUrl.contains("/api/video-reports/stream/")) {
-            try {
-                String didClipId = item.getDidClipId();
-                if (didClipId != null && !didClipId.isBlank()) {
-                    Map<String, Object> clipStatus = didService.getClipStatus(didClipId);
-                    if (Boolean.TRUE.equals(clipStatus.get("success")) && "done".equals(clipStatus.get("status"))) {
-                        String originalUrl = (String) clipStatus.get("result_url");
-                        if (originalUrl != null && !originalUrl.isBlank()) {
-                            videoUrl = originalUrl;
-                            logger.info("Using original D-ID URL for video share: {}", originalUrl);
-                        }
-                    }
-                }
-            } catch (Exception e) {
-                logger.warn("Failed to get original D-ID URL, using stored URL: {}", e.getMessage());
-            }
+
+        // Always prefer local stream endpoint (serves cached local file within retention window)
+        String ctx = "";
+        try {
+            ctx = request == null ? "" : request.getContextPath();
+            if (ctx == null) ctx = "";
+        } catch (Exception ignored) {
+            ctx = "";
         }
-        
+
+        String videoUrl = null;
+        if (item.getVideoUrl() != null && !item.getVideoUrl().isBlank() && "DONE".equals(item.getStatus())) {
+            videoUrl = ctx + "/api/video-reports/stream/" + token + ".mp4";
+        }
         response.put("videoUrl", videoUrl);
         response.put("personalizedMessage", item.getPersonalizedMessage());
         

@@ -114,14 +114,31 @@ public class VideoLinkEncryptor {
         try {
             if (token != null) {
                 String t = token.trim();
-                if (t.startsWith("r") && t.contains("i")) {
-                    int iPos = t.indexOf('i');
-                    if (iPos > 1 && iPos < t.length() - 1) {
+                if (t.startsWith("r") && t.contains("i") && t.length() >= 4) {
+                    // Token format: r{reportBase62}i{itemBase62}.
+                    // Base62 parts can include 'i', so we must try all possible delimiter positions.
+                    for (int iPos = 2; iPos <= t.length() - 2; iPos++) {
+                        if (t.charAt(iPos) != 'i') {
+                            continue;
+                        }
+
                         String rPart = t.substring(1, iPos);
                         String iPart = t.substring(iPos + 1);
-                        long reportId = fromBase62(rPart);
-                        long itemId = fromBase62(iPart);
-                        return new Long[] { reportId, itemId };
+                        if (rPart.isBlank() || iPart.isBlank()) {
+                            continue;
+                        }
+
+                        try {
+                            long reportId = fromBase62(rPart);
+                            long itemId = fromBase62(iPart);
+
+                            String reconstructed = "r" + toBase62(reportId) + "i" + toBase62(itemId);
+                            if (reconstructed.equals(t)) {
+                                return new Long[] { reportId, itemId };
+                            }
+                        } catch (Exception ignored) {
+                            // try next split
+                        }
                     }
                 }
             }
