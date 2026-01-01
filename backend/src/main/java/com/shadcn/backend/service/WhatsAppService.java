@@ -43,6 +43,7 @@ import jakarta.annotation.PostConstruct;
 
 @Service
 public class WhatsAppService {
+    private static final int MIN_E164_DIGITS = 8;
 
     @Value("${whatsapp.api.max-media-bytes}")
     private long wablasMaxMediaBytes;
@@ -347,7 +348,7 @@ public class WhatsAppService {
             result.put("formattedPhone", cleanPhone);
             
             // Validate phone number format
-            if (cleanPhone == null || cleanPhone.length() < 10) {
+            if (cleanPhone == null || cleanPhone.length() < MIN_E164_DIGITS) {
                 result.put("error", "Invalid phone number format: " + phoneNumber);
                 logger.error("[WABLAS] Invalid phone: {}", phoneNumber);
                 return result;
@@ -480,7 +481,7 @@ public class WhatsAppService {
             String cleanPhone = formatPhoneNumberForWhatsApp(phoneNumber);
             
             // Validate phone number
-            if (cleanPhone == null || cleanPhone.length() < 10) {
+            if (cleanPhone == null || cleanPhone.length() < MIN_E164_DIGITS) {
                 throw new RuntimeException("Invalid phone number format: " + phoneNumber);
             }
             
@@ -1004,38 +1005,51 @@ public class WhatsAppService {
     
     /**
      * Format phone number for WhatsApp messaging via Wablas API
-     * Wablas accepts: 62xxx format (NO + symbol needed)
+     * Wablas accepts: E.164 digits WITHOUT '+' (e.g. 628123..., 60167100088)
      * Reference: https://tegal.wablas.com/documentation/api
      */
     public String formatPhoneNumberForWhatsApp(String phoneNumber) {
-        if (phoneNumber == null || phoneNumber.isEmpty()) {
-            return phoneNumber;
+        if (phoneNumber == null) {
+            return null;
         }
-        
-        // Clean phone number (remove all non-digits)
-        String cleaned = phoneNumber.replaceAll("[^\\d]", "");
-        
-        // Log original and cleaned for debugging
-        logger.debug("[WABLAS] Phone formatting - Original: {}, Cleaned: {}", phoneNumber, cleaned);
-        
-        String result;
-        
-        if (cleaned.startsWith("62")) {
-            // Already has 62 prefix - use as is
-            result = cleaned;
-        } else if (cleaned.startsWith("0")) {
-            // Local Indonesian format (08xxx) - convert to 62xxx
-            result = "62" + cleaned.substring(1);
-        } else if (cleaned.length() >= 9 && cleaned.length() <= 13) {
-            // Assume Indonesian number without prefix - add 62
-            result = "62" + cleaned;
-        } else {
-            // Use as-is for other formats
-            result = cleaned;
+
+        String trimmed = phoneNumber.trim();
+        if (trimmed.isEmpty()) {
+            return null;
         }
-        
-        logger.info("[WABLAS] Phone formatted: {} -> {}", phoneNumber, result);
-        return result;
+
+        // Keep digits only
+        String digits = trimmed.replaceAll("\\D", "");
+        if (digits.isEmpty()) {
+            return null;
+        }
+
+        // Handle international prefix 00 (e.g. 0060...) -> 60...
+        if (digits.startsWith("00") && digits.length() > 2) {
+            digits = digits.substring(2);
+        }
+
+        // Indonesian convenience normalization
+        if (digits.startsWith("08") && digits.length() > 2) {
+            // 08xx -> 62xx
+            digits = "62" + digits.substring(1);
+        } else if (digits.startsWith("0")) {
+            // Reject other local formats without country code to avoid corrupting non-ID numbers
+            logger.warn("[WABLAS] Rejecting local phone without country code (expected 08xx): {}", phoneNumber);
+            return null;
+        } else if (digits.startsWith("8")) {
+            // 8xx (without leading 0/62) -> assume Indonesia
+            digits = "62" + digits;
+        }
+
+        // E.164 digits: 8..15 digits, cannot start with 0
+        if (!digits.matches("^[1-9]\\d{7,14}$")) {
+            logger.warn("[WABLAS] Rejecting invalid E.164 phone: {} -> {}", phoneNumber, digits);
+            return null;
+        }
+
+        logger.info("[WABLAS] Phone formatted: {} -> {}", phoneNumber, digits);
+        return digits;
     }
     
     /**
@@ -1307,7 +1321,7 @@ public class WhatsAppService {
             for (BulkMessageItem item : batch) {
                 String formattedPhone = formatPhoneNumberForWhatsApp(item.getPhone());
                 
-                if (formattedPhone == null || formattedPhone.length() < 10) {
+                if (formattedPhone == null || formattedPhone.length() < MIN_E164_DIGITS) {
                     // Invalid phone - skip but record as failed
                     BulkMessageResult failResult = new BulkMessageResult();
                     failResult.setOriginalId(item.getOriginalId());
@@ -2055,7 +2069,7 @@ public class WhatsAppService {
             for (BulkVideoItem item : batch) {
                 String formattedPhone = formatPhoneNumberForWhatsApp(item.getPhone());
 
-                if (formattedPhone == null || formattedPhone.length() < 10) {
+                if (formattedPhone == null || formattedPhone.length() < MIN_E164_DIGITS) {
                     BulkVideoResult failResult = new BulkVideoResult();
                     failResult.setOriginalId(item.getOriginalId());
                     failResult.setPhone(item.getPhone());
@@ -2204,7 +2218,7 @@ public class WhatsAppService {
             String cleanPhone = formatPhoneNumberForWhatsApp(phoneNumber);
             result.put("formattedPhone", cleanPhone);
 
-            if (cleanPhone == null || cleanPhone.length() < 10) {
+            if (cleanPhone == null || cleanPhone.length() < MIN_E164_DIGITS) {
                 result.put("error", "Invalid phone number format: " + phoneNumber);
                 return result;
             }
@@ -2407,7 +2421,7 @@ public class WhatsAppService {
             String cleanPhone = formatPhoneNumberForWhatsApp(phoneNumber);
             result.put("formattedPhone", cleanPhone);
             
-            if (cleanPhone == null || cleanPhone.length() < 10) {
+            if (cleanPhone == null || cleanPhone.length() < MIN_E164_DIGITS) {
                 result.put("error", "Invalid phone number format: " + phoneNumber);
                 return result;
             }
@@ -2542,7 +2556,7 @@ public class WhatsAppService {
             String cleanPhone = formatPhoneNumberForWhatsApp(phoneNumber);
             result.put("formattedPhone", cleanPhone);
 
-            if (cleanPhone == null || cleanPhone.length() < 10) {
+            if (cleanPhone == null || cleanPhone.length() < MIN_E164_DIGITS) {
                 result.put("error", "Invalid phone number format: " + phoneNumber);
                 return result;
             }
@@ -2676,7 +2690,7 @@ public class WhatsAppService {
             String cleanPhone = formatPhoneNumberForWhatsApp(phoneNumber);
             result.put("formattedPhone", cleanPhone);
 
-            if (cleanPhone == null || cleanPhone.length() < 10) {
+            if (cleanPhone == null || cleanPhone.length() < MIN_E164_DIGITS) {
                 result.put("error", "Invalid phone number format: " + phoneNumber);
                 return result;
             }

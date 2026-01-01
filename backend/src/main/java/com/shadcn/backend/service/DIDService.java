@@ -716,7 +716,8 @@ public class DIDService {
             }
             return Optional.empty();
         }
-        return avatarRepository.findByPresenterNameTrimmedIgnoreCase(name.trim());
+        List<DIDAvatar> matches = avatarRepository.findByPresenterNameTrimmedIgnoreCase(trimmedName);
+        return (matches == null || matches.isEmpty()) ? Optional.empty() : Optional.of(matches.get(0));
     }
     
     /**
@@ -1130,14 +1131,15 @@ public class DIDService {
         }
 
         String trimmed = name.trim();
-        Optional<DIDAvatar> db = avatarRepository.findExpressByPresenterNameTrimmedIgnoreCase(trimmed);
-        if (db.isPresent()) {
-            return db;
+        List<DIDAvatar> db = avatarRepository.findExpressByPresenterNameTrimmedIgnoreCase(trimmed);
+        if (db != null && !db.isEmpty()) {
+            return Optional.of(db.get(0));
         }
 
         // Refresh from D-ID API then re-check
         getPresentersForListing(true);
-        return avatarRepository.findExpressByPresenterNameTrimmedIgnoreCase(trimmed);
+        List<DIDAvatar> afterRefresh = avatarRepository.findExpressByPresenterNameTrimmedIgnoreCase(trimmed);
+        return (afterRefresh == null || afterRefresh.isEmpty()) ? Optional.empty() : Optional.of(afterRefresh.get(0));
     }
 
     public Optional<DIDAvatar> getExpressAvatarById(String presenterId) {
@@ -1222,6 +1224,14 @@ public class DIDService {
             String fallback = resolveFallbackClipsPresenterId();
             if (fallback != null && !fallback.equalsIgnoreCase(avatarId)) {
                 logger.warn("Scenes avatar_id not found ({}). Falling back to presenter_id={}", truncate(err, 300), fallback);
+                return createClipsVideo(fallback, script, backgroundUrl, audioUrl);
+            }
+        }
+
+        if (errLower.contains("logoerror") || errLower.contains("could not load logo") || errLower.contains("logo image")) {
+            String fallback = resolveFallbackClipsPresenterId();
+            if (fallback != null && !fallback.equalsIgnoreCase(avatarId)) {
+                logger.warn("Scenes logo error ({}). Falling back to presenter_id={}", truncate(err, 300), fallback);
                 return createClipsVideo(fallback, script, backgroundUrl, audioUrl);
             }
         }

@@ -16,11 +16,11 @@ public interface DIDAvatarRepository extends JpaRepository<DIDAvatar, Long> {
     
     Optional<DIDAvatar> findByPresenterNameIgnoreCase(String presenterName);
     
-    @Query("SELECT d FROM DIDAvatar d WHERE LOWER(TRIM(d.presenterName)) = LOWER(TRIM(:name))")
-    Optional<DIDAvatar> findByPresenterNameTrimmedIgnoreCase(@Param("name") String name);
+    @Query("SELECT d FROM DIDAvatar d WHERE LOWER(TRIM(d.presenterName)) = LOWER(TRIM(:name)) ORDER BY d.updatedAt DESC, d.id DESC")
+    List<DIDAvatar> findByPresenterNameTrimmedIgnoreCase(@Param("name") String name);
 
-    @Query("SELECT d FROM DIDAvatar d WHERE LOWER(TRIM(d.presenterName)) = LOWER(TRIM(:name)) AND LOWER(COALESCE(d.avatarType,'')) = 'express'")
-    Optional<DIDAvatar> findExpressByPresenterNameTrimmedIgnoreCase(@Param("name") String name);
+    @Query("SELECT d FROM DIDAvatar d WHERE LOWER(TRIM(d.presenterName)) = LOWER(TRIM(:name)) AND LOWER(COALESCE(d.avatarType,'')) = 'express' ORDER BY d.updatedAt DESC, d.id DESC")
+    List<DIDAvatar> findExpressByPresenterNameTrimmedIgnoreCase(@Param("name") String name);
 
     @Query("SELECT d FROM DIDAvatar d WHERE d.presenterId = :presenterId AND LOWER(COALESCE(d.avatarType,'')) = 'express'")
     Optional<DIDAvatar> findExpressByPresenterId(@Param("presenterId") String presenterId);

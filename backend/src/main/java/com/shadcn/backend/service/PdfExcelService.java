@@ -19,8 +19,10 @@ import java.math.BigDecimal;
 public class PdfExcelService {
     private static final Logger logger = LoggerFactory.getLogger(PdfExcelService.class);
     
-    // Indonesian phone regex - starts with 08 or +628 or 628
-    private static final Pattern PHONE_PATTERN = Pattern.compile("^(\\+62|62|0)8[1-9][0-9]{7,10}$");
+    // Phone validation:
+    // - Accept E.164 digits (with optional '+'): 8..15 digits, cannot start with 0
+    // - Also accept Indonesian local mobile formats (08xx / 62xx / +62xx)
+    private static final Pattern PHONE_PATTERN = Pattern.compile("^((\\+[1-9]\\d{7,14})|([1-9]\\d{7,14})|((\\+62|62|0)8[1-9][0-9]{7,10}))$");
 
     /**
      * Parse and validate Excel file for PDF reports

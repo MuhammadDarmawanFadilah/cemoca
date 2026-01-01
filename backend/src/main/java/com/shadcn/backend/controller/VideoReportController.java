@@ -1154,15 +1154,15 @@ public class VideoReportController {
     
     /**
      * Debug phone format (for debugging Wablas API phone format)
-     * Wablas API requires phone format: 62xxx (without + prefix)
+     * Wablas API requires phone format: E.164 digits (without + prefix)
      */
     @GetMapping("/wa/debug-phone/{phone}")
     public ResponseEntity<Map<String, Object>> debugPhoneFormat(@PathVariable String phone) {
         Map<String, Object> result = new HashMap<>();
         result.put("originalPhone", phone);
         result.put("formattedPhone", whatsAppService.formatPhoneForDebug(phone));
-        result.put("wablasRequiredFormat", "62xxx (tanpa + di depan)");
-        result.put("example", "6285600121760");
+        result.put("wablasRequiredFormat", "E.164 digits (tanpa + di depan)");
+        result.put("example", "6285600121760 / 60167100088");
         return ResponseEntity.ok(result);
     }
     
