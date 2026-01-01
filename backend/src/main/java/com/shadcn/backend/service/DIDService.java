@@ -66,6 +66,9 @@ public class DIDService {
     @Value("${did.tts.amazon.voice-overrides:}")
     private String amazonVoiceOverrides;
 
+    @Value("${did.tts.clone.language:id}")
+    private String cloneVoiceLanguage;
+
     private static final String CUSTOM_VOICE_PREFIX = "custom:";
 
     public DIDService(ObjectMapper objectMapper, DIDAvatarRepository avatarRepository) {
@@ -539,6 +542,11 @@ public class DIDService {
         try {
             MultiValueMap<String, Object> form = new LinkedMultiValueMap<>();
             form.add("name", name);
+            String lang = cloneVoiceLanguage == null ? "" : cloneVoiceLanguage.trim();
+            if (lang.isBlank()) {
+                lang = "id";
+            }
+            form.add("language", lang);
             form.add("file", file);
 
             String response = webClient.post()
@@ -1854,8 +1862,9 @@ public class DIDService {
                 result.put("pending_url", root.has("pending_url") ? root.get("pending_url").asText() : null);
                 result.put("type", "scene");
                 
-                if (root.has("error")) {
-                    result.put("error", root.get("error").asText());
+                String err = extractDidError(root);
+                if (err != null && !err.isBlank()) {
+                    result.put("error", err);
                 }
             }
         } catch (Exception e) {
@@ -1886,8 +1895,9 @@ public class DIDService {
                 result.put("result_url", extractResultUrl(root));
                 result.put("type", "clip");
                 
-                if (root.has("error")) {
-                    result.put("error", root.get("error").asText());
+                String err = extractDidError(root);
+                if (err != null && !err.isBlank()) {
+                    result.put("error", err);
                 }
             }
         } catch (Exception e) {
@@ -1922,6 +1932,32 @@ public class DIDService {
         }
 
         return null;
+    }
+
+    private String extractDidError(JsonNode root) {
+        if (root == null) {
+            return null;
+        }
+
+        JsonNode err = root.get("error");
+        if (err == null || err.isNull()) {
+            return null;
+        }
+
+        String val;
+        if (err.isTextual()) {
+            val = err.asText();
+        } else {
+            val = err.toString();
+        }
+        if (val == null) {
+            return null;
+        }
+        val = val.trim();
+        if (val.isBlank()) {
+            return null;
+        }
+        return truncate(val, 1500);
     }
 
     /**

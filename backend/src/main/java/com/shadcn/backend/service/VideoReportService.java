@@ -1282,9 +1282,18 @@ public class VideoReportService {
 
                         enqueueShareCacheDownloadIfNeeded(reportId, item.getId(), resultUrl);
                     }
-                } else if ("error".equals(clipStatus)) {
+                } else if ("error".equals(clipStatus) || "failed".equals(clipStatus)) {
                     item.setStatus("FAILED");
-                    item.setErrorMessage((String) status.get("error"));
+                    String err = status.get("error") == null ? null : String.valueOf(status.get("error"));
+                    if (err == null || err.isBlank()) {
+                        String pending = status.get("pending_url") == null ? null : String.valueOf(status.get("pending_url"));
+                        StringBuilder sb = new StringBuilder("D-ID returned status=").append(clipStatus);
+                        if (pending != null && !pending.isBlank()) {
+                            sb.append(" | pending_url=").append(pending);
+                        }
+                        err = sb.toString();
+                    }
+                    item.setErrorMessage(err);
                     logger.warn("[CHECK CLIPS] Item {} FAILED: {}", item.getId(), item.getErrorMessage());
                 } else {
                     logger.info("[CHECK CLIPS] Item {} still PROCESSING with D-ID status: {}", item.getId(), clipStatus);
