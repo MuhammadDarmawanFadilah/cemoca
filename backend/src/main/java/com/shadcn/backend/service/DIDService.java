@@ -532,9 +532,18 @@ public class DIDService {
                 .distinct()
                 .toList();
 
-        Optional<AvatarAudio> match = normalizedKeys.isEmpty()
-                ? Optional.empty()
-                : avatarAudioRepository.findFirstByNormalizedKeyIn(normalizedKeys);
+        Optional<AvatarAudio> match = Optional.empty();
+        if (!normalizedKeys.isEmpty()) {
+            for (String key : normalizedKeys) {
+                if (key == null || key.isBlank()) {
+                    continue;
+                }
+                match = avatarAudioRepository.findFirstByNormalizedKey(key);
+                if (match.isPresent()) {
+                    break;
+                }
+            }
+        }
 
         if (match.isEmpty()) {
             return Optional.empty();
@@ -636,6 +645,14 @@ public class DIDService {
             this.voiceId = voiceId;
             this.voiceType = voiceType;
         }
+    }
+
+    private boolean isSsmlInput(String script) {
+        if (script == null || script.isBlank()) {
+            return false;
+        }
+        String s = script;
+        return s.contains("<speak") || s.contains("</speak>") || s.contains("<break");
     }
     
     /**
@@ -1047,7 +1064,7 @@ public class DIDService {
                     return provider;
                 }
 
-                if (isAmazonVoiceType(rawType) && isLikelyAmazonPollyVoiceId(rawId)) {
+                if (rawId != null && isAmazonVoiceType(rawType) && isLikelyAmazonPollyVoiceId(rawId)) {
                     Map<String, Object> provider = new HashMap<>();
                     provider.put("type", "amazon");
                     provider.put("voice_id", rawId.trim());
@@ -1368,21 +1385,20 @@ public class DIDService {
                     scriptObj.put("audio_url", audioUrl);
                 } else {
                     scriptObj.put("type", "text");
-                    boolean containsBreak = script != null && script.contains("<break");
-                    boolean canUseSsml = containsBreak;
+                    boolean canUseSsml = isSsmlInput(script);
+
+                    Map<String, Object> provider = resolveProviderForPresenter(avatarId);
+                    String providerType = provider == null ? null : String.valueOf(provider.get("type"));
+
                     String scriptInput = script;
-                    if (containsBreak && canUseSsml) {
+                    if (canUseSsml && providerType != null && providerType.equalsIgnoreCase("amazon")) {
                         scriptInput = normalizeSsmlBreakTagsForAmazon(script);
                     }
                     scriptObj.put("input", scriptInput);
                     if (canUseSsml) {
                         scriptObj.put("ssml", true);
                     }
-                }
-                
-                // Use cloned custom voice when available (text scripts only).
-                if (!usingAudio) {
-                    Map<String, Object> provider = resolveProviderForPresenter(avatarId);
+
                     if (provider != null) {
                         scriptObj.put("provider", provider);
                     }
@@ -1408,17 +1424,19 @@ public class DIDService {
                         logger.warn("Scenes audio rejected (status={}). Retrying with text script.", wce.getStatusCode().value());
                         Map<String, Object> textScript = new HashMap<>();
                         textScript.put("type", "text");
-                        boolean containsBreak = script != null && script.contains("<break");
-                        boolean canUseSsml = containsBreak;
+                        boolean canUseSsml = isSsmlInput(script);
+
+                        Map<String, Object> provider = resolveProviderForPresenter(avatarId);
+                        String providerType = provider == null ? null : String.valueOf(provider.get("type"));
+
                         String scriptInput = script;
-                        if (containsBreak && canUseSsml) {
+                        if (canUseSsml && providerType != null && providerType.equalsIgnoreCase("amazon")) {
                             scriptInput = normalizeSsmlBreakTagsForAmazon(script);
                         }
                         textScript.put("input", scriptInput);
                         if (canUseSsml) {
                             textScript.put("ssml", true);
                         }
-                        Map<String, Object> provider = resolveProviderForPresenter(avatarId);
                         if (provider != null) {
                             textScript.put("provider", provider);
                         }
@@ -1521,12 +1539,10 @@ public class DIDService {
                     scriptObj.put("audio_url", audioUrl);
                 } else {
                     scriptObj.put("type", "text");
-                    boolean containsBreak = script != null && script.contains("<break");
-                    boolean canUseSsml = containsBreak;
+                    boolean canUseSsml = isSsmlInput(script);
+                    String providerType = provider == null ? null : String.valueOf(provider.get("type"));
                     String scriptInput = script;
-                    if (containsBreak && !canUseSsml) {
-                        scriptInput = convertSsmlBreakTagsToPunctuation(script);
-                    } else if (containsBreak && canUseSsml) {
+                    if (canUseSsml && providerType != null && providerType.equalsIgnoreCase("amazon")) {
                         scriptInput = normalizeSsmlBreakTagsForAmazon(script);
                     }
                     scriptObj.put("input", scriptInput);
@@ -1572,12 +1588,10 @@ public class DIDService {
                         Map<String, Object> textScriptObj = new HashMap<>();
                         textScriptObj.put("type", "text");
                         Map<String, Object> fallbackProvider = resolveClipsVoiceProvider(presenterId);
-                        boolean containsBreak = script != null && script.contains("<break");
-                        boolean canUseSsml = containsBreak;
+                        boolean canUseSsml = isSsmlInput(script);
+                        String fallbackProviderType = fallbackProvider == null ? null : String.valueOf(fallbackProvider.get("type"));
                         String scriptInput = script;
-                        if (containsBreak && !canUseSsml) {
-                            scriptInput = convertSsmlBreakTagsToPunctuation(script);
-                        } else if (containsBreak && canUseSsml) {
+                        if (canUseSsml && fallbackProviderType != null && fallbackProviderType.equalsIgnoreCase("amazon")) {
                             scriptInput = normalizeSsmlBreakTagsForAmazon(script);
                         }
                         textScriptObj.put("input", scriptInput);
