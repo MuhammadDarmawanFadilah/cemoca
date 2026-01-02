@@ -19,6 +19,7 @@ import {
   Mail,
   CalendarClock,
   FolderOpen,
+  Music,
 } from "lucide-react";
 import {
   DndContext,
@@ -211,6 +212,16 @@ const AppSidebar = () => {
       title: "Admin",
       url: "/admin",
       icon: Users,
+    },
+    {
+      title: "Audio Management",
+      url: "/admin/audio-management",
+      icon: Music,
+    },
+    {
+      title: "Background Management",
+      url: "/admin/background-management",
+      icon: ImageIcon,
     },
     {
       title: "Company",

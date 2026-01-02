@@ -9,17 +9,13 @@ import com.shadcn.backend.repository.NotificationRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.core.io.FileSystemResource;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.*;
 import org.springframework.stereotype.Service;
-import org.springframework.util.LinkedMultiValueMap;
-import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -43,9 +39,9 @@ public class NotificationService {
     
     @Value("${whatsapp.api.token}")
     private String whatsappApiToken;
-    
-    @Value("${whatsapp.api.sender}")
-    private String whatsappSender;
+
+    @Value("${whatsapp.api.secret-key:}")
+    private String whatsappApiSecretKey;
     
     @Value("${app.upload.dir:/storage}")
     private String uploadDir;
@@ -115,44 +111,56 @@ public class NotificationService {
     }
       private boolean sendSingleMessage(String recipient, String title, String message, String imageUrl) {
         try {
-            String endpoint;
-            MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
-              // Clean phone number (remove non-digits except +)
-            String cleanRecipient = recipient.replaceAll("[^+\\d]", "");
-            if (!cleanRecipient.startsWith("+")) {
-                // Assume Indonesian number if no country code
-                if (cleanRecipient.startsWith("0")) {
-                    cleanRecipient = "+62" + cleanRecipient.substring(1);
-                } else {
-                    cleanRecipient = "+62" + cleanRecipient;
-                }
+            String cleanRecipient = formatPhoneForWablas(recipient);
+            if (cleanRecipient == null || cleanRecipient.isBlank()) {
+                log.warn("Invalid recipient phone: {}", recipient);
+                return false;
             }
-            body.add("phone", cleanRecipient);
-            body.add("message", String.format("*%s*\\n\\n%s", title, message));
+
+            String formattedText = String.format("*%s*\\n\\n%s", title, message);
             
             if (imageUrl != null && !imageUrl.isEmpty()) {
-                // Try sending with image first
-                endpoint = "/api/send-image";
-                body.add("image", imageUrl);
-                body.add("caption", String.format("*%s*\\n\\n%s", title, message));
-                
-                // Attempt to send with image
-                boolean imageSuccess = attemptSendMessage(cleanRecipient, endpoint, body);
+                // Try sending with image first (v2)
+                boolean imageSuccess = attemptSendMessageV2(
+                        cleanRecipient,
+                        "/api/v2/send-image",
+                        java.util.Map.of(
+                                "phone", cleanRecipient,
+                                "image", imageUrl,
+                                "caption", formattedText
+                        )
+                );
                 if (imageSuccess) {
                     return true;
                 }
                 
                 // If image sending fails due to package limitations, fallback to text-only
                 log.warn("Image sending failed for {}, falling back to text-only message", cleanRecipient);
-                body = new LinkedMultiValueMap<>(); // Reset body
-                body.add("phone", cleanRecipient);
-                body.add("message", String.format("*%s*\\n\\n%s\\n\\n📎 Image attachment was not delivered due to package limitations.", title, message));
-                endpoint = "/api/send-message";
+                String fallbackText = String.format(
+                        "*%s*\\n\\n%s\\n\\n📎 Image attachment was not delivered due to package limitations.",
+                        title,
+                        message
+                );
+
+                return attemptSendMessageV2(
+                        cleanRecipient,
+                        "/api/v2/send-message",
+                        java.util.Map.of(
+                                "phone", cleanRecipient,
+                                "message", fallbackText
+                        )
+                );
             } else {
-                endpoint = "/api/send-message";
+                return attemptSendMessageV2(
+                        cleanRecipient,
+                        "/api/v2/send-message",
+                        java.util.Map.of(
+                                "phone", cleanRecipient,
+                                "message", formattedText
+                        )
+                );
             }            
-            // Final attempt to send message (either image or fallback text)
-            return attemptSendMessage(cleanRecipient, endpoint, body);
+            
             
         } catch (Exception e) {
             log.error("Error sending message to {}: {}", recipient, e.getMessage(), e);
@@ -160,14 +168,55 @@ public class NotificationService {
         }
     }
     
-    private boolean attemptSendMessage(String cleanRecipient, String endpoint, MultiValueMap<String, Object> body) {
+    private String authorizationHeaderValue() {
+        String token = whatsappApiToken == null ? "" : whatsappApiToken.trim();
+        if (token.isEmpty()) {
+            return token;
+        }
+
+        if (token.contains(".")) {
+            return token;
+        }
+
+        String secret = whatsappApiSecretKey == null ? "" : whatsappApiSecretKey.trim();
+        if (secret.isEmpty()) {
+            return token;
+        }
+
+        return token + "." + secret;
+    }
+
+    private String formatPhoneForWablas(String recipient) {
+        if (recipient == null) {
+            return null;
+        }
+
+        String digits = recipient.replaceAll("[^\\d]", "");
+        if (digits.isBlank()) {
+            return null;
+        }
+
+        if (digits.startsWith("0")) {
+            digits = "62" + digits.substring(1);
+        } else if (digits.startsWith("8")) {
+            digits = "62" + digits;
+        }
+
+        return digits;
+    }
+
+    private boolean attemptSendMessageV2(String cleanRecipient, String endpoint, java.util.Map<String, Object> item) {
         try {
             HttpHeaders headers = new HttpHeaders();
-            headers.setContentType(MediaType.MULTIPART_FORM_DATA);
-            // Add Authorization header with token as per Wablas API documentation
-            headers.set("Authorization", whatsappApiToken);
-            
-            HttpEntity<MultiValueMap<String, Object>> requestEntity = new HttpEntity<>(body, headers);
+            headers.setContentType(MediaType.APPLICATION_JSON);
+            headers.set("Authorization", authorizationHeaderValue());
+
+            java.util.Map<String, Object> payload = java.util.Map.of(
+                    "data",
+                    java.util.List.of(item)
+            );
+
+            HttpEntity<String> requestEntity = new HttpEntity<>(objectMapper.writeValueAsString(payload), headers);
             String url = whatsappApiUrl + endpoint;
             log.info("Sending WhatsApp message to {} via {}", cleanRecipient, url);
             log.debug("Authorization token configured: {}", whatsappApiToken != null && !whatsappApiToken.isEmpty() ? "Yes" : "No");
@@ -177,8 +226,7 @@ public class NotificationService {
             
             if (response.getStatusCode() == HttpStatus.OK) {
                 JsonNode responseJson = objectMapper.readTree(response.getBody());
-                boolean success = responseJson.has("status") && 
-                    responseJson.get("status").asBoolean();
+                boolean success = responseJson.has("status") && responseJson.get("status").asBoolean();
                 
                 log.info("WhatsApp API response for {}: {}", cleanRecipient, response.getBody());
                 return success;
@@ -193,7 +241,7 @@ public class NotificationService {
             log.error("HTTP Server Error sending message to {}: {} - Response: {}", cleanRecipient, e.getMessage(), responseBody);
             
             // Check if this is a package limitation error for image sending
-            if (responseBody.contains("your package not support") && endpoint.contains("send-image")) {
+            if (responseBody != null && responseBody.contains("your package not support") && endpoint.contains("send-image")) {
                 log.warn("Package does not support image messaging for recipient: {}", cleanRecipient);
                 return false; // This will trigger the fallback in the calling method
             }

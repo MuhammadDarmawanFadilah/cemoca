@@ -2,8 +2,9 @@ package com.shadcn.backend.service;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Service;
+
+import com.shadcn.backend.model.VideoBackground;
 
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
@@ -29,12 +30,10 @@ import java.util.concurrent.TimeUnit;
 public class VideoBackgroundCompositeService {
 
     private final ImageService imageService;
+    private final VideoBackgroundService videoBackgroundService;
 
     @Value("${app.video.ffmpeg.path:ffmpeg}")
     private String ffmpegPath;
-
-    @Value("${app.video.backgrounds.dir:}")
-    private String backgroundsDir;
 
     @Value("${app.video.chroma.key:0x00FF00}")
     private String chromaKey;
@@ -48,8 +47,9 @@ public class VideoBackgroundCompositeService {
     @Value("${app.video.chroma.timeout-minutes:8}")
     private long timeoutMinutes;
 
-    public VideoBackgroundCompositeService(ImageService imageService) {
+    public VideoBackgroundCompositeService(ImageService imageService, VideoBackgroundService videoBackgroundService) {
         this.imageService = imageService;
+        this.videoBackgroundService = videoBackgroundService;
     }
 
     public Optional<String> compositeToStoredVideoUrl(String inputVideoUrl, String backgroundName, String publicBaseUrl, String serverContextPath) {
@@ -72,7 +72,7 @@ public class VideoBackgroundCompositeService {
             Path inputVideoPath = tempDir.resolve("input.mp4");
             downloadToFile(inputVideoUrl, inputVideoPath);
 
-            String bgExt = getFileExtension(backgroundName);
+            String bgExt = backgroundSource.getExtension();
             if (bgExt.isBlank()) {
                 bgExt = "png";
             }
@@ -252,32 +252,21 @@ public class VideoBackgroundCompositeService {
             return null;
         }
 
-        ClassPathResource cp = new ClassPathResource("background/" + safe);
-        if (cp.exists() && cp.isReadable()) {
-            return new ClasspathBackgroundSource(cp);
-        }
-
-        Path dir = resolveBackgroundsDir();
-        if (dir != null && Files.isDirectory(dir)) {
-            Path resolved = dir.resolve(safe).normalize();
-            if (resolved.startsWith(dir) && Files.isRegularFile(resolved) && Files.isReadable(resolved)) {
-                return new FileBackgroundSource(resolved);
-            }
-        }
-
-        return null;
-    }
-
-    private Path resolveBackgroundsDir() {
         try {
-            if (backgroundsDir == null) {
+            VideoBackground bg = videoBackgroundService.getByName(safe);
+            String filePath = bg.getFilePath();
+            if (filePath == null || filePath.isBlank()) {
                 return null;
             }
-            String raw = backgroundsDir.trim();
-            if (raw.isEmpty()) {
+            Path path = Paths.get(filePath);
+            if (!Files.isRegularFile(path) || !Files.isReadable(path)) {
                 return null;
             }
-            return Paths.get(raw).toAbsolutePath().normalize();
+            String ext = getFileExtension(bg.getStoredFilename());
+            if (ext.isBlank()) {
+                ext = getFileExtension(bg.getOriginalFilename());
+            }
+            return new FileBackgroundSource(path, ext);
         } catch (Exception ignored) {
             return null;
         }
@@ -285,33 +274,28 @@ public class VideoBackgroundCompositeService {
 
     private interface BackgroundSource {
         void copyTo(Path target) throws Exception;
-    }
 
-    private static final class ClasspathBackgroundSource implements BackgroundSource {
-        private final ClassPathResource resource;
-
-        private ClasspathBackgroundSource(ClassPathResource resource) {
-            this.resource = resource;
-        }
-
-        @Override
-        public void copyTo(Path target) throws Exception {
-            try (InputStream in = resource.getInputStream()) {
-                Files.copy(in, target, StandardCopyOption.REPLACE_EXISTING);
-            }
-        }
+        String getExtension();
     }
 
     private static final class FileBackgroundSource implements BackgroundSource {
         private final Path path;
 
-        private FileBackgroundSource(Path path) {
+        private final String extension;
+
+        private FileBackgroundSource(Path path, String extension) {
             this.path = path;
+            this.extension = extension == null ? "" : extension;
         }
 
         @Override
         public void copyTo(Path target) throws Exception {
             Files.copy(Files.newInputStream(path), target, StandardCopyOption.REPLACE_EXISTING);
+        }
+
+        @Override
+        public String getExtension() {
+            return extension;
         }
     }
 }

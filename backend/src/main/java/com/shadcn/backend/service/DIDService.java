@@ -3,13 +3,14 @@ package com.shadcn.backend.service;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.shadcn.backend.dto.DIDPresenter;
+import com.shadcn.backend.model.AvatarAudio;
 import com.shadcn.backend.model.DIDAvatar;
+import com.shadcn.backend.repository.AvatarAudioRepository;
 import com.shadcn.backend.repository.DIDAvatarRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.ByteArrayResource;
-import org.springframework.core.io.ClassPathResource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
@@ -23,7 +24,9 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.time.Duration;
 import java.nio.charset.StandardCharsets;
-import java.io.InputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.Base64;
 import java.util.stream.Collectors;
 
@@ -41,6 +44,7 @@ public class DIDService {
     private final WebClient webClient;
     private final ObjectMapper objectMapper;
     private final DIDAvatarRepository avatarRepository;
+    private final AvatarAudioRepository avatarAudioRepository;
     private final Map<String, DIDPresenter> presenterCache = new ConcurrentHashMap<>();
 
     @Value("${app.did.clips.webhook:}")
@@ -48,6 +52,26 @@ public class DIDService {
 
     @Value("${app.did.scenes.webhook:}")
     private String scenesWebhookUrl;
+
+    private boolean isHttpsUrl(String url) {
+        if (url == null) return false;
+        String v = url.trim();
+        return !v.isEmpty() && v.regionMatches(true, 0, "https://", 0, "https://".length());
+    }
+
+    private boolean isBackgroundRelatedError(WebClientResponseException wce) {
+        if (wce == null) return false;
+        try {
+            String body = wce.getResponseBodyAsString();
+            if (body == null) return false;
+            String lower = body.toLowerCase(java.util.Locale.ROOT);
+            return lower.contains("setting background")
+                || lower.contains("failed during setting background")
+                || lower.contains("background");
+        } catch (Exception ignore) {
+            return false;
+        }
+    }
     
     // Cache for presenter list with expiry
     private List<DIDPresenter> cachedPresenterList = null;
@@ -71,9 +95,10 @@ public class DIDService {
 
     private static final String CUSTOM_VOICE_PREFIX = "custom:";
 
-    public DIDService(ObjectMapper objectMapper, DIDAvatarRepository avatarRepository) {
+    public DIDService(ObjectMapper objectMapper, DIDAvatarRepository avatarRepository, AvatarAudioRepository avatarAudioRepository) {
         this.objectMapper = objectMapper;
         this.avatarRepository = avatarRepository;
+        this.avatarAudioRepository = avatarAudioRepository;
         this.webClient = WebClient.builder()
                 .baseUrl("https://api.d-id.com")
                 .defaultHeader(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
@@ -462,7 +487,7 @@ public class DIDService {
             return Optional.of(avatar.getVoiceId().trim());
         }
 
-        Optional<ByteArrayResource> sample = loadAvatarSampleFromClasspath(pid, avatarName.trim());
+        Optional<ByteArrayResource> sample = loadAvatarSampleFromAudioManagement(pid, avatarName.trim());
         if (sample.isEmpty()) {
             return Optional.empty();
         }
@@ -481,7 +506,7 @@ public class DIDService {
         return voiceId;
     }
 
-    private Optional<ByteArrayResource> loadAvatarSampleFromClasspath(String presenterId, String avatarName) {
+    private Optional<ByteArrayResource> loadAvatarSampleFromAudioManagement(String presenterId, String avatarName) {
         List<String> keys = new ArrayList<>();
 
         if (avatarName != null && !avatarName.isBlank()) {
@@ -500,42 +525,51 @@ public class DIDService {
             if (!p2.equals(p1)) keys.add(p2);
         }
 
-        List<String> candidates = new ArrayList<>();
-        for (String key : keys) {
-            if (key == null || key.isBlank()) {
-                continue;
-            }
-            String base = "audio/" + key;
-            candidates.add(base + ".mp4");
-            candidates.add(base + ".m4a");
-            candidates.add(base + ".mp3");
-            candidates.add(base + ".wav");
+        List<String> normalizedKeys = keys.stream()
+                .filter(k -> k != null && !k.isBlank())
+                .map(AvatarAudioService::normalizeKey)
+                .filter(k -> k != null && !k.isBlank())
+                .distinct()
+                .toList();
+
+        Optional<AvatarAudio> match = normalizedKeys.isEmpty()
+                ? Optional.empty()
+                : avatarAudioRepository.findFirstByNormalizedKeyIn(normalizedKeys);
+
+        if (match.isEmpty()) {
+            return Optional.empty();
         }
 
-        for (String path : candidates) {
-            try {
-                ClassPathResource res = new ClassPathResource(path);
-                if (!res.exists()) {
-                    continue;
-                }
-                try (InputStream in = res.getInputStream()) {
-                    byte[] bytes = in.readAllBytes();
-                    String filename = res.getFilename() == null
-                            ? ((avatarName == null || avatarName.isBlank() ? "sample" : avatarName) + ".mp4")
-                            : res.getFilename();
-                    ByteArrayResource bar = new ByteArrayResource(bytes) {
-                        @Override
-                        public String getFilename() {
-                            return filename;
-                        }
-                    };
-                    return Optional.of(bar);
-                }
-            } catch (Exception ignored) {
-                // try next
-            }
+        AvatarAudio audio = match.get();
+        String p = audio.getFilePath();
+        if (p == null || p.isBlank()) {
+            return Optional.empty();
         }
-        return Optional.empty();
+
+        try {
+            Path filePath = Paths.get(p);
+            if (!Files.exists(filePath)) {
+                return Optional.empty();
+            }
+            byte[] bytes = Files.readAllBytes(filePath);
+            String filename = audio.getOriginalFilename();
+            if (filename == null || filename.isBlank()) {
+                filename = audio.getStoredFilename();
+            }
+            if (filename == null || filename.isBlank()) {
+                filename = (avatarName == null || avatarName.isBlank() ? "sample.mp3" : (avatarName + ".mp3"));
+            }
+            String finalFilename = filename;
+            ByteArrayResource bar = new ByteArrayResource(bytes) {
+                @Override
+                public String getFilename() {
+                    return finalFilename;
+                }
+            };
+            return Optional.of(bar);
+        } catch (Exception ignored) {
+            return Optional.empty();
+        }
     }
 
     private Optional<VoiceInfo> createClonedVoice(ByteArrayResource file, String name) {
@@ -881,7 +915,7 @@ public class DIDService {
         // Do not use audio_url.
         audioUrl = null;
 
-        // Best-effort: prefer deterministic local-sample cloned voices when available (e.g. audio/linda.*)
+        // Best-effort: prefer deterministic uploaded samples from Audio Management when available
         ensureLocalSampleVoiceIfAvailable(trimmedAvatarId);
 
         // If explicitly targeting an Express Avatar, never fall back to another avatar.
@@ -1323,7 +1357,7 @@ public class DIDService {
                 Map<String, Object> requestBody = new HashMap<>();
                 requestBody.put("avatar_id", avatarId);
 
-                if (scenesWebhookUrl != null && !scenesWebhookUrl.isBlank()) {
+                if (isHttpsUrl(scenesWebhookUrl)) {
                     requestBody.put("webhook", scenesWebhookUrl.trim());
                 }
                 
@@ -1356,7 +1390,7 @@ public class DIDService {
                 
                 requestBody.put("script", scriptObj);
 
-                if (backgroundUrl != null && !backgroundUrl.isBlank()) {
+                if (isHttpsUrl(backgroundUrl)) {
                     Map<String, Object> background = new HashMap<>();
                     background.put("source_url", backgroundUrl);
                     requestBody.put("background", background);
@@ -1366,7 +1400,7 @@ public class DIDService {
                 try {
                     response = postScene(requestBody);
                 } catch (WebClientResponseException wce) {
-                    if (backgroundUrl != null && !backgroundUrl.isBlank() && wce.getStatusCode().is4xxClientError()) {
+                    if (requestBody.containsKey("background") && (wce.getStatusCode().is4xxClientError() || isBackgroundRelatedError(wce))) {
                         logger.warn("Scenes background rejected (status={}). Retrying without background.", wce.getStatusCode().value());
                         requestBody.remove("background");
                         response = postScene(requestBody);
@@ -1475,7 +1509,7 @@ public class DIDService {
                 Map<String, Object> requestBody = new HashMap<>();
                 requestBody.put("presenter_id", presenterId);
 
-                if (clipsWebhookUrl != null && !clipsWebhookUrl.isBlank()) {
+                if (isHttpsUrl(clipsWebhookUrl)) {
                     requestBody.put("webhook", clipsWebhookUrl.trim());
                 }
                 
@@ -1501,7 +1535,7 @@ public class DIDService {
                     }
                 }
 
-                if (backgroundUrl != null && !backgroundUrl.isBlank()) {
+                if (isHttpsUrl(backgroundUrl)) {
                     Map<String, Object> background = new HashMap<>();
                     background.put("source_url", backgroundUrl);
                     requestBody.put("background", background);
@@ -1527,7 +1561,7 @@ public class DIDService {
                 try {
                     response = postClip(requestBodyWithProvider);
                 } catch (WebClientResponseException wce) {
-                    if (backgroundUrl != null && !backgroundUrl.isBlank() && wce.getStatusCode().is4xxClientError()) {
+                    if (requestBodyWithProvider.containsKey("background") && (wce.getStatusCode().is4xxClientError() || isBackgroundRelatedError(wce))) {
                         logger.warn("Clips background rejected (status={}). Retrying without background.", wce.getStatusCode().value());
                         requestBodyWithProvider.remove("background");
                         requestBodyWithoutProvider.remove("background");

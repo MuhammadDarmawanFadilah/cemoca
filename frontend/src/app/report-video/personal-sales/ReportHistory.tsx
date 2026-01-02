@@ -50,14 +50,33 @@ export function ReportHistory({
 }: ReportHistoryProps) {
   const { t } = useLanguage();
   
-  const getStatusBadge = (status: string) => {
-    switch (status) {
-      case "PENDING": return <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">{t("reportVideo.waiting")}</span>;
-      case "PROCESSING": return <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-400">{t("reportVideo.process")}</span>;
-      case "DONE": case "COMPLETED": return <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-400">{t("reportVideo.done")}</span>;
-      case "FAILED": return <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-400">{t("reportVideo.failed")}</span>;
-      default: return <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800">{status}</span>;
+  const getStatusBadge = (report: VideoReportResponse) => {
+    const pendingCount = report.pendingCount ?? 0;
+    const processingCount = report.processingCount ?? 0;
+    const videoFailedCount = report.failedCount ?? 0;
+    const waPendingCount = report.waPendingCount ?? 0;
+    const waFailedCount = report.waFailedCount ?? 0;
+    const waNotReadyCount = Math.max(0, (report.totalRecords ?? 0) - (report.successCount ?? 0));
+
+    if (report.status === "PROCESSING" || processingCount > 0) {
+      return <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-400">{t("reportVideo.process")}</span>;
     }
+    if (report.status === "PENDING" || pendingCount > 0) {
+      return <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">{t("reportVideo.waiting")}</span>;
+    }
+    if (videoFailedCount > 0) {
+      return <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-400">Video Failed</span>;
+    }
+    if (waFailedCount > 0) {
+      return <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-400">WA Failed</span>;
+    }
+    if (waPendingCount > 0 || waNotReadyCount > 0) {
+      return <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400">WA Pending</span>;
+    }
+    if (report.status === "FAILED") {
+      return <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-400">{t("reportVideo.failed")}</span>;
+    }
+    return <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-400">{t("reportVideo.done")}</span>;
   };
 
   const formatDate = (d: string) => {
@@ -107,7 +126,11 @@ export function ReportHistory({
                     <TableCell>
                       <div className="font-medium text-sm text-slate-900 dark:text-slate-100">{report.reportName}</div>
                       <div className="text-[10px] text-slate-500 mt-0.5 sm:hidden">
-                        {report.successCount}/{report.totalRecords} {t("reportVideo.done").toLowerCase()}
+                        {report.successCount}/{report.totalRecords} video
+                        {report.failedCount > 0 ? ` • ${report.failedCount} video failed` : ""}
+                        {Math.max(0, (report.totalRecords ?? 0) - (report.successCount ?? 0)) > 0 ? ` • ${Math.max(0, (report.totalRecords ?? 0) - (report.successCount ?? 0))} WA pending` : ""}
+                        {(report.waPendingCount ?? 0) > 0 ? ` • ${report.waPendingCount} WA pending` : ""}
+                        {(report.waFailedCount ?? 0) > 0 ? ` • ${report.waFailedCount} WA failed` : ""}
                       </div>
                     </TableCell>
                     <TableCell className="text-center hidden sm:table-cell">
@@ -115,12 +138,21 @@ export function ReportHistory({
                         <span className="text-emerald-600 dark:text-emerald-400">{report.successCount}</span>
                         <span className="text-slate-400 mx-1">/</span>
                         {report.totalRecords}
-                        {report.failedCount > 0 && (
-                          <span className="text-red-500 ml-1">({report.failedCount} {t("reportVideo.failed").toLowerCase()})</span>
-                        )}
+                        {report.failedCount > 0 ? (
+                          <span className="text-red-500 ml-1">({report.failedCount} video failed)</span>
+                        ) : null}
+                        {Math.max(0, (report.totalRecords ?? 0) - (report.successCount ?? 0)) > 0 ? (
+                          <span className="text-amber-600 ml-2">• {Math.max(0, (report.totalRecords ?? 0) - (report.successCount ?? 0))} WA pending</span>
+                        ) : null}
+                        {(report.waPendingCount ?? 0) > 0 ? (
+                          <span className="text-amber-600 ml-2">• {report.waPendingCount} WA pending</span>
+                        ) : null}
+                        {(report.waFailedCount ?? 0) > 0 ? (
+                          <span className="text-red-500 ml-2">• {report.waFailedCount} WA failed</span>
+                        ) : null}
                       </div>
                     </TableCell>
-                    <TableCell className="text-center">{getStatusBadge(report.status)}</TableCell>
+                    <TableCell className="text-center">{getStatusBadge(report)}</TableCell>
                     <TableCell className="text-xs text-slate-500 hidden md:table-cell">{formatDate(report.createdAt)}</TableCell>
                     <TableCell>
                       <div className="flex items-center justify-end gap-1">

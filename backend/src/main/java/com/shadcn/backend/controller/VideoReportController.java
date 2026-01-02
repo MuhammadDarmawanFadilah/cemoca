@@ -4,10 +4,10 @@ import com.shadcn.backend.dto.*;
 import com.shadcn.backend.model.User;
 import com.shadcn.backend.entity.VideoReport;
 import com.shadcn.backend.entity.VideoReportItem;
-import com.shadcn.backend.repository.UserRepository;
 import com.shadcn.backend.repository.VideoReportRepository;
 import com.shadcn.backend.repository.VideoReportItemRepository;
 import com.shadcn.backend.service.DIDService;
+import com.shadcn.backend.service.AuthService;
 import com.shadcn.backend.service.VideoBackgroundCompositeService;
 import com.shadcn.backend.service.VideoReportService;
 import com.shadcn.backend.service.WhatsAppService;
@@ -24,8 +24,6 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -43,6 +41,7 @@ import java.nio.file.Paths;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 @RestController
 @RequestMapping("/api/video-reports")
@@ -51,9 +50,25 @@ public class VideoReportController {
 
     private static final Logger logger = LoggerFactory.getLogger(VideoReportController.class);
 
+    private static final long PREVIEW_CONTEXT_TTL_MS = 60L * 60L * 1000L;
+    private static final ConcurrentHashMap<String, PreviewContext> previewContexts = new ConcurrentHashMap<>();
+
+    private static final class PreviewContext {
+        private final boolean useBackground;
+        private final String backgroundName;
+        private final long createdAtMs;
+        private volatile String compositedUrl;
+
+        private PreviewContext(boolean useBackground, String backgroundName) {
+            this.useBackground = useBackground;
+            this.backgroundName = backgroundName;
+            this.createdAtMs = System.currentTimeMillis();
+        }
+    }
+
     private final VideoReportService videoReportService;
     private final DIDService didService;
-    private final UserRepository userRepository;
+    private final AuthService authService;
     private final WhatsAppService whatsAppService;
     private final VideoReportItemRepository videoReportItemRepository;
     private final VideoReportRepository videoReportRepository;
@@ -89,14 +104,14 @@ public class VideoReportController {
 
     public VideoReportController(VideoReportService videoReportService,
                                 DIDService didService,
-                                UserRepository userRepository,
+                                AuthService authService,
                                 WhatsAppService whatsAppService,
                                 VideoReportItemRepository videoReportItemRepository,
                                 VideoReportRepository videoReportRepository,
                                 VideoBackgroundCompositeService videoBackgroundCompositeService) {
         this.videoReportService = videoReportService;
         this.didService = didService;
-        this.userRepository = userRepository;
+        this.authService = authService;
         this.whatsAppService = whatsAppService;
         this.videoReportItemRepository = videoReportItemRepository;
         this.videoReportRepository = videoReportRepository;
@@ -112,6 +127,148 @@ public class VideoReportController {
         response.put("template", videoReportService.getDefaultMessageTemplate());
         response.put("waTemplate", videoReportService.getDefaultWaMessageTemplate());
         return ResponseEntity.ok(response);
+    }
+
+    @PostMapping("/preview")
+    public ResponseEntity<VideoPreviewResponse> startPreview(
+            @RequestBody VideoPreviewRequest request,
+            @RequestHeader(value = "Authorization", required = false) String token
+    ) {
+        try {
+            cleanupPreviewContexts();
+
+            if (request == null) {
+                return ResponseEntity.badRequest().body(new VideoPreviewResponse(false, null, null, null, null, "Invalid request"));
+            }
+
+            User currentUser = getCurrentUser(token);
+            if (currentUser == null) {
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                        .body(new VideoPreviewResponse(false, null, null, null, null, "Unauthorized"));
+            }
+
+            String name = request.getName() == null ? "" : request.getName().trim();
+            String avatar = request.getAvatar() == null ? "" : request.getAvatar().trim();
+            String messageTemplate = request.getMessageTemplate() == null ? "" : request.getMessageTemplate();
+
+            if (name.isBlank()) {
+                return ResponseEntity.badRequest().body(new VideoPreviewResponse(false, null, null, null, null, "Nama wajib diisi"));
+            }
+            if (avatar.isBlank()) {
+                return ResponseEntity.badRequest().body(new VideoPreviewResponse(false, null, null, null, null, "Avatar wajib diisi"));
+            }
+            if (messageTemplate.isBlank()) {
+                return ResponseEntity.badRequest().body(new VideoPreviewResponse(false, null, null, null, null, "Template pesan wajib diisi"));
+            }
+
+            Long tempReportId = null;
+            try {
+                VideoReportRequest temp = new VideoReportRequest();
+                temp.setReportName("__PREVIEW__");
+                temp.setMessageTemplate(messageTemplate);
+                temp.setWaMessageTemplate(videoReportService.getDefaultWaMessageTemplate());
+                temp.setUseBackground(Boolean.TRUE.equals(request.getUseBackground()));
+                temp.setBackgroundName(request.getBackgroundName());
+                temp.setPreview(true);
+
+                VideoReportRequest.VideoReportItemRequest it = new VideoReportRequest.VideoReportItemRequest();
+                it.setRowNumber(request.getRowNumber() == null ? 1 : request.getRowNumber());
+                it.setName(name);
+                it.setPhone(request.getPhone());
+                it.setAvatar(avatar);
+                temp.setItems(java.util.List.of(it));
+
+                VideoReport report = videoReportService.createVideoReport(temp, currentUser);
+                tempReportId = report.getId();
+
+                java.util.List<VideoReportItem> items = videoReportItemRepository.findByVideoReportIdOrderByRowNumberAsc(tempReportId);
+                if (items == null || items.isEmpty()) {
+                    return ResponseEntity.badRequest().body(new VideoPreviewResponse(false, null, null, null, null, "Preview item not found"));
+                }
+
+                VideoReportItem item = videoReportService.generateSingleVideo(tempReportId, items.get(0).getId());
+                String didClipId = item == null ? null : item.getDidClipId();
+                if (didClipId == null || didClipId.isBlank()) {
+                    String err = item == null ? null : item.getErrorMessage();
+                    return ResponseEntity.badRequest().body(new VideoPreviewResponse(false, null, null, null, null, err == null ? "Failed to create D-ID clip" : err));
+                }
+
+                boolean useBg = Boolean.TRUE.equals(request.getUseBackground());
+                String bgName = request.getBackgroundName();
+                if (useBg && bgName != null && !bgName.isBlank()) {
+                    previewContexts.put(didClipId, new PreviewContext(true, bgName));
+                }
+
+                return ResponseEntity.ok(new VideoPreviewResponse(true, didClipId, "processing", "clip", null, null));
+            } finally {
+                if (tempReportId != null) {
+                    try {
+                        videoReportItemRepository.deleteByVideoReportId(tempReportId);
+                    } catch (Exception ignore) {
+                    }
+                    try {
+                        videoReportRepository.deleteById(tempReportId);
+                    } catch (Exception ignore) {
+                    }
+                }
+            }
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(new VideoPreviewResponse(false, null, null, null, null, e.getMessage()));
+        }
+    }
+
+    @GetMapping("/preview/{videoId}")
+    public ResponseEntity<VideoPreviewResponse> getPreviewStatus(@PathVariable String videoId) {
+        try {
+            cleanupPreviewContexts();
+
+            if (videoId == null || videoId.isBlank()) {
+                return ResponseEntity.badRequest().body(new VideoPreviewResponse(false, null, null, null, null, "Invalid videoId"));
+            }
+
+            Map<String, Object> status = didService.getClipStatus(videoId.trim());
+            if (!Boolean.TRUE.equals(status.get("success"))) {
+                String err = status.get("error") == null ? "Failed to fetch D-ID status" : String.valueOf(status.get("error"));
+                return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
+                        .body(new VideoPreviewResponse(false, videoId, null, null, null, err));
+            }
+
+            String s = status.get("status") == null ? null : String.valueOf(status.get("status"));
+            String type = status.get("type") == null ? null : String.valueOf(status.get("type"));
+            String resultUrl = status.get("result_url") == null ? null : String.valueOf(status.get("result_url"));
+            String err = status.get("error") == null ? null : String.valueOf(status.get("error"));
+
+            if ("done".equalsIgnoreCase(s) && resultUrl != null && !resultUrl.isBlank()) {
+                PreviewContext ctx = previewContexts.get(videoId.trim());
+                if (ctx != null && ctx.useBackground && ctx.backgroundName != null && !ctx.backgroundName.isBlank()) {
+                    if (ctx.compositedUrl != null && !ctx.compositedUrl.isBlank()) {
+                        resultUrl = ctx.compositedUrl;
+                    } else {
+                        String bgUrl = videoReportService.resolveBackgroundUrlForRequest(true, ctx.backgroundName);
+                        boolean shouldComposite = bgUrl == null || !bgUrl.regionMatches(true, 0, "https://", 0, "https://".length());
+                        if (shouldComposite) {
+                            java.util.Optional<String> composited = videoBackgroundCompositeService
+                                    .compositeToStoredVideoUrl(resultUrl, ctx.backgroundName, backendUrl, serverContextPath);
+                            if (composited.isPresent() && !composited.get().isBlank()) {
+                                ctx.compositedUrl = composited.get();
+                                resultUrl = ctx.compositedUrl;
+                            }
+                        }
+                    }
+                }
+            }
+
+            return ResponseEntity.ok(new VideoPreviewResponse(true, videoId, s, type, resultUrl, err));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(new VideoPreviewResponse(false, videoId, null, null, null, e.getMessage()));
+        }
+    }
+
+    private void cleanupPreviewContexts() {
+        long now = System.currentTimeMillis();
+        previewContexts.entrySet().removeIf(e -> now - e.getValue().createdAtMs > PREVIEW_CONTEXT_TTL_MS);
     }
 
     /**
@@ -383,12 +540,17 @@ public class VideoReportController {
      * Create new video report and start generation
      */
     @PostMapping
-    public ResponseEntity<VideoReportResponse> createVideoReport(@RequestBody VideoReportRequest request) {
-        User currentUser = getCurrentUser();
+    public ResponseEntity<VideoReportResponse> createVideoReport(
+            @RequestBody VideoReportRequest request,
+            @RequestHeader(value = "Authorization", required = false) String token
+    ) {
+        User currentUser = getCurrentUser(token);
         VideoReport report = videoReportService.createVideoReport(request, currentUser);
-        
-        // Start async video generation
-        videoReportService.startVideoGeneration(report.getId());
+
+        // Start async video generation (skip for preview reports)
+        if (!Boolean.TRUE.equals(request.getPreview())) {
+            videoReportService.startVideoGeneration(report.getId());
+        }
         
         return ResponseEntity.ok(videoReportService.getVideoReport(report.getId()));
     }
@@ -573,6 +735,27 @@ public class VideoReportController {
             return ResponseEntity.badRequest().body(response);
         }
     }
+
+    /**
+     * Regenerate single video item
+     */
+    @PostMapping("/{reportId}/items/{itemId}/regenerate-video")
+    public ResponseEntity<Map<String, Object>> regenerateVideo(
+            @PathVariable Long reportId,
+            @PathVariable Long itemId) {
+        try {
+            VideoReportItem item = videoReportService.regenerateVideo(reportId, itemId);
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("item", mapItemToResponse(item));
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", false);
+            response.put("error", e.getMessage());
+            return ResponseEntity.badRequest().body(response);
+        }
+    }
     
     /**
      * Update WA message template for a report
@@ -622,6 +805,26 @@ public class VideoReportController {
             Map<String, Object> response = new HashMap<>();
             response.put("success", true);
             response.put("message", "Retry started for failed videos");
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", false);
+            response.put("error", e.getMessage());
+            return ResponseEntity.badRequest().body(response);
+        }
+    }
+
+    /**
+     * Regenerate all failed video items in a report with auto WA send
+     */
+    @PostMapping("/{id}/regenerate-failed-videos")
+    public ResponseEntity<Map<String, Object>> regenerateFailedVideos(@PathVariable Long id) {
+        try {
+            int count = videoReportService.regenerateAllFailedVideos(id);
+            Map<String, Object> response = new HashMap<>();
+            response.put("success", true);
+            response.put("message", "Regenerating " + count + " failed videos. WA will be sent automatically when successful.");
+            response.put("count", count);
             return ResponseEntity.ok(response);
         } catch (Exception e) {
             Map<String, Object> response = new HashMap<>();
@@ -1037,7 +1240,7 @@ public class VideoReportController {
     public ResponseEntity<Map<String, Object>> testSendWaVideo(@RequestBody Map<String, String> request, HttpServletRequest httpRequest) {
         Map<String, Object> result = new HashMap<>();
         try {
-            User currentUser = getCurrentUser();
+            User currentUser = getCurrentUser(httpRequest == null ? null : httpRequest.getHeader("Authorization"));
             if (currentUser == null) {
                 String forwardedFor = httpRequest == null ? null : httpRequest.getHeader("X-Forwarded-For");
                 String remoteAddr = httpRequest == null ? null : httpRequest.getRemoteAddr();
@@ -1241,12 +1444,15 @@ public class VideoReportController {
         }
     }
 
-    private User getCurrentUser() {
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        if (authentication != null && authentication.isAuthenticated()) {
-            String username = authentication.getName();
-            return userRepository.findByUsername(username).orElse(null);
+    private User getCurrentUser(String token) {
+        try {
+            if (token == null || !token.startsWith("Bearer ")) {
+                return null;
+            }
+            String actualToken = token.substring(7);
+            return authService.getUserFromToken(actualToken);
+        } catch (Exception ignored) {
+            return null;
         }
-        return null;
     }
 }

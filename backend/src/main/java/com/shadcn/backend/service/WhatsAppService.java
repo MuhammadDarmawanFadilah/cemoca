@@ -354,20 +354,20 @@ public class WhatsAppService {
                 return result;
             }
             
-            // Prepare request body for Wablas API (form-urlencoded)
-            // Reference: https://tegal.wablas.com/documentation/api - POST /api/send-message
-            MultiValueMap<String, String> body = new LinkedMultiValueMap<>();
-            body.add("phone", cleanPhone);
-            body.add("message", message);
-            
-            // Set headers with authorization token
-            // IMPORTANT: Wablas v1 API requires APPLICATION_FORM_URLENCODED, not MULTIPART_FORM_DATA
-            HttpHeaders headers = new HttpHeaders();
-            headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
-            headers.set("Authorization", authorizationHeaderValue());
-            
-            HttpEntity<MultiValueMap<String, String>> requestEntity = new HttpEntity<>(body, headers);
-            String url = whatsappApiUrl + "/api/send-message";
+                // Wablas v2 API: POST /api/v2/send-message
+                // Body: { "data": [ { "phone": "...", "message": "..." } ] }
+                JsonNode payload = objectMapper.createObjectNode()
+                    .set("data", objectMapper.createArrayNode()
+                        .add(objectMapper.createObjectNode()
+                            .put("phone", cleanPhone)
+                            .put("message", message)));
+
+                HttpHeaders headers = new HttpHeaders();
+                headers.setContentType(MediaType.APPLICATION_JSON);
+                headers.set("Authorization", authorizationHeaderValue());
+
+                HttpEntity<String> requestEntity = new HttpEntity<>(objectMapper.writeValueAsString(payload), headers);
+                String url = whatsappApiUrl + "/api/v2/send-message";
             
             logger.info("[WABLAS] Sending message to {} via {}", cleanPhone, url);
             logger.debug("[WABLAS] Message length: {} chars", message.length());
@@ -485,20 +485,19 @@ public class WhatsAppService {
                 throw new RuntimeException("Invalid phone number format: " + phoneNumber);
             }
             
-            // Prepare request body for Wablas API
-            // Reference: https://tegal.wablas.com/documentation/api - POST /api/send-message
-            MultiValueMap<String, String> body = new LinkedMultiValueMap<>();
-            body.add("phone", cleanPhone);
-            body.add("message", message);
-            
-            // Set headers with authorization token
-            // IMPORTANT: Wablas v1 API requires APPLICATION_FORM_URLENCODED, not MULTIPART_FORM_DATA
-            HttpHeaders headers = new HttpHeaders();
-            headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
-            headers.set("Authorization", authorizationHeaderValue());
-            
-            HttpEntity<MultiValueMap<String, String>> requestEntity = new HttpEntity<>(body, headers);
-            String url = whatsappApiUrl + "/api/send-message";
+                // Wablas v2 API: POST /api/v2/send-message
+                JsonNode payload = objectMapper.createObjectNode()
+                    .set("data", objectMapper.createArrayNode()
+                        .add(objectMapper.createObjectNode()
+                            .put("phone", cleanPhone)
+                            .put("message", message)));
+
+                HttpHeaders headers = new HttpHeaders();
+                headers.setContentType(MediaType.APPLICATION_JSON);
+                headers.set("Authorization", authorizationHeaderValue());
+
+                HttpEntity<String> requestEntity = new HttpEntity<>(objectMapper.writeValueAsString(payload), headers);
+                String url = whatsappApiUrl + "/api/v2/send-message";
             
             logger.info("[WABLAS] Sending message to {} via {}", cleanPhone, url);
             logger.debug("[WABLAS] Authorization token configured: {}", whatsappApiToken != null && !whatsappApiToken.isEmpty() ? "Yes" : "No");
@@ -1591,7 +1590,7 @@ public class WhatsAppService {
         boolean tooLarge = errLower.contains("payload too large") || errLower.contains("413");
 
         if (imageUrl != null && !imageUrl.isBlank() && (packageNotSupport || tooLarge)) {
-            Map<String, Object> fallback = sendMediaUrlWithDetails("/api/send-image", "image", phoneNumber, caption, imageUrl);
+            Map<String, Object> fallback = sendMediaUrlWithDetails("/api/v2/send-image", "image", phoneNumber, caption, imageUrl);
             fallback.put("imageFallback", "send-image-url");
             fallback.put("originalError", err);
             return fallback;
@@ -1633,11 +1632,11 @@ public class WhatsAppService {
     }
 
     public Map<String, Object> sendImageUrlWithDetails(String phoneNumber, String caption, String imageUrl) {
-        return sendMediaUrlWithDetails("/api/send-image", "image", phoneNumber, caption, imageUrl);
+        return sendMediaUrlWithDetails("/api/v2/send-image", "image", phoneNumber, caption, imageUrl);
     }
 
     public Map<String, Object> sendVideoUrlWithDetails(String phoneNumber, String caption, String videoUrl) {
-        return sendMediaUrlWithDetails("/api/send-video", "video", phoneNumber, caption, videoUrl);
+        return sendMediaUrlWithDetails("/api/v2/send-video", "video", phoneNumber, caption, videoUrl);
     }
 
     public Map<String, Object> sendVideoFileFromLocalWithDetails(String phoneNumber, String caption, Path filePath) {
@@ -1850,7 +1849,7 @@ public class WhatsAppService {
             if (Boolean.TRUE.equals(upload.get("success"))) {
                 String uploadedUrl = upload.get("url") == null ? null : upload.get("url").toString();
                 if (uploadedUrl != null && !uploadedUrl.isBlank()) {
-                    Map<String, Object> viaUrl = sendMediaUrlWithDetails("/api/send-video", "video", phoneNumber, caption, uploadedUrl);
+                    Map<String, Object> viaUrl = sendMediaUrlWithDetails("/api/v2/send-video", "video", phoneNumber, caption, uploadedUrl);
                     viaUrl.put("videoFallback", "upload-video-then-send-video");
                     viaUrl.put("originalError", err);
                     viaUrl.put("uploadedUrl", uploadedUrl);
@@ -1863,7 +1862,7 @@ public class WhatsAppService {
 
         // If URL-based sending is needed (package limitation or payload too large), use provided videoUrl when available.
         if (videoUrl != null && !videoUrl.isBlank() && (packageNotSupport || tooLarge)) {
-            Map<String, Object> fallback = sendMediaUrlWithDetails("/api/send-video", "video", phoneNumber, caption, videoUrl);
+            Map<String, Object> fallback = sendMediaUrlWithDetails("/api/v2/send-video", "video", phoneNumber, caption, videoUrl);
             fallback.put("videoFallback", "send-video-url");
             fallback.put("originalError", err);
             return fallback;
@@ -2202,7 +2201,7 @@ public class WhatsAppService {
         return results;
     }
 
-    private Map<String, Object> sendMediaUrlWithDetails(
+        private Map<String, Object> sendMediaUrlWithDetails(
             String endpoint,
             String mediaParamName,
             String phoneNumber,
@@ -2227,19 +2226,21 @@ public class WhatsAppService {
                 return result;
             }
 
-            // Wablas docs use application/x-www-form-urlencoded for v1 endpoints like /api/send-image, /api/send-video
-            MultiValueMap<String, String> body = new LinkedMultiValueMap<>();
-            body.add("phone", cleanPhone);
-            body.add(mediaParamName, mediaUrl);
+            // Wablas v2 API uses JSON body: {"data":[{"phone":"..","image|video|document|audio":"..","caption":".."}]}
+            com.fasterxml.jackson.databind.node.ObjectNode item = objectMapper.createObjectNode();
+            item.put("phone", cleanPhone);
+            item.put(mediaParamName, mediaUrl);
             if (caption != null && !caption.isBlank()) {
-                body.add("caption", caption);
+                item.put("caption", caption);
             }
+            com.fasterxml.jackson.databind.node.ObjectNode payload = objectMapper.createObjectNode();
+            payload.set("data", objectMapper.createArrayNode().add(item));
 
             HttpHeaders headers = new HttpHeaders();
-            headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
+            headers.setContentType(MediaType.APPLICATION_JSON);
             headers.set("Authorization", authorizationHeaderValue());
 
-            HttpEntity<MultiValueMap<String, String>> requestEntity = new HttpEntity<>(body, headers);
+            HttpEntity<String> requestEntity = new HttpEntity<>(objectMapper.writeValueAsString(payload), headers);
             String url = whatsappApiUrl + endpoint;
 
             logger.info("[WABLAS] Sending media URL to {} via {}", cleanPhone, url);

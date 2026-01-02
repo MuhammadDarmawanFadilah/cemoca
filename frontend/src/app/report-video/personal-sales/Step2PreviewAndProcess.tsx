@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -98,11 +98,38 @@ export function Step2PreviewAndProcess({
   goToReportDetail,
 }: Step2PreviewAndProcessProps) {
   const { t } = useLanguage();
-  const [previewVideoDialog, setPreviewVideoDialog] = useState<string | null>(null);
+  const [previewVideoDialogOpen, setPreviewVideoDialogOpen] = useState(false);
+  const [previewVideoDialogStatus, setPreviewVideoDialogStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
+  const [previewVideoDialogMessage, setPreviewVideoDialogMessage] = useState<string>("");
+  const [previewStartedAt, setPreviewStartedAt] = useState<number | null>(null);
+  const [previewElapsedMs, setPreviewElapsedMs] = useState<number>(0);
   const [previewWaDialog, setPreviewWaDialog] = useState<{ open: boolean; name: string; phone: string; message: string } | null>(null);
   const [generatingPreview, setGeneratingPreview] = useState(false);
+  const [previewVideoId, setPreviewVideoId] = useState<string | null>(null);
   const [previewVideoUrl, setPreviewVideoUrl] = useState<string | null>(null);
   const [previewItem, setPreviewItem] = useState<{ name: string; phone: string; avatar: string } | null>(null);
+  const previewRunIdRef = useRef(0);
+
+  useEffect(() => {
+    if (!previewVideoDialogOpen || previewVideoDialogStatus !== "loading" || !previewStartedAt) {
+      return;
+    }
+
+    const id = window.setInterval(() => {
+      setPreviewElapsedMs(Date.now() - previewStartedAt);
+    }, 1000);
+
+    return () => {
+      window.clearInterval(id);
+    };
+  }, [previewVideoDialogOpen, previewVideoDialogStatus, previewStartedAt]);
+
+  const formatElapsed = (ms: number) => {
+    const totalSeconds = Math.floor(ms / 1000);
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+  };
 
   const rows = validationResult?.rows ?? [];
   const errors = validationResult?.errors ?? [];
@@ -114,6 +141,9 @@ export function Step2PreviewAndProcess({
 
   // Generate preview video for first item
   const generatePreviewVideo = async () => {
+    if (previewVideoUrl) {
+      return;
+    }
     const firstRow = getFirstValidRow();
     if (!firstRow) {
       toast.error(t("reportVideo.noValidData"));
@@ -121,63 +151,113 @@ export function Step2PreviewAndProcess({
     }
 
     try {
+      const myRunId = ++previewRunIdRef.current;
       setGeneratingPreview(true);
+      setPreviewVideoId(null);
       setPreviewItem({ name: firstRow.name, phone: firstRow.phone, avatar: firstRow.avatar });
-      
-      // Create a temporary report with just 1 item for preview
-      const previewRequest = {
-        reportName: `${reportName} (Preview)`,
+      setPreviewVideoDialogOpen(true);
+      setPreviewVideoDialogStatus("loading");
+      setPreviewVideoDialogMessage(t("reportVideo.generatingPreview") + "...");
+      setPreviewStartedAt(Date.now());
+      setPreviewElapsedMs(0);
+
+      const start = await videoReportAPI.startPreview({
         messageTemplate,
-        waMessageTemplate,
         useBackground,
         backgroundName,
-        items: [{ rowNumber: firstRow.rowNumber, name: firstRow.name, phone: firstRow.phone, avatar: firstRow.avatar }],
-      };
-      
-      const response = await videoReportAPI.createVideoReport(previewRequest);
-      
-      // Generate video for the single item
-      if (response.items && response.items.length > 0) {
-        const itemId = response.items[0].id;
-        const result = await videoReportAPI.generateSingleVideo(response.id, itemId);
-        
-        if (result.success) {
-          toast.info(t("reportVideo.videoProcessing"));
-          
-          // Poll for video completion
-          const pollVideo = async () => {
-            let attempts = 0;
-            const maxAttempts = 60; // 3 minutes max
-            
-            while (attempts < maxAttempts) {
-              await new Promise(resolve => setTimeout(resolve, 3000));
-              const updated = await videoReportAPI.refreshStatus(response.id);
-              
-              if (updated.items && updated.items[0]) {
-                if (updated.items[0].status === "DONE" && updated.items[0].videoUrl) {
-                  setPreviewVideoUrl(updated.items[0].videoUrl);
-                  toast.success(t("reportVideo.previewReady"));
-                  return;
-                } else if (updated.items[0].status === "FAILED") {
-                  toast.error(updated.items[0].errorMessage || t("reportVideo.failedGenerateVideo"));
-                  return;
-                }
-              }
-              attempts++;
-            }
-            toast.error(t("reportVideo.previewTimeout"));
-          };
-          
-          await pollVideo();
-        } else {
-          toast.error(result.error || t("reportVideo.failedGenerateVideo"));
-        }
+        rowNumber: firstRow.rowNumber,
+        name: firstRow.name,
+        phone: firstRow.phone,
+        avatar: firstRow.avatar,
+      });
+
+      if (previewRunIdRef.current !== myRunId) return;
+
+      if (!start?.success || !start.videoId) {
+        throw new Error(start?.error || t("reportVideo.failedGenerateVideo"));
       }
+
+      const videoId = start.videoId;
+      setPreviewVideoId(videoId);
+
+      toast.info(t("reportVideo.videoProcessing"));
+      setPreviewVideoDialogStatus("loading");
+      setPreviewVideoDialogMessage(t("reportVideo.videoProcessing"));
+      setPreviewStartedAt(Date.now());
+      setPreviewElapsedMs(0);
+
+      // Poll for video completion
+      const pollVideo = async () => {
+        while (true) {
+          if (previewRunIdRef.current !== myRunId) return;
+          await new Promise(resolve => setTimeout(resolve, 3000));
+
+          try {
+            const statusResp = await videoReportAPI.getPreviewStatus(videoId);
+            if (!statusResp?.success) {
+              const msg = statusResp?.error || t("reportVideo.failedGenerateVideo");
+              setPreviewVideoDialogStatus("error");
+              setPreviewVideoDialogMessage(msg);
+              setPreviewStartedAt(null);
+              toast.error(msg);
+              return;
+            }
+
+            const rawStatus = (statusResp.status || "unknown").toLowerCase();
+            const resultUrl = statusResp.resultUrl;
+            const err = statusResp.error;
+
+            if (rawStatus === "done" && resultUrl) {
+              setPreviewVideoUrl(resultUrl);
+              setPreviewVideoDialogStatus("ready");
+              setPreviewVideoDialogMessage("");
+              setPreviewStartedAt(null);
+              toast.success(t("reportVideo.previewReady"));
+              return;
+            }
+
+            if (rawStatus === "error" || rawStatus === "failed") {
+              const msg = err || t("reportVideo.failedGenerateVideo");
+              setPreviewVideoDialogStatus("error");
+              setPreviewVideoDialogMessage(msg);
+              setPreviewStartedAt(null);
+              toast.error(msg);
+              return;
+            }
+
+            if (rawStatus === "processing") {
+              setPreviewVideoDialogMessage("D-ID sedang memproses video preview...");
+            } else if (rawStatus === "created") {
+              setPreviewVideoDialogMessage("Mengirim permintaan ke D-ID...");
+            } else {
+              setPreviewVideoDialogMessage(`Status: ${statusResp.status || "unknown"}`);
+            }
+          } catch {
+            setPreviewVideoDialogMessage("Menunggu status dari D-ID...");
+          }
+        }
+      };
+
+      await pollVideo();
     } catch (error) {
-      toast.error(t("reportVideo.failedGenerateVideo"));
+      const msg = (error as any)?.message || t("reportVideo.failedGenerateVideo");
+      toast.error(msg);
+      setPreviewVideoDialogStatus("error");
+      setPreviewVideoDialogMessage(msg);
+      setPreviewStartedAt(null);
     } finally {
       setGeneratingPreview(false);
     }
+  };
+
+  const openPreviewDialog = () => {
+    if (!previewVideoUrl) {
+      toast.error(t("reportVideo.previewVideoReady"));
+      return;
+    }
+    setPreviewVideoDialogOpen(true);
+    setPreviewVideoDialogStatus("ready");
+    setPreviewVideoDialogMessage("");
   };
 
   // Preview WA message
@@ -356,27 +436,24 @@ export function Step2PreviewAndProcess({
                 size="sm"
                 className="h-8 text-xs"
                 onClick={generatePreviewVideo}
-                disabled={generatingPreview || !getFirstValidRow()}
+                disabled={!!previewVideoUrl || generatingPreview || !getFirstValidRow()}
               >
                 {generatingPreview ? (
                   <><RefreshCw className="h-3.5 w-3.5 mr-1.5 animate-spin" /> {t("reportVideo.generatingPreview")}...</>
-                ) : previewVideoUrl ? (
-                  <><Eye className="h-3.5 w-3.5 mr-1.5" /> {t("reportVideo.watchPreview")}</>
                 ) : (
                   <><Video className="h-3.5 w-3.5 mr-1.5" /> {t("reportVideo.generatePreviewVideo")}</>
                 )}
               </Button>
               
-              {previewVideoUrl && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-8 text-xs"
-                  onClick={() => setPreviewVideoDialog(previewVideoUrl)}
-                >
-                  <Play className="h-3.5 w-3.5 mr-1.5" /> {t("reportVideo.playVideo")}
-                </Button>
-              )}
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 text-xs"
+                onClick={openPreviewDialog}
+                disabled={!previewVideoUrl}
+              >
+                <Play className="h-3.5 w-3.5 mr-1.5" /> {t("reportVideo.watchPreview")}
+              </Button>
 
               <Button
                 variant="outline"
@@ -496,14 +573,64 @@ export function Step2PreviewAndProcess({
       </div>
 
       {/* Video Preview Dialog */}
-      <Dialog open={!!previewVideoDialog} onOpenChange={() => setPreviewVideoDialog(null)}>
+      <Dialog
+        open={previewVideoDialogOpen}
+        onOpenChange={(open) => {
+          setPreviewVideoDialogOpen(open);
+          if (!open) {
+            // Cancel any in-flight polling
+            previewRunIdRef.current++;
+            setPreviewStartedAt(null);
+            setPreviewElapsedMs(0);
+            if (previewVideoDialogStatus === "loading") {
+              setPreviewVideoDialogStatus("idle");
+              setPreviewVideoDialogMessage("");
+            }
+          }
+        }}
+      >
         <DialogContent className="w-[95vw] max-w-5xl h-[90vh] p-3 flex flex-col bg-black border-slate-800">
           <DialogHeader className="flex-shrink-0">
             <DialogTitle className="text-sm text-white">{t("reportVideo.previewVideo")}</DialogTitle>
           </DialogHeader>
-          {previewVideoDialog && (
+
+          {previewVideoDialogStatus === "loading" && (
+            <div className="flex-1 flex flex-col items-center justify-center gap-3 text-center px-6">
+              <RefreshCw className="h-8 w-8 animate-spin text-white/70" />
+              <div className="text-sm text-white/90">{previewVideoDialogMessage || t("reportVideo.generatingPreview")}</div>
+              <div className="text-xs text-white/70">
+                Timer: {formatElapsed(previewElapsedMs)}
+              </div>
+              {previewItem && (
+                <div className="text-xs text-white/60">
+                  {previewItem.name} • {previewItem.phone} • {previewItem.avatar}
+                </div>
+              )}
+              <div className="text-[11px] text-white/50">Mohon tunggu sampai D-ID selesai.</div>
+            </div>
+          )}
+
+          {previewVideoDialogStatus === "error" && (
+            <div className="flex-1 flex flex-col items-center justify-center gap-3 text-center px-6">
+              <XCircle className="h-8 w-8 text-red-400" />
+              <div className="text-sm text-white/90">Preview gagal</div>
+              <div className="text-xs text-white/70 max-w-2xl break-words">
+                {previewVideoDialogMessage || t("reportVideo.failedGenerateVideo")}
+              </div>
+              <div className="flex items-center gap-2">
+                <Button size="sm" variant="outline" className="h-8 text-xs" onClick={() => setPreviewVideoDialogOpen(false)}>
+                  Tutup
+                </Button>
+                <Button size="sm" className="h-8 text-xs" onClick={generatePreviewVideo} disabled={generatingPreview}>
+                  Coba Lagi
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {previewVideoDialogStatus === "ready" && previewVideoUrl && (
             <div className="flex-1 flex items-center justify-center">
-              <video src={previewVideoDialog} controls autoPlay className="max-w-full max-h-full rounded" />
+              <video src={previewVideoUrl} controls autoPlay className="max-w-full max-h-full rounded" />
             </div>
           )}
         </DialogContent>

@@ -517,6 +517,154 @@ export const imageAPI = {
     }),
 };
 
+export interface AvatarAudio {
+  id: number;
+  avatarName: string;
+  normalizedKey: string;
+  originalFilename: string;
+  storedFilename: string;
+  mimeType: string;
+  fileSize: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface VideoBackground {
+  id: number;
+  backgroundName: string;
+  normalizedKey: string;
+  originalFilename: string;
+  storedFilename: string;
+  mimeType: string;
+  fileSize: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export const audioManagementAPI = {
+  list: (params: { search?: string; page?: number; size?: number } = {}): Promise<PagedResponse<AvatarAudio>> => {
+    const search = params.search ? `&search=${encodeURIComponent(params.search)}` : '';
+    const page = typeof params.page === 'number' ? params.page : 0;
+    const size = typeof params.size === 'number' ? params.size : 25;
+    return apiCall<PagedResponse<AvatarAudio>>(`/admin/audio-management?page=${page}&size=${size}${search}`);
+  },
+
+  create: async (avatarName: string, file: File): Promise<AvatarAudio> => {
+    const formData = new FormData();
+    formData.append('avatarName', avatarName);
+    formData.append('file', file);
+    const token = localStorage.getItem('auth_token');
+
+    const response = await fetch(`${API_BASE_URL}/admin/audio-management`, {
+      method: 'POST',
+      body: formData,
+      mode: 'cors',
+      credentials: 'omit',
+      headers: {
+        ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+      },
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(errorText || `HTTP ${response.status}`);
+    }
+    return await response.json();
+  },
+
+  update: async (id: number, avatarName?: string, file?: File): Promise<AvatarAudio> => {
+    const formData = new FormData();
+    if (typeof avatarName === 'string') {
+      formData.append('avatarName', avatarName);
+    }
+    if (file) {
+      formData.append('file', file);
+    }
+    const token = localStorage.getItem('auth_token');
+
+    const response = await fetch(`${API_BASE_URL}/admin/audio-management/${id}`, {
+      method: 'PUT',
+      body: formData,
+      mode: 'cors',
+      credentials: 'omit',
+      headers: {
+        ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+      },
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(errorText || `HTTP ${response.status}`);
+    }
+    return await response.json();
+  },
+
+  delete: (id: number): Promise<void> =>
+    apiCall<void>(`/admin/audio-management/${id}`, { method: 'DELETE' }),
+};
+
+export const backgroundManagementAPI = {
+  list: (params: { search?: string; page?: number; size?: number } = {}): Promise<PagedResponse<VideoBackground>> => {
+    const search = params.search ? `&search=${encodeURIComponent(params.search)}` : '';
+    const page = typeof params.page === 'number' ? params.page : 0;
+    const size = typeof params.size === 'number' ? params.size : 25;
+    return apiCall<PagedResponse<VideoBackground>>(`/admin/background-management?page=${page}&size=${size}${search}`);
+  },
+
+  create: async (backgroundName: string, file: File): Promise<VideoBackground> => {
+    const formData = new FormData();
+    formData.append('backgroundName', backgroundName);
+    formData.append('file', file);
+    const token = localStorage.getItem('auth_token');
+
+    const response = await fetch(`${API_BASE_URL}/admin/background-management`, {
+      method: 'POST',
+      body: formData,
+      mode: 'cors',
+      credentials: 'omit',
+      headers: {
+        ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+      },
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(errorText || `HTTP ${response.status}`);
+    }
+    return await response.json();
+  },
+
+  update: async (id: number, backgroundName?: string, file?: File): Promise<VideoBackground> => {
+    const formData = new FormData();
+    if (typeof backgroundName === 'string') {
+      formData.append('backgroundName', backgroundName);
+    }
+    if (file) {
+      formData.append('file', file);
+    }
+    const token = localStorage.getItem('auth_token');
+
+    const response = await fetch(`${API_BASE_URL}/admin/background-management/${id}`, {
+      method: 'PUT',
+      body: formData,
+      mode: 'cors',
+      credentials: 'omit',
+      headers: {
+        ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+      },
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(errorText || `HTTP ${response.status}`);
+    }
+    return await response.json();
+  },
+
+  delete: (id: number): Promise<void> =>
+    apiCall<void>(`/admin/background-management/${id}`, { method: 'DELETE' }),
+};
+
 // TypeScript interfaces sesuai dengan backend models
 export interface Role {
   roleId: number;
@@ -2633,6 +2781,7 @@ export interface VideoReportRequest {
   waMessageTemplate?: string;
   useBackground?: boolean;
   backgroundName?: string;
+  preview?: boolean;
   items: VideoReportItemRequest[];
 }
 
@@ -2682,6 +2831,25 @@ export interface VideoReportResponse {
   itemsPage?: number;
   itemsTotalPages?: number;
   itemsTotalElements?: number;
+}
+
+export interface VideoPreviewRequest {
+  messageTemplate: string;
+  useBackground?: boolean;
+  backgroundName?: string;
+  rowNumber?: number;
+  name: string;
+  phone?: string;
+  avatar: string;
+}
+
+export interface VideoPreviewResponse {
+  success: boolean;
+  videoId?: string;
+  status?: string;
+  type?: string;
+  resultUrl?: string;
+  error?: string;
 }
 
 // Message Template Types
@@ -2777,6 +2945,17 @@ export const videoReportAPI = {
       method: 'POST',
       body: JSON.stringify(request),
     }),
+
+  // Start ephemeral preview (no DB)
+  startPreview: (request: VideoPreviewRequest): Promise<VideoPreviewResponse> =>
+    apiCall<VideoPreviewResponse>('/video-reports/preview', {
+      method: 'POST',
+      body: JSON.stringify(request),
+    }),
+
+  // Poll ephemeral preview status (no DB)
+  getPreviewStatus: (videoId: string): Promise<VideoPreviewResponse> =>
+    apiCall<VideoPreviewResponse>(`/video-reports/preview/${encodeURIComponent(videoId)}`),
 
   // Get video report by ID (without items)
   getVideoReport: (id: number): Promise<VideoReportResponse> =>
@@ -2877,6 +3056,18 @@ export const videoReportAPI = {
   // Resend WA to single item
   resendWa: (reportId: number, itemId: number): Promise<{ success: boolean; item?: VideoReportItemResponse; error?: string }> =>
     apiCall<{ success: boolean; item?: VideoReportItemResponse; error?: string }>(`/video-reports/${reportId}/items/${itemId}/resend-wa`, {
+      method: 'POST',
+    }),
+
+  // Regenerate single video
+  regenerateVideo: (reportId: number, itemId: number): Promise<{ success: boolean; item?: VideoReportItemResponse; error?: string }> =>
+    apiCall<{ success: boolean; item?: VideoReportItemResponse; error?: string }>(`/video-reports/${reportId}/items/${itemId}/regenerate-video`, {
+      method: 'POST',
+    }),
+
+  // Regenerate all failed videos
+  regenerateAllFailedVideos: (reportId: number): Promise<{ success: boolean; message?: string; count?: number; error?: string }> =>
+    apiCall<{ success: boolean; message?: string; count?: number; error?: string }>(`/video-reports/${reportId}/regenerate-failed-videos`, {
       method: 'POST',
     }),
   

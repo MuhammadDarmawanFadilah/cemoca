@@ -116,14 +116,18 @@ export function Step1InputData({
       // Load default templates based on actual default language
       try {
         const videoTemplate = await messageTemplateAPI.getTemplate("VIDEO", defaultVideoLang);
-        setMessageTemplate(videoTemplate.template);
+        if (!messageTemplate || !messageTemplate.trim()) {
+          setMessageTemplate(videoTemplate.template);
+        }
       } catch (error) {
         console.error("Failed to load default video template:", error);
       }
       
       try {
         const waTemplate = await messageTemplateAPI.getTemplate("WHATSAPP", defaultWaLang);
-        setWaMessageTemplate(waTemplate.template);
+        if (!waMessageTemplate || !waMessageTemplate.trim()) {
+          setWaMessageTemplate(waTemplate.template);
+        }
       } catch (error) {
         console.error("Failed to load default WA template:", error);
       }

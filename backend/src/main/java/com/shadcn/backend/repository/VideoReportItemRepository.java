@@ -24,6 +24,11 @@ public interface VideoReportItemRepository extends JpaRepository<VideoReportItem
     // Find single item by ID and report ID
     VideoReportItem findByIdAndVideoReportId(Long id, Long videoReportId);
 
+       @Modifying
+       @Transactional
+       @Query("DELETE FROM VideoReportItem i WHERE i.videoReport.id = :reportId")
+       void deleteByVideoReportId(@Param("reportId") Long reportId);
+
        // Webhook lookup by D-ID clip id
        @Query("SELECT i FROM VideoReportItem i WHERE i.didClipId = :didClipId")
        VideoReportItem findByDidClipId(@Param("didClipId") String didClipId);
@@ -49,6 +54,12 @@ public interface VideoReportItemRepository extends JpaRepository<VideoReportItem
     // WhatsApp status queries
     int countByVideoReportIdAndWaStatus(Long videoReportId, String waStatus);
     List<VideoReportItem> findByVideoReportIdAndWaStatus(Long videoReportId, String waStatus);
+
+    // Count WA statuses only for items eligible for WA (video DONE + not excluded)
+    @Query("SELECT COUNT(i) FROM VideoReportItem i WHERE i.videoReport.id = :reportId AND i.status = 'DONE' AND i.waStatus IN :waStatuses AND (i.excluded = false OR i.excluded IS NULL)")
+    int countDoneNonExcludedByReportIdAndWaStatusIn(
+           @Param("reportId") Long reportId,
+           @Param("waStatuses") Collection<String> waStatuses);
     
     // Paginated WA status filter
     Page<VideoReportItem> findByVideoReportIdAndWaStatusOrderByRowNumberAsc(Long videoReportId, String waStatus, Pageable pageable);

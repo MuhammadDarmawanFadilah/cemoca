@@ -7,6 +7,7 @@ import com.shadcn.backend.dto.VideoReportResponse.VideoReportItemResponse;
 import com.shadcn.backend.model.User;
 import com.shadcn.backend.entity.VideoReport;
 import com.shadcn.backend.entity.VideoReportItem;
+import com.shadcn.backend.repository.VideoBackgroundRepository;
 import com.shadcn.backend.repository.VideoReportItemRepository;
 import com.shadcn.backend.repository.VideoReportRepository;
 import com.shadcn.backend.util.VideoLinkEncryptor;
@@ -60,6 +61,7 @@ public class VideoReportService {
     private final ExcelService excelService;
     private final WhatsAppService whatsAppService;
     private final VideoBackgroundCompositeService videoBackgroundCompositeService;
+    private final VideoBackgroundRepository videoBackgroundRepository;
     
     @Value("${app.backend.url:http://localhost:8080}")
     private String backendUrl;
@@ -228,13 +230,15 @@ public class VideoReportService {
                              DIDService didService,
                              ExcelService excelService,
                              WhatsAppService whatsAppService,
-                             VideoBackgroundCompositeService videoBackgroundCompositeService) {
+                             VideoBackgroundCompositeService videoBackgroundCompositeService,
+                             VideoBackgroundRepository videoBackgroundRepository) {
         this.videoReportRepository = videoReportRepository;
         this.videoReportItemRepository = videoReportItemRepository;
         this.didService = didService;
         this.excelService = excelService;
         this.whatsAppService = whatsAppService;
         this.videoBackgroundCompositeService = videoBackgroundCompositeService;
+        this.videoBackgroundRepository = videoBackgroundRepository;
     }
 
     /**
@@ -291,6 +295,8 @@ public class VideoReportService {
         
         report = videoReportRepository.save(report);
 
+        final boolean isPreview = Boolean.TRUE.equals(request.getPreview());
+
         // Create items
         for (VideoReportRequest.VideoReportItemRequest itemRequest : request.getItems()) {
             VideoReportItem item = new VideoReportItem();
@@ -305,7 +311,7 @@ public class VideoReportService {
                     .replace(":name", itemRequest.getName());
             item.setPersonalizedMessage(personalizedMessage);
             item.setStatus("PENDING");
-            item.setWaStatus("PENDING");
+                item.setWaStatus(isPreview ? "DISABLED" : "PENDING");
             item.setExcluded(false);
             
             videoReportItemRepository.save(item);
@@ -877,6 +883,50 @@ public class VideoReportService {
     public VideoReportItem resendWa(Long reportId, Long itemId) {
         return resendWaWithRetry(reportId, itemId, 3);
     }
+
+    /**
+     * Regenerate single video item and auto-send WA when successful
+     */
+    @Transactional
+    public VideoReportItem regenerateVideo(Long reportId, Long itemId) {
+        VideoReportItem item = videoReportItemRepository.findByIdAndVideoReportId(itemId, reportId);
+        if (item == null) {
+            throw new RuntimeException("Item not found");
+        }
+
+        VideoReport report = videoReportRepository.findById(reportId).orElse(null);
+        if (report == null) {
+            throw new RuntimeException("Report not found");
+        }
+
+        // Reset video status
+        item.setStatus("PENDING");
+        item.setErrorMessage(null);
+        item.setDidClipId(null);
+        item.setVideoUrl(null);
+        item.setVideoGeneratedAt(null);
+        
+        // Reset WA status
+        item.setWaStatus(null);
+        item.setWaErrorMessage(null);
+        item.setWaMessageId(null);
+        item.setWaSentAt(null);
+        
+        videoReportItemRepository.save(item);
+
+        // Update report to PROCESSING
+        if (!"PROCESSING".equals(report.getStatus())) {
+            report.setStatus("PROCESSING");
+            videoReportRepository.save(report);
+        }
+
+        logger.info("[REGENERATE VIDEO] Item {}: Reset to PENDING, triggering regeneration", itemId);
+
+        // Use the same batch generation process as initial generation
+        startVideoGeneration(reportId);
+
+        return item;
+    }
     
     /**
      * Resend WhatsApp to a single item with configurable retry attempts
@@ -1272,15 +1322,39 @@ public class VideoReportService {
                         item.setErrorMessage("D-ID done but result_url is empty");
                         logger.warn("[CHECK CLIPS] Item {} FAILED: {}", item.getId(), item.getErrorMessage());
                     } else {
-                        // D-ID already applies background during video generation via API
-                        // No need for local ffmpeg composite
-                        item.setVideoUrl(resultUrl);
+                        String finalUrl = resultUrl;
+
+                        // If background is enabled but the background URL is not publicly reachable via HTTPS,
+                        // D-ID cannot fetch it. In that case, perform local chroma-key composite.
+                        try {
+                            VideoReport report = videoReportRepository.findById(reportId).orElse(null);
+                            if (report != null && Boolean.TRUE.equals(report.getUseBackground())) {
+                                String bgName = report.getBackgroundName();
+                                String bgUrl = buildPublicBackgroundUrl(bgName);
+                                boolean shouldComposite = bgName != null && !bgName.isBlank() && !isHttpsUrl(bgUrl);
+
+                                if (shouldComposite) {
+                                    java.util.Optional<String> composited = videoBackgroundCompositeService
+                                            .compositeToStoredVideoUrl(resultUrl, bgName, backendUrl, serverContextPath);
+                                    if (composited.isPresent() && !composited.get().isBlank()) {
+                                        finalUrl = composited.get();
+                                        logger.info("[CHECK CLIPS] Item {} - composited background URL: {}", item.getId(), finalUrl);
+                                    } else {
+                                        logger.warn("[CHECK CLIPS] Item {} - background composite skipped/failed; using original URL", item.getId());
+                                    }
+                                }
+                            }
+                        } catch (Exception e) {
+                            logger.warn("[CHECK CLIPS] Item {} - background composite error: {}", item.getId(), e.getMessage());
+                        }
+
+                        item.setVideoUrl(finalUrl);
                         item.setStatus("DONE");
                         item.setVideoGeneratedAt(LocalDateTime.now());
                         item.setErrorMessage(null);
-                        logger.info("[CHECK CLIPS] Item {} DONE with URL: {}", item.getId(), resultUrl);
+                        logger.info("[CHECK CLIPS] Item {} DONE with URL: {}", item.getId(), finalUrl);
 
-                        enqueueShareCacheDownloadIfNeeded(reportId, item.getId(), resultUrl);
+                        enqueueShareCacheDownloadIfNeeded(reportId, item.getId(), finalUrl);
                     }
                 } else if ("error".equals(clipStatus) || "failed".equals(clipStatus)) {
                     item.setStatus("FAILED");
@@ -1306,6 +1380,12 @@ public class VideoReportService {
         } catch (Exception e) {
             logger.error("[CHECK CLIPS] Exception checking item {} (clip: {}): {}", item.getId(), item.getDidClipId(), e.getMessage(), e);
         }
+    }
+
+    private boolean isHttpsUrl(String url) {
+        if (url == null) return false;
+        String v = url.trim();
+        return !v.isEmpty() && v.regionMatches(true, 0, "https://", 0, "https://".length());
     }
 
     public void enqueueShareCacheDownloadIfNeeded(Long reportId, Long itemId, String sourceUrl) {
@@ -1595,6 +1675,59 @@ public class VideoReportService {
         // Start video generation for reset items
         startVideoGeneration(reportId);
     }
+
+    /**
+     * Regenerate all failed videos with auto WA send when successful
+     */
+    @Transactional
+    public int regenerateAllFailedVideos(Long reportId) {
+        List<VideoReportItem> failedItems = videoReportItemRepository
+                .findByVideoReportIdAndStatus(reportId, "FAILED");
+        
+        logger.info("[REGENERATE ALL] ========================================");
+        logger.info("[REGENERATE ALL] Regenerating {} failed items for report {}", failedItems.size(), reportId);
+        logger.info("[REGENERATE ALL] ========================================");
+        
+        if (failedItems.isEmpty()) {
+            logger.info("[REGENERATE ALL] No failed items to regenerate");
+            return 0;
+        }
+
+        VideoReport report = videoReportRepository.findById(reportId).orElse(null);
+        if (report == null) {
+            throw new RuntimeException("Report not found");
+        }
+        
+        // Reset all failed items
+        for (VideoReportItem item : failedItems) {
+            item.setStatus("PENDING");
+            item.setErrorMessage(null);
+            item.setDidClipId(null);
+            item.setVideoUrl(null);
+            item.setVideoGeneratedAt(null);
+            
+            // Reset WA status for auto-send
+            item.setWaStatus(null);
+            item.setWaErrorMessage(null);
+            item.setWaMessageId(null);
+            item.setWaSentAt(null);
+            
+            videoReportItemRepository.save(item);
+        }
+        
+        // Update report status
+        if (!"PROCESSING".equals(report.getStatus())) {
+            report.setStatus("PROCESSING");
+            videoReportRepository.save(report);
+        }
+        
+        logger.info("[REGENERATE ALL] Reset {} items to PENDING, starting generation with auto WA", failedItems.size());
+        
+        // Start video generation (will auto-send WA when each video completes)
+        startVideoGeneration(reportId);
+        
+        return failedItems.size();
+    }
     
     /**
      * Retry all failed WA messages - reset to PENDING so next startWaBlast will pick them up
@@ -1856,19 +1989,17 @@ public class VideoReportService {
         int processingCount = videoReportItemRepository.countByVideoReportIdAndStatus(report.getId(), "PROCESSING");
         response.setPendingCount(pendingCount);
         response.setProcessingCount(processingCount);
-        int waSentCount = 0;
-        waSentCount += videoReportItemRepository.countByVideoReportIdAndWaStatus(report.getId(), "SENT");
-        waSentCount += videoReportItemRepository.countByVideoReportIdAndWaStatus(report.getId(), "DELIVERED");
+        java.util.List<String> waSentStatuses = java.util.Arrays.asList("SENT", "DELIVERED");
+        java.util.List<String> waFailedStatuses = java.util.Arrays.asList("FAILED", "ERROR");
+        java.util.List<String> waInFlightStatuses = java.util.Arrays.asList("PROCESSING", "QUEUED");
+
+        int waSentCount = videoReportItemRepository.countDoneNonExcludedByReportIdAndWaStatusIn(report.getId(), waSentStatuses);
+        int waFailedCount = videoReportItemRepository.countDoneNonExcludedByReportIdAndWaStatusIn(report.getId(), waFailedStatuses);
+        int waPendingCount = videoReportItemRepository.countReadyForWaBlast(report.getId())
+            + videoReportItemRepository.countDoneNonExcludedByReportIdAndWaStatusIn(report.getId(), waInFlightStatuses);
+
         response.setWaSentCount(waSentCount);
-        int waFailedCount = 0;
-        waFailedCount += videoReportItemRepository.countByVideoReportIdAndWaStatus(report.getId(), "FAILED");
-        waFailedCount += videoReportItemRepository.countByVideoReportIdAndWaStatus(report.getId(), "ERROR");
         response.setWaFailedCount(waFailedCount);
-        // Calculate WA pending count
-        int waPendingCount = 0;
-        waPendingCount += videoReportItemRepository.countByVideoReportIdAndWaStatus(report.getId(), "PENDING");
-        waPendingCount += videoReportItemRepository.countByVideoReportIdAndWaStatus(report.getId(), "PROCESSING");
-        waPendingCount += videoReportItemRepository.countByVideoReportIdAndWaStatus(report.getId(), "QUEUED");
         response.setWaPendingCount(waPendingCount);
         response.setCreatedAt(report.getCreatedAt());
         response.setCompletedAt(report.getCompletedAt());
@@ -1894,19 +2025,17 @@ public class VideoReportService {
         int processingCount = videoReportItemRepository.countByVideoReportIdAndStatus(report.getId(), "PROCESSING");
         response.setPendingCount(pendingCount);
         response.setProcessingCount(processingCount);
-        int waSentCount = 0;
-        waSentCount += videoReportItemRepository.countByVideoReportIdAndWaStatus(report.getId(), "SENT");
-        waSentCount += videoReportItemRepository.countByVideoReportIdAndWaStatus(report.getId(), "DELIVERED");
+        java.util.List<String> waSentStatuses = java.util.Arrays.asList("SENT", "DELIVERED");
+        java.util.List<String> waFailedStatuses = java.util.Arrays.asList("FAILED", "ERROR");
+        java.util.List<String> waInFlightStatuses = java.util.Arrays.asList("PROCESSING", "QUEUED");
+
+        int waSentCount = videoReportItemRepository.countDoneNonExcludedByReportIdAndWaStatusIn(report.getId(), waSentStatuses);
+        int waFailedCount = videoReportItemRepository.countDoneNonExcludedByReportIdAndWaStatusIn(report.getId(), waFailedStatuses);
+        int waPendingCount = videoReportItemRepository.countReadyForWaBlast(report.getId())
+            + videoReportItemRepository.countDoneNonExcludedByReportIdAndWaStatusIn(report.getId(), waInFlightStatuses);
+
         response.setWaSentCount(waSentCount);
-        int waFailedCount = 0;
-        waFailedCount += videoReportItemRepository.countByVideoReportIdAndWaStatus(report.getId(), "FAILED");
-        waFailedCount += videoReportItemRepository.countByVideoReportIdAndWaStatus(report.getId(), "ERROR");
         response.setWaFailedCount(waFailedCount);
-        // Calculate WA pending count
-        int waPendingCount = 0;
-        waPendingCount += videoReportItemRepository.countByVideoReportIdAndWaStatus(report.getId(), "PENDING");
-        waPendingCount += videoReportItemRepository.countByVideoReportIdAndWaStatus(report.getId(), "PROCESSING");
-        waPendingCount += videoReportItemRepository.countByVideoReportIdAndWaStatus(report.getId(), "QUEUED");
         response.setWaPendingCount(waPendingCount);
         response.setCreatedAt(report.getCreatedAt());
         response.setCompletedAt(report.getCompletedAt());
@@ -1924,17 +2053,27 @@ public class VideoReportService {
         return response;
     }
 
+    public String resolveBackgroundUrlForRequest(Boolean useBackground, String backgroundName) {
+        if (!Boolean.TRUE.equals(useBackground)) {
+            return null;
+        }
+        return buildPublicBackgroundUrl(backgroundName);
+    }
+
     private String buildPublicBackgroundUrl(String backgroundName) {
         if (backgroundName == null || backgroundName.isBlank()) {
             return null;
         }
 
+        boolean exists;
         try {
-            org.springframework.core.io.Resource r = new org.springframework.core.io.ClassPathResource("background/" + backgroundName);
-            if (!r.exists() || !r.isReadable()) {
-                return null;
-            }
-        } catch (Exception ignore) {
+            String key = VideoBackgroundService.normalizeKey(backgroundName);
+            exists = videoBackgroundRepository.existsByNormalizedKey(key);
+        } catch (Exception e) {
+            exists = false;
+        }
+
+        if (!exists) {
             return null;
         }
 
@@ -1963,4 +2102,5 @@ public class VideoReportService {
 
         return base + ctx + "/api/video-backgrounds/" + encoded;
     }
+
 }

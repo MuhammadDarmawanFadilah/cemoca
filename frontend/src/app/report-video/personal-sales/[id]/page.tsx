@@ -313,6 +313,38 @@ export default function ReportDetailPage({ params }: { params: Promise<{ id: str
     } catch { toast.error(t("reportVideo.failedResend")); }
   };
 
+  const regenerateVideo = async (itemId: number) => {
+    if (!currentReport) return;
+    try {
+      toast.info("Memulai regenerasi video...");
+      const result = await videoReportAPI.regenerateVideo(currentReport.id, itemId);
+      if (result.success) {
+        toast.success("Video dalam antrian regenerasi. WA akan dikirim otomatis jika berhasil.");
+        await loadReport();
+      } else {
+        toast.error(result.error || "Gagal regenerasi video");
+      }
+    } catch { toast.error("Gagal regenerasi video"); }
+  };
+
+  const regenerateAllFailed = async () => {
+    if (!currentReport) return;
+    if ((currentReport.failedCount || 0) === 0) {
+      toast.error("Tidak ada video yang failed");
+      return;
+    }
+    try {
+      toast.info("Memulai regenerasi semua video yang failed...");
+      const result = await videoReportAPI.regenerateAllFailedVideos(currentReport.id);
+      if (result.success) {
+        toast.success(result.message || `Regenerasi ${result.count} video dimulai. WA akan dikirim otomatis.`);
+        await refreshStatus(false);
+      } else {
+        toast.error(result.error || "Gagal regenerasi video");
+      }
+    } catch { toast.error("Gagal regenerasi video"); }
+  };
+
   const backToHistory = () => {
     router.push("/report-video/personal-sales");
   };
@@ -321,7 +353,7 @@ export default function ReportDetailPage({ params }: { params: Promise<{ id: str
     return (
       <div className="min-h-screen bg-slate-50 dark:bg-slate-950">
         <div className="border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between">
+          <div className="max-w-6xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between">
             <div>
               <h1 className="text-lg font-semibold text-slate-900 dark:text-slate-100">{t("reportVideo.personalSalesVideo")}</h1>
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{t("reportVideo.aiPersonalization")}</p>
@@ -331,7 +363,7 @@ export default function ReportDetailPage({ params }: { params: Promise<{ id: str
             </Button>
           </div>
         </div>
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-5">
           <div className="flex items-center justify-center py-16">
             <Loader2 className="h-6 w-6 animate-spin text-slate-400" />
           </div>
@@ -344,7 +376,7 @@ export default function ReportDetailPage({ params }: { params: Promise<{ id: str
     return (
       <div className="min-h-screen bg-slate-50 dark:bg-slate-950">
         <div className="border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between">
+          <div className="max-w-6xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between">
             <div>
               <h1 className="text-lg font-semibold text-slate-900 dark:text-slate-100">{t("reportVideo.personalSalesVideo")}</h1>
             </div>
@@ -353,7 +385,7 @@ export default function ReportDetailPage({ params }: { params: Promise<{ id: str
             </Button>
           </div>
         </div>
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-5">
           <div className="bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 p-4 sm:p-6 text-center py-8">
             <div className="text-slate-500">{t("reportVideo.noReportSelected")}</div>
             <Button variant="outline" size="sm" className="mt-4" onClick={backToHistory}>
@@ -378,18 +410,32 @@ export default function ReportDetailPage({ params }: { params: Promise<{ id: str
   const totalPages = currentReport.itemsTotalPages ?? 1;
   const totalElements = currentReport.itemsTotalElements ?? items.length;
 
-  const isComplete = currentReport.status === "COMPLETED" && (currentReport.waSentCount || 0) === currentReport.successCount;
+  const videoFailedCount = currentReport.failedCount || 0;
+  const waFailedCount = currentReport.waFailedCount || 0;
+  const waPendingCount = currentReport.waPendingCount || 0;
+
+  const waNotReadyCount = Math.max(0, (currentReport.totalRecords || 0) - (currentReport.successCount || 0));
+
+  const hasErrors = videoFailedCount > 0 || waFailedCount > 0;
+  const hasInProgress = processingCount > 0 || pendingCount > 0 || waPendingCount > 0;
+  const isComplete = currentReport.status === "COMPLETED" && !hasErrors && !hasInProgress;
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950">
       {/* Header */}
       <div className="border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h1 className="text-lg font-semibold text-slate-900 dark:text-slate-100">{currentReport.reportName}</h1>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{t("reportVideo.reportDetail")}</p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="w-full sm:w-auto flex flex-wrap items-center justify-end gap-2">
+            {(currentReport.failedCount || 0) > 0 && (
+              <Button size="sm" variant="default" onClick={regenerateAllFailed} className="h-8 text-xs bg-blue-600 hover:bg-blue-700">
+                <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
+                Regenerate Failed ({currentReport.failedCount})
+              </Button>
+            )}
             {(currentReport.waPendingCount || 0) > 0 && (
               <Button size="sm" variant="default" onClick={handleStartWaBlast} disabled={waBlasting} className="h-8 text-xs bg-green-600 hover:bg-green-700">
                 {waBlasting ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Send className="h-3.5 w-3.5 mr-1.5" />}
@@ -407,82 +453,171 @@ export default function ReportDetailPage({ params }: { params: Promise<{ id: str
         </div>
       </div>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6">
-        <div className="bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 p-4 sm:p-6 space-y-4">
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 py-5">
+        <div className="bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 p-4 sm:p-5 space-y-3">
           {/* Success Header */}
-          {isComplete && (
-            <div className="bg-gradient-to-r from-emerald-50 to-green-50 dark:from-emerald-950/30 dark:to-green-950/30 rounded-lg p-4 text-center border border-emerald-200 dark:border-emerald-800">
-              <PartyPopper className="h-8 w-8 mx-auto text-emerald-600 mb-2" />
-              <h3 className="text-lg font-semibold text-emerald-700 dark:text-emerald-400">{t("reportVideo.processComplete")}</h3>
-              <p className="text-sm text-emerald-600 dark:text-emerald-500">{t("reportVideo.allVideoAndWaSent")}</p>
+          {hasErrors ? (
+            <div className="rounded-lg border border-red-200 dark:border-red-900 bg-red-50/60 dark:bg-red-950/20 px-4 py-3">
+              <div className="flex items-start gap-3">
+                <div className="mt-0.5 shrink-0 rounded-md bg-red-600 p-1.5">
+                  <XCircle className="h-4 w-4 text-white" />
+                </div>
+                <div className="min-w-0">
+                  <div className="text-sm font-semibold text-red-800 dark:text-red-300">
+                    Terdapat error pada proses
+                  </div>
+                  <div className="text-xs text-red-700/80 dark:text-red-400/80 mt-0.5">
+                    {videoFailedCount > 0 ? `${videoFailedCount} video gagal generate (D-ID)` : ""}
+                    {videoFailedCount > 0 && (waFailedCount > 0 || waPendingCount > 0 || waNotReadyCount > 0) ? " • " : ""}
+                    {waFailedCount > 0 ? `${waFailedCount} WhatsApp gagal (Wablas)` : ""}
+                    {waFailedCount > 0 && (waPendingCount > 0 || waNotReadyCount > 0) ? " • " : ""}
+                    {waPendingCount > 0 ? `${waPendingCount} WhatsApp pending` : ""}
+                    {waPendingCount > 0 && waNotReadyCount > 0 ? " • " : ""}
+                    {waNotReadyCount > 0 ? `${waNotReadyCount} WhatsApp pending (menunggu video selesai)` : ""}
+                  </div>
+                  <div className="text-xs text-red-700/80 dark:text-red-400/80 mt-1">
+                    {videoFailedCount > 0 ? "Klik Regenerate Failed untuk retry video yang gagal." : ""}
+                    {videoFailedCount > 0 && (waFailedCount > 0 || waPendingCount > 0) ? " " : ""}
+                    {waFailedCount > 0 ? "Untuk WA gagal, klik Resend WA pada item failed." : ""}
+                    {(waPendingCount > 0 && videoFailedCount === 0) ? "Untuk WA pending, klik WA Blast." : ""}
+                  </div>
+                </div>
+              </div>
             </div>
-          )}
+          ) : isComplete ? (
+            <div className="rounded-lg border border-emerald-200 dark:border-emerald-900 bg-emerald-50/60 dark:bg-emerald-950/20 px-4 py-3">
+              <div className="flex items-start gap-3">
+                <div className="mt-0.5 shrink-0 rounded-md bg-emerald-600 p-1.5">
+                  <PartyPopper className="h-4 w-4 text-white" />
+                </div>
+                <div className="min-w-0">
+                  <div className="text-sm font-semibold text-emerald-800 dark:text-emerald-300">{t("reportVideo.processComplete")}</div>
+                  <div className="text-xs text-emerald-700/80 dark:text-emerald-400/80 mt-0.5">{t("reportVideo.allVideoAndWaSent")}</div>
+                </div>
+              </div>
+            </div>
+          ) : hasInProgress ? (
+            <div className="rounded-lg border border-blue-200 dark:border-blue-900 bg-blue-50/60 dark:bg-blue-950/20 px-4 py-3">
+              <div className="flex items-start gap-3">
+                <div className="mt-0.5 shrink-0 rounded-md bg-blue-600 p-1.5">
+                  <RefreshCw className="h-4 w-4 text-white" />
+                </div>
+                <div className="min-w-0">
+                  <div className="text-sm font-semibold text-blue-800 dark:text-blue-300">Proses sedang berjalan</div>
+                  <div className="text-xs text-blue-700/80 dark:text-blue-400/80 mt-0.5">Refresh untuk melihat update terbaru.</div>
+                </div>
+              </div>
+            </div>
+          ) : null}
 
-          {/* Stats Grid */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2">
-            <div className="bg-slate-50 dark:bg-slate-800 rounded p-3 text-center">
-              <div className="text-xl font-bold text-slate-900 dark:text-slate-100">{currentReport.totalRecords}</div>
-              <div className="text-[10px] text-slate-500">{t("reportVideo.totalData")}</div>
-            </div>
-            <div className="bg-blue-50 dark:bg-blue-950/30 rounded p-3 text-center">
-              <div className="text-xl font-bold text-blue-600 dark:text-blue-400">{pendingCount}</div>
-              <div className="text-[10px] text-slate-500 flex items-center justify-center gap-1">
-                <Video className="h-3 w-3" /> Video Pending
+          {/* Main Summary Cards */}
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
+            {/* Video Status Summary */}
+            <div className="rounded-lg border border-slate-200 dark:border-slate-800 p-4 bg-slate-50/50 dark:bg-slate-950/20">
+              <div className="flex items-center gap-3 mb-3">
+                <div className="rounded-md bg-indigo-600 p-1.5">
+                  <Video className="h-4 w-4 text-white" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Status Video Generation</h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">Total: {currentReport.totalRecords} video</p>
+                </div>
               </div>
-            </div>
-            <div className="bg-amber-50 dark:bg-amber-950/30 rounded p-3 text-center">
-              <div className="text-xl font-bold text-amber-600 dark:text-amber-400">{processingCount}</div>
-              <div className="text-[10px] text-slate-500 flex items-center justify-center gap-1">
-                <Video className="h-3 w-3" /> Video Proses
+              
+              {/* Video Progress Bar */}
+              <div className="mb-3">
+                <div className="flex justify-between items-center mb-1">
+                  <span className="text-xs font-medium text-slate-600 dark:text-slate-300">Progress</span>
+                  <span className="text-xs font-semibold text-slate-900 dark:text-slate-100">{Math.round((currentReport.processedRecords / currentReport.totalRecords) * 100)}%</span>
+                </div>
+                <Progress value={(currentReport.processedRecords / currentReport.totalRecords) * 100} className="h-2" />
+                <div className="text-[11px] text-slate-500 mt-1">{currentReport.processedRecords} dari {currentReport.totalRecords} video diproses</div>
               </div>
-            </div>
-            <div className="bg-emerald-50 dark:bg-emerald-950/30 rounded p-3 text-center">
-              <div className="text-xl font-bold text-emerald-600 dark:text-emerald-400">{currentReport.successCount}</div>
-              <div className="text-[10px] text-slate-500 flex items-center justify-center gap-1">
-                <Video className="h-3 w-3" /> {t("reportVideo.videoSuccess")}
-              </div>
-            </div>
-            <div className="bg-red-50 dark:bg-red-950/30 rounded p-3 text-center">
-              <div className="text-xl font-bold text-red-600 dark:text-red-400">{currentReport.failedCount}</div>
-              <div className="text-[10px] text-slate-500 flex items-center justify-center gap-1">
-                <Video className="h-3 w-3" /> {t("reportVideo.videoFailed")}
-              </div>
-            </div>
-            <div className="bg-green-50 dark:bg-green-950/30 rounded p-3 text-center">
-              <div className="text-xl font-bold text-green-600 dark:text-green-400">{currentReport.waSentCount || 0}</div>
-              <div className="text-[10px] text-slate-500 flex items-center justify-center gap-1">
-                <MessageSquare className="h-3 w-3" /> {t("reportVideo.waSent")}
-              </div>
-            </div>
-            <div className="bg-yellow-50 dark:bg-yellow-950/30 rounded p-3 text-center">
-              <div className="text-xl font-bold text-yellow-600 dark:text-yellow-400">{currentReport.waPendingCount || 0}</div>
-              <div className="text-[10px] text-slate-500 flex items-center justify-center gap-1">
-                <MessageSquare className="h-3 w-3" /> {t("reportVideo.waPending")}
-              </div>
-            </div>
-            <div className="bg-red-50 dark:bg-red-950/30 rounded p-3 text-center">
-              <div className="text-xl font-bold text-red-600 dark:text-red-400">{currentReport.waFailedCount || 0}</div>
-              <div className="text-[10px] text-slate-500 flex items-center justify-center gap-1">
-                <MessageSquare className="h-3 w-3" /> {t("reportVideo.waFailed")}
-              </div>
-            </div>
-          </div>
 
-          {/* Progress Bars */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="space-y-1">
-              <div className="flex justify-between text-[10px] text-slate-500">
-                <span>{t("reportVideo.videoProgress")}</span>
-                <span>{Math.round((currentReport.processedRecords / currentReport.totalRecords) * 100)}%</span>
+              {/* Video Status Grid */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                <div className="rounded-md bg-white dark:bg-slate-900 border border-emerald-200/70 dark:border-emerald-900/60 px-3 py-2">
+                  <div className="flex items-center gap-1.5 text-[11px] text-slate-600 dark:text-slate-300">
+                    <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" /> Success
+                  </div>
+                  <div className="text-lg font-semibold text-emerald-700 dark:text-emerald-400 leading-tight">{currentReport.successCount}</div>
+                  <div className="text-[10px] text-slate-500">{currentReport.totalRecords > 0 ? Math.round((currentReport.successCount / currentReport.totalRecords) * 100) : 0}%</div>
+                </div>
+
+                <div className="rounded-md bg-white dark:bg-slate-900 border border-red-200/70 dark:border-red-900/60 px-3 py-2">
+                  <div className="flex items-center gap-1.5 text-[11px] text-slate-600 dark:text-slate-300">
+                    <XCircle className="h-3.5 w-3.5 text-red-600" /> Failed
+                  </div>
+                  <div className="text-lg font-semibold text-red-700 dark:text-red-400 leading-tight">{currentReport.failedCount}</div>
+                  <div className="text-[10px] text-slate-500">{currentReport.totalRecords > 0 ? Math.round((currentReport.failedCount / currentReport.totalRecords) * 100) : 0}%</div>
+                </div>
+
+                <div className="rounded-md bg-white dark:bg-slate-900 border border-amber-200/70 dark:border-amber-900/60 px-3 py-2">
+                  <div className="flex items-center gap-1.5 text-[11px] text-slate-600 dark:text-slate-300">
+                    <RefreshCw className="h-3.5 w-3.5 text-amber-600 animate-spin" /> Processing
+                  </div>
+                  <div className="text-lg font-semibold text-amber-700 dark:text-amber-400 leading-tight">{processingCount}</div>
+                  <div className="text-[10px] text-slate-500">Sedang diproses</div>
+                </div>
+
+                <div className="rounded-md bg-white dark:bg-slate-900 border border-blue-200/70 dark:border-blue-900/60 px-3 py-2">
+                  <div className="flex items-center gap-1.5 text-[11px] text-slate-600 dark:text-slate-300">
+                    <Clock className="h-3.5 w-3.5 text-blue-600" /> Pending
+                  </div>
+                  <div className="text-lg font-semibold text-blue-700 dark:text-blue-400 leading-tight">{pendingCount}</div>
+                  <div className="text-[10px] text-slate-500">Dalam antrian</div>
+                </div>
               </div>
-              <Progress value={(currentReport.processedRecords / currentReport.totalRecords) * 100} className="h-2" />
             </div>
-            <div className="space-y-1">
-              <div className="flex justify-between text-[10px] text-slate-500">
-                <span>{t("reportVideo.waProgress")}</span>
-                <span>{currentReport.successCount > 0 ? Math.round(((currentReport.waSentCount || 0) / currentReport.successCount) * 100) : 0}%</span>
+
+            {/* WhatsApp Status Summary */}
+            <div className="rounded-lg border border-slate-200 dark:border-slate-800 p-4 bg-slate-50/50 dark:bg-slate-950/20">
+              <div className="flex items-center gap-3 mb-3">
+                <div className="rounded-md bg-green-600 p-1.5">
+                  <MessageSquare className="h-4 w-4 text-white" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Status WhatsApp Blast</h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">Target: {currentReport.successCount} pesan</p>
+                </div>
               </div>
-              <Progress value={currentReport.successCount > 0 ? ((currentReport.waSentCount || 0) / currentReport.successCount) * 100 : 0} className="h-2" />
+              
+              {/* WA Progress Bar */}
+              <div className="mb-3">
+                <div className="flex justify-between items-center mb-1">
+                  <span className="text-xs font-medium text-slate-600 dark:text-slate-300">Progress</span>
+                  <span className="text-xs font-semibold text-slate-900 dark:text-slate-100">{currentReport.successCount > 0 ? Math.round(((currentReport.waSentCount || 0) / currentReport.successCount) * 100) : 0}%</span>
+                </div>
+                <Progress value={currentReport.successCount > 0 ? ((currentReport.waSentCount || 0) / currentReport.successCount) * 100 : 0} className="h-2" />
+                <div className="text-[11px] text-slate-500 mt-1">{currentReport.waSentCount || 0} dari {currentReport.successCount} pesan terkirim</div>
+              </div>
+
+              {/* WA Status Grid */}
+              <div className="grid grid-cols-3 gap-2">
+                <div className="rounded-md bg-white dark:bg-slate-900 border border-green-200/70 dark:border-green-900/60 px-3 py-2">
+                  <div className="flex items-center gap-1.5 text-[11px] text-slate-600 dark:text-slate-300">
+                    <CheckCircle2 className="h-3.5 w-3.5 text-green-600" /> Sent
+                  </div>
+                  <div className="text-lg font-semibold text-green-700 dark:text-green-400 leading-tight">{currentReport.waSentCount || 0}</div>
+                  <div className="text-[10px] text-slate-500">{currentReport.successCount > 0 ? Math.round(((currentReport.waSentCount || 0) / currentReport.successCount) * 100) : 0}%</div>
+                </div>
+
+                <div className="rounded-md bg-white dark:bg-slate-900 border border-red-200/70 dark:border-red-900/60 px-3 py-2">
+                  <div className="flex items-center gap-1.5 text-[11px] text-slate-600 dark:text-slate-300">
+                    <XCircle className="h-3.5 w-3.5 text-red-600" /> Failed
+                  </div>
+                  <div className="text-lg font-semibold text-red-700 dark:text-red-400 leading-tight">{currentReport.waFailedCount || 0}</div>
+                  <div className="text-[10px] text-slate-500">{currentReport.successCount > 0 ? Math.round(((currentReport.waFailedCount || 0) / currentReport.successCount) * 100) : 0}%</div>
+                </div>
+
+                <div className="rounded-md bg-white dark:bg-slate-900 border border-yellow-200/70 dark:border-yellow-900/60 px-3 py-2">
+                  <div className="flex items-center gap-1.5 text-[11px] text-slate-600 dark:text-slate-300">
+                    <Clock className="h-3.5 w-3.5 text-yellow-600" /> Pending
+                  </div>
+                  <div className="text-lg font-semibold text-yellow-700 dark:text-yellow-400 leading-tight">{currentReport.waPendingCount || 0}</div>
+                  <div className="text-[10px] text-slate-500">Menunggu</div>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -551,6 +686,11 @@ export default function ReportDetailPage({ params }: { params: Promise<{ id: str
                           <TableCell>{getWaStatusBadge(item.waStatus, item.waSentAt)}</TableCell>
                           <TableCell>
                             <div className="flex items-center gap-1">
+                              {item.status === "FAILED" && (
+                                <Button variant="ghost" size="sm" className="h-6 px-1.5 text-[10px] text-blue-600" onClick={() => regenerateVideo(item.id)}>
+                                  <RefreshCw className="h-3 w-3 mr-0.5" /> Regenerate Video
+                                </Button>
+                              )}
                               {item.videoUrl && (
                                 <>
                                   <Button variant="ghost" size="sm" className="h-6 px-1.5 text-[10px]" onClick={() => setPreviewVideo(item.videoUrl || null)}>
@@ -572,7 +712,7 @@ export default function ReportDetailPage({ params }: { params: Promise<{ id: str
                               )}
                               {(item.waStatus === "FAILED" || item.waStatus === "ERROR") && item.videoUrl && (
                                 <Button variant="ghost" size="sm" className="h-6 px-1.5 text-[10px] text-orange-600" onClick={() => resendWa(item.id)}>
-                                  <RefreshCw className="h-3 w-3 mr-0.5" /> {t("reportVideo.resend")}
+                                  <RefreshCw className="h-3 w-3 mr-0.5" /> Resend WA
                                 </Button>
                               )}
                             </div>
