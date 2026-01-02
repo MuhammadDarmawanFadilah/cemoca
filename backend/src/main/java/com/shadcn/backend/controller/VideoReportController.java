@@ -381,10 +381,6 @@ public class VideoReportController {
      */
     @PostMapping("/validate-excel")
     public ResponseEntity<ExcelValidationResult> validateExcel(@RequestParam("file") MultipartFile file) {
-        System.out.println("=== VALIDATE EXCEL CALLED ===");
-        System.out.println("File name: " + (file != null ? file.getOriginalFilename() : "null"));
-        System.out.println("File size: " + (file != null ? file.getSize() : 0));
-        System.out.println("Content type: " + (file != null ? file.getContentType() : "null"));
         return ResponseEntity.ok(videoReportService.validateExcel(file));
     }
 

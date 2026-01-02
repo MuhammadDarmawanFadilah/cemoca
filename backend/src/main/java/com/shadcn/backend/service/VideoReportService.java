@@ -109,6 +109,9 @@ public class VideoReportService {
     private volatile HttpClient videoCacheHttpClient;
     private final java.util.concurrent.ConcurrentHashMap<String, Boolean> videoCacheInFlight = new java.util.concurrent.ConcurrentHashMap<>();
 
+    private volatile ExecutorService videoWorkExecutor;
+    private volatile ExecutorService clipStatusExecutor;
+
     private Path cacheLockPath(String token) {
         try {
             return Paths.get(videoShareDir, token + ".mp4.lock");
@@ -211,6 +214,26 @@ public class VideoReportService {
             new ArrayBlockingQueue<>(videoCacheQueueCapacity),
             new ThreadPoolExecutor.AbortPolicy()
         );
+
+        int workParallelism = Math.max(1, videoGenerationParallelism);
+        this.videoWorkExecutor = new ThreadPoolExecutor(
+            workParallelism,
+            workParallelism,
+            0L,
+            TimeUnit.MILLISECONDS,
+            new ArrayBlockingQueue<>(Math.max(100, workParallelism * 200)),
+            new ThreadPoolExecutor.CallerRunsPolicy()
+        );
+
+        this.clipStatusExecutor = new ThreadPoolExecutor(
+            workParallelism,
+            workParallelism,
+            0L,
+            TimeUnit.MILLISECONDS,
+            new ArrayBlockingQueue<>(Math.max(200, workParallelism * 500)),
+            new ThreadPoolExecutor.CallerRunsPolicy()
+        );
+
         this.videoCacheHttpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(videoDownloadConnectTimeoutSeconds))
                 .followRedirects(HttpClient.Redirect.NORMAL)
@@ -222,6 +245,16 @@ public class VideoReportService {
         ExecutorService ex = this.videoCacheExecutor;
         if (ex != null) {
             ex.shutdown();
+        }
+
+        ExecutorService work = this.videoWorkExecutor;
+        if (work != null) {
+            work.shutdown();
+        }
+
+        ExecutorService clip = this.clipStatusExecutor;
+        if (clip != null) {
+            clip.shutdown();
         }
     }
 
@@ -290,31 +323,39 @@ public class VideoReportService {
         report.setUseBackground(Boolean.TRUE.equals(request.getUseBackground()));
         report.setBackgroundName(request.getBackgroundName());
         report.setStatus("PENDING");
-        report.setTotalRecords(request.getItems().size());
+        report.setTotalRecords(request.getItems() == null ? 0 : request.getItems().size());
         report.setCreatedBy(user);
         
         report = videoReportRepository.save(report);
 
         final boolean isPreview = Boolean.TRUE.equals(request.getPreview());
 
-        // Create items
-        for (VideoReportRequest.VideoReportItemRequest itemRequest : request.getItems()) {
+        // Create items (batch)
+        List<VideoReportRequest.VideoReportItemRequest> itemRequests = request.getItems() == null
+                ? java.util.Collections.emptyList()
+                : request.getItems();
+
+        List<VideoReportItem> items = new ArrayList<>(itemRequests.size());
+        for (VideoReportRequest.VideoReportItemRequest itemRequest : itemRequests) {
             VideoReportItem item = new VideoReportItem();
             item.setVideoReport(report);
             item.setRowNumber(itemRequest.getRowNumber());
             item.setName(itemRequest.getName());
             item.setPhone(itemRequest.getPhone());
             item.setAvatar(itemRequest.getAvatar());
-            
-            // Generate personalized message
+
             String personalizedMessage = request.getMessageTemplate()
                     .replace(":name", itemRequest.getName());
             item.setPersonalizedMessage(personalizedMessage);
             item.setStatus("PENDING");
-                item.setWaStatus(isPreview ? "DISABLED" : "PENDING");
+            item.setWaStatus(isPreview ? "DISABLED" : "PENDING");
             item.setExcluded(false);
-            
-            videoReportItemRepository.save(item);
+
+            items.add(item);
+        }
+
+        if (!items.isEmpty()) {
+            videoReportItemRepository.saveAll(items);
         }
 
         return report;
@@ -332,6 +373,12 @@ public class VideoReportService {
         if (report == null) {
             logger.error("Video report not found: {}", reportId);
             return;
+        }
+
+        try {
+            // Warm avatar cache once; resolveExpressPresenterId should then be O(1) per item.
+            didService.getPresentersForListing(true);
+        } catch (Exception ignore) {
         }
 
         final String backgroundUrl = buildPublicBackgroundUrl(
@@ -362,8 +409,14 @@ public class VideoReportService {
             return;
         }
         
-        // Create thread pool for parallel processing
-        ExecutorService executor = Executors.newFixedThreadPool(videoGenerationParallelism);
+        ExecutorService executor = this.videoWorkExecutor;
+        boolean shouldShutdown = false;
+        if (executor == null) {
+            executor = Executors.newFixedThreadPool(videoGenerationParallelism);
+            shouldShutdown = true;
+        }
+
+        final ExecutorService finalExecutor = executor;
         
         try {
             // Process in batches to save progress periodically
@@ -376,21 +429,18 @@ public class VideoReportService {
                 
                 // Submit all items in batch for parallel processing
                 List<CompletableFuture<VideoReportItem>> futures = batch.stream()
-                    .map(item -> CompletableFuture.supplyAsync(() -> processVideoItem(item, backgroundUrl), executor))
+                    .map(item -> CompletableFuture.supplyAsync(() -> processVideoItem(item, backgroundUrl), finalExecutor))
                         .collect(Collectors.toList());
                 
-                // Wait for all items in batch to complete
-                CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+                CompletableFuture.allOf(futures.toArray(CompletableFuture[]::new)).join();
                 
                 // Update report progress
                 VideoReport currentReport = videoReportRepository.findById(reportId).orElse(null);
                 if (currentReport != null) {
-                    int processed = (int) items.stream()
-                            .filter(i -> !"PENDING".equals(i.getStatus()))
-                            .count();
-                    int failed = (int) items.stream()
-                            .filter(i -> "FAILED".equals(i.getStatus()))
-                            .count();
+                    int totalEligible = videoReportItemRepository.countNonExcludedByReportId(reportId);
+                    int pending = videoReportItemRepository.countNonExcludedByReportIdAndStatus(reportId, "PENDING");
+                    int processed = Math.max(0, totalEligible - pending);
+                    int failed = videoReportItemRepository.countNonExcludedByReportIdAndStatus(reportId, "FAILED");
                     
                     currentReport.setProcessedRecords(processed);
                     currentReport.setFailedCount(failed);
@@ -411,13 +461,8 @@ public class VideoReportService {
             Thread.currentThread().interrupt();
             logger.error("[VIDEO GEN] Interrupted during video generation: {}", e.getMessage());
         } finally {
-            executor.shutdown();
-            try {
-                if (!executor.awaitTermination(60, TimeUnit.SECONDS)) {
-                    executor.shutdownNow();
-                }
-            } catch (InterruptedException e) {
-                executor.shutdownNow();
+            if (shouldShutdown) {
+                finalExecutor.shutdown();
             }
         }
 
@@ -1279,20 +1324,24 @@ public class VideoReportService {
      * Check clips in parallel (for large batches)
      */
     private void checkClipsParallel(List<VideoReportItem> items, Long reportId) {
-        ExecutorService executor = Executors.newFixedThreadPool(videoGenerationParallelism);
-        
+        ExecutorService executor = this.clipStatusExecutor;
+        boolean shouldShutdown = false;
+        if (executor == null) {
+            executor = Executors.newFixedThreadPool(videoGenerationParallelism);
+            shouldShutdown = true;
+        }
+
+        final ExecutorService finalExecutor = executor;
+
         try {
             List<CompletableFuture<Void>> futures = items.stream()
-                    .map(item -> CompletableFuture.runAsync(() -> checkSingleClipStatus(reportId, item), executor))
+                    .map(item -> CompletableFuture.runAsync(() -> checkSingleClipStatus(reportId, item), finalExecutor))
                     .collect(Collectors.toList());
-            
-            CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+
+            CompletableFuture.allOf(futures.toArray(CompletableFuture[]::new)).join();
         } finally {
-            executor.shutdown();
-            try {
-                executor.awaitTermination(60, TimeUnit.SECONDS);
-            } catch (InterruptedException e) {
-                executor.shutdownNow();
+            if (shouldShutdown) {
+                finalExecutor.shutdown();
             }
         }
     }
@@ -1304,19 +1353,19 @@ public class VideoReportService {
         if (item.getDidClipId() == null) return;
         
         try {
-            logger.info("[CHECK CLIPS] Checking D-ID status for clip: {} (item: {})", item.getDidClipId(), item.getId());
+            logger.debug("[CHECK CLIPS] Checking D-ID status for clip: {} (item: {})", item.getDidClipId(), item.getId());
             Map<String, Object> status = didService.getClipStatus(item.getDidClipId());
             
-            logger.info("[CHECK CLIPS] D-ID response for item {}: success={}, status={}, error={}, result_url={}", 
+            logger.debug("[CHECK CLIPS] D-ID response for item {}: success={}, status={}, error={}, result_url={}", 
                 item.getId(), status.get("success"), status.get("status"), status.get("error"), status.get("result_url"));
             
             if (Boolean.TRUE.equals(status.get("success"))) {
                 String clipStatus = (String) status.get("status");
-                logger.info("[CHECK CLIPS] Item {} - Processing clipStatus: {}", item.getId(), clipStatus);
+                logger.debug("[CHECK CLIPS] Item {} - Processing clipStatus: {}", item.getId(), clipStatus);
                 
                 if ("done".equals(clipStatus)) {
                     String resultUrl = (String) status.get("result_url");
-                    logger.info("[CHECK CLIPS] Item {} - resultUrl: {}", item.getId(), resultUrl);
+                    logger.debug("[CHECK CLIPS] Item {} - resultUrl: {}", item.getId(), resultUrl);
                     if (resultUrl == null || resultUrl.isBlank()) {
                         item.setStatus("FAILED");
                         item.setErrorMessage("D-ID done but result_url is empty");
@@ -1338,7 +1387,7 @@ public class VideoReportService {
                                             .compositeToStoredVideoUrl(resultUrl, bgName, backendUrl, serverContextPath);
                                     if (composited.isPresent() && !composited.get().isBlank()) {
                                         finalUrl = composited.get();
-                                        logger.info("[CHECK CLIPS] Item {} - composited background URL: {}", item.getId(), finalUrl);
+                                        logger.debug("[CHECK CLIPS] Item {} - composited background URL: {}", item.getId(), finalUrl);
                                     } else {
                                         logger.warn("[CHECK CLIPS] Item {} - background composite skipped/failed; using original URL", item.getId());
                                     }
@@ -1370,7 +1419,7 @@ public class VideoReportService {
                     item.setErrorMessage(err);
                     logger.warn("[CHECK CLIPS] Item {} FAILED: {}", item.getId(), item.getErrorMessage());
                 } else {
-                    logger.info("[CHECK CLIPS] Item {} still PROCESSING with D-ID status: {}", item.getId(), clipStatus);
+                    logger.debug("[CHECK CLIPS] Item {} still PROCESSING with D-ID status: {}", item.getId(), clipStatus);
                 }
                 
                 videoReportItemRepository.save(item);

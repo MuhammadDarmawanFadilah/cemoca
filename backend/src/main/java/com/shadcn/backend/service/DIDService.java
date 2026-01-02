@@ -47,6 +47,9 @@ public class DIDService {
     private final AvatarAudioRepository avatarAudioRepository;
     private final Map<String, DIDPresenter> presenterCache = new ConcurrentHashMap<>();
 
+    private final Map<String, String> clonedVoiceIdCache = new ConcurrentHashMap<>();
+    private final Set<String> clonedVoiceNoSample = ConcurrentHashMap.newKeySet();
+
     @Value("${app.did.clips.webhook:}")
     private String clipsWebhookUrl;
 
@@ -77,6 +80,13 @@ public class DIDService {
     private List<DIDPresenter> cachedPresenterList = null;
     private long cacheExpiry = 0;
     private static final long CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+    // Cache for Express Avatars (Scenes) to avoid /scenes/avatars per-row/per-item calls
+    private volatile List<DIDPresenter> cachedExpressAvatarsAll = null;
+    private volatile List<DIDPresenter> cachedExpressAvatarsDone = null;
+    private volatile long expressCacheExpiry = 0;
+    private final Map<String, String> expressIdByNormalizedName = new ConcurrentHashMap<>();
+    private final Set<String> expressIds = ConcurrentHashMap.newKeySet();
     
     @Value("${did.api.token:}")
     private String apiToken;
@@ -466,6 +476,15 @@ public class DIDService {
         }
 
         String pid = presenterId.trim();
+
+        String cachedVoice = clonedVoiceIdCache.get(pid);
+        if (cachedVoice != null && !cachedVoice.isBlank()) {
+            return Optional.of(cachedVoice);
+        }
+        if (clonedVoiceNoSample.contains(pid)) {
+            return Optional.empty();
+        }
+
         Optional<DIDAvatar> existing = avatarRepository.findByPresenterId(pid);
         if (existing.isEmpty()) {
             // Best-effort: refresh/sync so we have a DB row to store the cloned voice_id
@@ -484,11 +503,16 @@ public class DIDService {
         if (avatar.getVoiceId() != null && !avatar.getVoiceId().trim().isBlank()
             && avatar.getVoiceType() != null
             && avatar.getVoiceType().trim().toLowerCase(Locale.ROOT).startsWith(CUSTOM_VOICE_PREFIX)) {
-            return Optional.of(avatar.getVoiceId().trim());
+            String vid = avatar.getVoiceId().trim();
+            if (!vid.isBlank()) {
+                clonedVoiceIdCache.put(pid, vid);
+            }
+            return Optional.of(vid);
         }
 
         Optional<ByteArrayResource> sample = loadAvatarSampleFromAudioManagement(pid, avatarName.trim());
         if (sample.isEmpty()) {
+            clonedVoiceNoSample.add(pid);
             return Optional.empty();
         }
 
@@ -502,6 +526,10 @@ public class DIDService {
             }
             avatar.setVoiceType(CUSTOM_VOICE_PREFIX + normalizeVoiceType(type));
             avatarRepository.save(avatar);
+
+            if (v.voiceId != null && !v.voiceId.trim().isBlank()) {
+                clonedVoiceIdCache.put(pid, v.voiceId.trim());
+            }
         });
         return voiceId;
     }
@@ -776,14 +804,28 @@ public class DIDService {
      * These are avatars like "AFAN" created via the Studio interface
      */
     private List<DIDPresenter> getExpressAvatars(boolean includeNotReady) {
-        List<DIDPresenter> expressAvatars = new ArrayList<>();
-        
+        long now = System.currentTimeMillis();
+        List<DIDPresenter> cached = this.cachedExpressAvatarsAll;
+        if (cached != null && now < expressCacheExpiry) {
+            if (includeNotReady) {
+                return new ArrayList<>(cached);
+            }
+            List<DIDPresenter> done = this.cachedExpressAvatarsDone;
+            return done == null ? new ArrayList<>() : new ArrayList<>(done);
+        }
+
+        List<DIDPresenter> all = new ArrayList<>();
+        List<DIDPresenter> doneOnly = new ArrayList<>();
+        Map<String, String> nameMap = new HashMap<>();
+        Set<String> idSet = new HashSet<>();
+
         try {
             String response = webClient.get()
                     .uri("/scenes/avatars")
                     .header(HttpHeaders.AUTHORIZATION, getAuthHeader())
                     .retrieve()
                     .bodyToMono(String.class)
+                    .timeout(READ_TIMEOUT)
                     .block();
 
             if (response != null) {
@@ -812,8 +854,7 @@ public class DIDService {
                         String avatarId = node.has("id") ? node.get("id").asText() : "";
                         String status = node.has("status") ? node.get("status").asText() : "";
 
-                        boolean include = !avatarId.isEmpty() && (includeNotReady || "done".equalsIgnoreCase(status));
-                        if (!include) {
+                        if (avatarId == null || avatarId.isBlank()) {
                             continue;
                         }
 
@@ -833,19 +874,39 @@ public class DIDService {
                         presenter.setAvatar_type("express");
                         presenter.setVoice_id(node.has("voice_id") ? node.get("voice_id").asText() : "");
 
-                        expressAvatars.add(presenter);
+                        all.add(presenter);
+                        if ("done".equalsIgnoreCase(status)) {
+                            doneOnly.add(presenter);
+                        }
                         presenterCache.put(avatarId, presenter);
-                        logger.debug("Added Express Avatar: {} ({}) status={}", presenter.getPresenter_name(), avatarId, status);
+                        idSet.add(avatarId.trim());
+
+                        String nm = presenter.getPresenter_name();
+                        String normalizedName = normalizePresenterNameForMatch(nm);
+                        if (!normalizedName.isBlank()) {
+                            nameMap.putIfAbsent(normalizedName, avatarId.trim());
+                        }
                     }
                 }
-                
-                logger.info("Found {} Express Avatars from D-ID", expressAvatars.size());
+
+                logger.info("Found {} Express Avatars from D-ID", all.size());
             }
         } catch (Exception e) {
             logger.error("Error fetching Express Avatars from D-ID: {}", e.getMessage());
         }
-        
-        return expressAvatars;
+
+        this.cachedExpressAvatarsAll = new ArrayList<>(all);
+        this.cachedExpressAvatarsDone = new ArrayList<>(doneOnly);
+        this.expressCacheExpiry = System.currentTimeMillis() + CACHE_TTL_MS;
+        this.expressIdByNormalizedName.clear();
+        this.expressIdByNormalizedName.putAll(nameMap);
+        this.expressIds.clear();
+        this.expressIds.addAll(idSet);
+
+        if (includeNotReady) {
+            return new ArrayList<>(all);
+        }
+        return new ArrayList<>(doneOnly);
     }
 
     /**
@@ -1228,8 +1289,12 @@ public class DIDService {
         String trimmed = avatarValue.trim();
         if (trimmed.startsWith("avt_")) {
             try {
-                DIDPresenter byId = fetchExpressAvatarById(trimmed);
-                if (byId != null) {
+                if (!expressIds.isEmpty() && expressIds.contains(trimmed)) {
+                    return trimmed;
+                }
+
+                getExpressAvatars(true);
+                if (!expressIds.isEmpty() && expressIds.contains(trimmed)) {
                     return trimmed;
                 }
             } catch (Exception ignored) {
@@ -1240,19 +1305,20 @@ public class DIDService {
 
         String target = normalizePresenterNameForMatch(trimmed);
         try {
-            List<DIDPresenter> express = getExpressAvatars(true);
-            if (express != null) {
-                for (DIDPresenter p : express) {
-                    if (p == null || p.getPresenter_id() == null || p.getPresenter_id().isBlank()) {
-                        continue;
-                    }
-                    if (target.equals(normalizePresenterNameForMatch(p.getPresenter_name()))) {
-                        return p.getPresenter_id();
-                    }
+            if (target != null && !target.isBlank()) {
+                String cachedId = expressIdByNormalizedName.get(target);
+                if (cachedId != null && !cachedId.isBlank()) {
+                    return cachedId;
+                }
+
+                // Warm cache once when empty/expired
+                getExpressAvatars(true);
+                cachedId = expressIdByNormalizedName.get(target);
+                if (cachedId != null && !cachedId.isBlank()) {
+                    return cachedId;
                 }
             }
         } catch (Exception ignored) {
-            // fall back
         }
 
         return getExpressAvatarByName(trimmed).map(DIDAvatar::getPresenterId).orElse(null);

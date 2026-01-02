@@ -1,5 +1,6 @@
 package com.shadcn.backend.service;
 
+import com.shadcn.backend.dto.DIDPresenter;
 import com.shadcn.backend.dto.ExcelValidationResult;
 import com.shadcn.backend.dto.ExcelValidationResult.ExcelRow;
 import org.apache.poi.ss.usermodel.*;
@@ -73,6 +74,8 @@ public class ExcelService {
                 ExcelRow excelRow = parseRow(row, columnMap, i + 1);
                 rows.add(excelRow);
             }
+
+            validateAvatars(rows);
 
             result.setValid(errors.isEmpty() && rows.stream().allMatch(r -> r.isValidPhone() && r.isValidAvatar()));
             result.setErrors(errors);
@@ -202,23 +205,78 @@ public class ExcelService {
         }
 
         // Validate avatar - only allow Express Avatars created in D-ID Studio
-        if (avatarName == null || avatarName.trim().isEmpty()) {
-            excelRow.setValidAvatar(false);
-            excelRow.setAvatarError("Nama avatar kosong");
-        } else {
-            String trimmedName = avatarName.trim();
-            logger.info("Row {}: Validating express avatar '{}'", rowNum, trimmedName);
-
-            String expressPresenterId = didService.resolveExpressPresenterId(trimmedName);
-            if (expressPresenterId == null || expressPresenterId.isBlank()) {
-                excelRow.setValidAvatar(false);
-                excelRow.setAvatarError("Avatar tidak ditemukan (Express Avatar)");
-            } else {
-                excelRow.setValidAvatar(true);
-            }
-        }
+        // Avatar validation is done in a batch pass (single D-ID lookup per file)
+        excelRow.setValidAvatar(false);
 
         return excelRow;
+    }
+
+    private void validateAvatars(List<ExcelRow> rows) {
+        if (rows == null || rows.isEmpty()) {
+            return;
+        }
+
+        Map<String, String> expressByName = new HashMap<>();
+        Set<String> expressIds = new HashSet<>();
+
+        try {
+            List<DIDPresenter> presenters = didService.getPresentersForListing(true);
+            if (presenters != null) {
+                for (DIDPresenter p : presenters) {
+                    if (p == null) continue;
+                    if (!"express".equalsIgnoreCase(p.getAvatar_type())) continue;
+                    String id = p.getPresenter_id();
+                    if (id == null || id.isBlank()) continue;
+                    expressIds.add(id.trim());
+
+                    String name = p.getPresenter_name();
+                    String normalized = normalizePresenterNameForMatch(name);
+                    if (!normalized.isEmpty()) {
+                        expressByName.putIfAbsent(normalized, id.trim());
+                    }
+                }
+            }
+        } catch (Exception e) {
+            logger.warn("Failed to fetch Express Avatars for validation: {}", e.getMessage());
+        }
+
+        for (ExcelRow row : rows) {
+            if (row == null) continue;
+            String avatarName = row.getAvatar();
+
+            if (avatarName == null || avatarName.trim().isEmpty()) {
+                row.setValidAvatar(false);
+                row.setAvatarError("Nama avatar kosong");
+                continue;
+            }
+
+            String trimmed = avatarName.trim();
+
+            if (trimmed.startsWith("avt_")) {
+                if (!expressIds.isEmpty() && expressIds.contains(trimmed)) {
+                    row.setValidAvatar(true);
+                } else {
+                    row.setValidAvatar(false);
+                    row.setAvatarError("Avatar tidak ditemukan (Express Avatar)");
+                }
+                continue;
+            }
+
+            String normalized = normalizePresenterNameForMatch(trimmed);
+            if (!expressByName.isEmpty() && expressByName.containsKey(normalized)) {
+                row.setValidAvatar(true);
+            } else {
+                row.setValidAvatar(false);
+                row.setAvatarError("Avatar tidak ditemukan (Express Avatar)");
+            }
+        }
+    }
+
+    private String normalizePresenterNameForMatch(String name) {
+        if (name == null) {
+            return "";
+        }
+        return name.trim().toLowerCase(Locale.ROOT).replaceAll("\\s+", " ");
     }
 
     private String getCellStringValue(Cell cell) {

@@ -307,49 +307,10 @@ export function Step2PreviewAndProcess({
       setCurrentReport(response);
       toast.success(t("reportVideo.reportCreated"));
 
-      // 2. Generate all videos
-      toast.info(t("reportVideo.generatingAllVideos"));
-      
-      if (response.items) {
-        for (const item of response.items) {
-          try {
-            await videoReportAPI.generateSingleVideo(response.id, item.id);
-          } catch {
-            // Continue with other items even if one fails
-          }
-        }
-      }
-
-      // 3. Poll until all videos are done
-      let allDone = false;
-      let attempts = 0;
-      const maxAttempts = 200; // ~10 minutes max
-
-      while (!allDone && attempts < maxAttempts) {
-        await new Promise(resolve => setTimeout(resolve, 3000));
-        const updated = await videoReportAPI.refreshStatus(response.id);
-        setCurrentReport(updated);
-
-        if (updated.status === "COMPLETED" || updated.status === "FAILED") {
-          allDone = true;
-        } else if (updated.items) {
-          const processing = updated.items.filter(i => i.status === "PROCESSING" || i.status === "PENDING");
-          if (processing.length === 0) {
-            allDone = true;
-          }
-        }
-        attempts++;
-      }
-
-      // 4. WA blast is now auto-triggered from backend when all videos complete
-      // This is just a fallback notification
-      toast.info(t("reportVideo.startingWaBlast"));
-
-      // 5. Wait a bit for WA blast to start, then navigate to detail page
-      await new Promise(resolve => setTimeout(resolve, 3000));
+      // Backend starts generation automatically; go to detail page for progress
+      toast.info(t("reportVideo.videoProcessing"));
       loadHistory();
-      
-      // Navigate to detail page instead of showing step 3 inline
+
       if (goToReportDetail) {
         goToReportDetail(response.id);
       } else {

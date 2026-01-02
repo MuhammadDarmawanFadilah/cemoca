@@ -123,12 +123,16 @@ export default function ReportDetailPage({ params }: { params: Promise<{ id: str
       const hasWaPending = (currentReport.waPendingCount ?? 0) > 0;
       const shouldAutoRefresh = currentReport.status === "PROCESSING" || hasProcessing || hasWaPending;
       if (shouldAutoRefresh) {
-        const delayMs = hasProcessing ? 3000 : 7000;
-        const interval = setInterval(() => refreshStatus(false), delayMs);
+        const delayMs = hasProcessing ? 5000 : 15000;
+        const interval = setInterval(() => {
+          if (currentReport?.id) {
+            loadItems(currentReport.id, page, filter, search, false);
+          }
+        }, delayMs);
         return () => clearInterval(interval);
       }
     }
-  }, [currentReport?.status, currentReport?.processingCount, currentReport?.waPendingCount]);
+  }, [currentReport?.id, currentReport?.status, currentReport?.processingCount, currentReport?.waPendingCount, page, filter, search, loadItems]);
 
   const loadReport = async () => {
     try {
