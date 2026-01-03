@@ -111,6 +111,12 @@ public class DIDService {
     @Value("${did.tts.strict-audio-management.enforce-consistent-voice:true}")
     private boolean enforceConsistentAudioManagementVoice;
 
+    @Value("${did.tts.amazon.voice-id.female:Joanna}")
+    private String amazonVoiceIdFemale;
+
+    @Value("${did.tts.amazon.voice-id.male:Matthew}")
+    private String amazonVoiceIdMale;
+
     @Value("${did.tts.clone.skip-on-validation-error-minutes:1440}")
     private long cloneSkipOnValidationErrorMinutes;
 
@@ -1429,19 +1435,24 @@ public class DIDService {
                 }
             }
 
-            if (name == null || name.isBlank()) {
+            String trimmedName = (name == null) ? null : name.trim();
+            boolean hasSample = findAudioManagementEntry(pid, trimmedName).isPresent();
+
+            if (strictAudioManagementVoice) {
+                if (!hasSample) {
+                    throw new RuntimeException("Audio-management voice is required for presenterId=" + pid);
+                }
+                // Strict mode: we only enforce existence of audio-management entry.
+                // Provider selection is handled in resolveProviderForPresenter() and uses Amazon.
                 return;
             }
 
-            String trimmedName = name.trim();
-            boolean hasSample = findAudioManagementEntry(pid, trimmedName).isPresent();
             if (!hasSample) {
                 return;
             }
 
             Optional<String> ensured = ensureClonedVoiceIdFromLocalSample(pid, trimmedName);
-            if (hasSample && (ensured.isEmpty() || ensured.get().isBlank()) && strictAudioManagementVoice
-                    && failOnCloneError) {
+            if (hasSample && (ensured.isEmpty() || ensured.get().isBlank()) && failOnCloneError) {
                 throw new RuntimeException("Audio-management sample exists but voice cloning failed for presenterId=" + pid);
             }
         } catch (Exception e) {
@@ -1452,6 +1463,49 @@ public class DIDService {
                 throw new RuntimeException(e);
             }
         }
+    }
+
+    private String pickAmazonVoiceIdForPresenter(String presenterId) {
+        String fallback = (amazonVoiceIdFemale == null || amazonVoiceIdFemale.isBlank()) ? "Joanna" : amazonVoiceIdFemale.trim();
+
+        if (presenterId == null || presenterId.isBlank()) {
+            return fallback;
+        }
+
+        String pid = presenterId.trim();
+        String gender = null;
+
+        try {
+            Optional<DIDAvatar> db = avatarRepository.findByPresenterId(pid);
+            if (db.isPresent()) {
+                gender = db.get().getGender();
+            }
+        } catch (Exception ignored) {
+            // ignore
+        }
+
+        if (gender == null || gender.isBlank()) {
+            try {
+                DIDPresenter cached = presenterCache.get(pid);
+                if (cached != null) {
+                    gender = cached.getGender();
+                }
+            } catch (Exception ignored) {
+                // ignore
+            }
+        }
+
+        if (gender == null) {
+            gender = "";
+        }
+
+        String g = gender.trim().toLowerCase(Locale.ROOT);
+        if (g.startsWith("m")) {
+            String male = (amazonVoiceIdMale == null || amazonVoiceIdMale.isBlank()) ? "Matthew" : amazonVoiceIdMale.trim();
+            return male;
+        }
+
+        return fallback;
     }
 
     private String normalizeCustomProviderTypeOrDefault(String rawType) {
@@ -1475,6 +1529,20 @@ public class DIDService {
         }
 
         String pid = presenterId.trim();
+
+        if (strictAudioManagementVoice) {
+            if (!hasAudioManagementSampleForPresenter(pid)) {
+                throw new RuntimeException("Audio-management voice is required for presenterId=" + pid);
+            }
+
+            String voiceId = pickAmazonVoiceIdForPresenter(pid);
+            Map<String, Object> provider = new HashMap<>();
+            provider.put("type", "amazon");
+            provider.put("voice_id", voiceId);
+            logger.info("Using Amazon Polly voice for presenter {}: voice_id={}", pid, voiceId);
+            return provider;
+        }
+
         try {
             Optional<DIDAvatar> db = avatarRepository.findByPresenterId(pid);
             if (db.isPresent()) {
@@ -1907,6 +1975,10 @@ public class DIDService {
                         requestBody.put("script", textScript);
                         response = postScene(requestBody);
                     } else if (!usingAudio && isSsmlInput(script) && wce.getStatusCode().is4xxClientError()) {
+                        if (strictAudioManagementVoice) {
+                            throw wce;
+                        }
+
                         logger.warn("Scenes SSML rejected (status={}). Retrying with plain text.", wce.getStatusCode().value());
 
                         Map<String, Object> fallbackTextScript = new HashMap<>();
@@ -1922,6 +1994,10 @@ public class DIDService {
                         requestBody.put("script", fallbackTextScript);
                         response = postScene(requestBody);
                     } else if (!usingAudio && script != null && script.contains("<break") && wce.getStatusCode().is4xxClientError()) {
+                        if (strictAudioManagementVoice) {
+                            throw wce;
+                        }
+
                         logger.warn("Scenes SSML rejected (status={}). Retrying without SSML breaks.", wce.getStatusCode().value());
                         Map<String, Object> fallbackTextScript = new HashMap<>();
                         fallbackTextScript.put("type", "text");
@@ -2132,6 +2208,10 @@ public class DIDService {
                         response = fallbackProvider != null ? postClip(textBody) : postClip(textBodyNoProvider);
                     } else
                     if (!usingAudio && isSsmlInput(script) && wce.getStatusCode().is4xxClientError()) {
+                        if (strictAudioManagementVoice) {
+                            throw wce;
+                        }
+
                         logger.warn("Clips SSML rejected (status={}). Retrying with plain text.", wce.getStatusCode().value());
 
                         Map<String, Object> fallbackTextScript = new HashMap<>();
@@ -2153,6 +2233,10 @@ public class DIDService {
                         response = provider != null ? postClip(bodyWithProvider) : postClip(bodyWithoutProvider);
                     } else
                     if (!usingAudio && script != null && script.contains("<break") && wce.getStatusCode().is4xxClientError()) {
+                        if (strictAudioManagementVoice) {
+                            throw wce;
+                        }
+
                         logger.warn("Clips SSML rejected (status={}). Retrying without SSML breaks.", wce.getStatusCode().value());
 
                         Map<String, Object> fallbackTextScript = new HashMap<>(scriptObj);
