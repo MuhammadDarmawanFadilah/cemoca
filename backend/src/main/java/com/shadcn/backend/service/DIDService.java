@@ -97,54 +97,13 @@ public class DIDService {
     @Value("${did.fallback.presenter.id:}")
     private String fallbackPresenterId;
 
-    @Value("${did.tts.amazon.voice-overrides:}")
-    private String amazonVoiceOverrides;
-
     @Value("${did.tts.clone.language:id}")
     private String cloneVoiceLanguage;
 
-    // Default Amazon Polly voice for Indonesian (Aria is the only Indonesian neural voice)
-    // This voice provides consistent, high-quality output for long-duration content (20+ minutes)
-    @Value("${did.tts.amazon.default-voice:Aria}")
-    private String defaultAmazonVoice;
+    @Value("${did.tts.strict-audio-management:true}")
+    private boolean strictAudioManagementVoice;
 
     private static final String CUSTOM_VOICE_PREFIX = "custom:";
-
-    // Known Amazon Polly Neural voices (produce consistent, high-quality audio)
-    private static final Set<String> NEURAL_VOICES = Set.of(
-        // Indonesian Neural
-        "Aria",
-        // English Neural (US)
-        "Ivy", "Joanna", "Kendra", "Kimberly", "Salli", "Joey", "Justin", "Kevin", "Matthew", "Ruth", "Stephen",
-        // English Neural (British)
-        "Amy", "Emma", "Brian", "Arthur",
-        // English Neural (Australian)
-        "Olivia",
-        // Spanish Neural
-        "Lucia", "Sergio", "Lupe", "Pedro",
-        // French Neural
-        "Lea", "Remi",
-        // German Neural
-        "Vicki", "Daniel",
-        // Japanese Neural
-        "Kazuha", "Tomoko", "Takumi",
-        // Korean Neural
-        "Seoyeon",
-        // Portuguese Neural
-        "Camila", "Vitoria", "Thiago",
-        // Chinese Neural
-        "Zhiyu"
-    );
-
-    // Known Amazon Polly Generative voices (highest quality, most natural)
-    private static final Set<String> GENERATIVE_VOICES = Set.of(
-        "Matthew", "Ruth", "Stephen", "Amy", "Brian"
-    );
-
-    // Known Amazon Polly Long-form voices (optimized for long content like audiobooks)
-    private static final Set<String> LONG_FORM_VOICES = Set.of(
-        "Danielle", "Gregory", "Joanna", "Matthew", "Ruth"
-    );
 
     public DIDService(ObjectMapper objectMapper, DIDAvatarRepository avatarRepository, AvatarAudioRepository avatarAudioRepository) {
         this.objectMapper = objectMapper;
@@ -603,13 +562,20 @@ public class DIDService {
 
         Optional<AvatarAudio> match = Optional.empty();
         if (!normalizedKeys.isEmpty()) {
-            for (String key : normalizedKeys) {
-                if (key == null || key.isBlank()) {
-                    continue;
-                }
-                match = avatarAudioRepository.findFirstByNormalizedKey(key);
-                if (match.isPresent()) {
-                    break;
+            try {
+                match = avatarAudioRepository.findFirstByNormalizedKeyIn(normalizedKeys);
+            } catch (Exception ignored) {
+                // ignore
+            }
+            if (match.isEmpty()) {
+                for (String key : normalizedKeys) {
+                    if (key == null || key.isBlank()) {
+                        continue;
+                    }
+                    match = avatarAudioRepository.findFirstByNormalizedKey(key);
+                    if (match.isPresent()) {
+                        break;
+                    }
                 }
             }
         }
@@ -716,32 +682,50 @@ public class DIDService {
         }
     }
 
+    private static final java.util.regex.Pattern SSML_KNOWN_TAG_DETECT = java.util.regex.Pattern.compile(
+            "(?is)<\\s*(speak|break|p|s|prosody|emphasis|amazon:effect|say-as|sub|lang|phoneme)\\b"
+    );
+
+    private static final java.util.regex.Pattern SSML_KNOWN_TAG_STRIP = java.util.regex.Pattern.compile(
+            "(?is)</?\\s*(speak|break|p|s|prosody|emphasis|amazon:effect|say-as|sub|lang|phoneme)\\b[^>]*>"
+    );
+
+        private static final java.util.regex.Pattern SSML_AMAZON_EFFECT_STRIP = java.util.regex.Pattern.compile(
+            "(?is)</?\\s*amazon:effect\\b[^>]*>"
+        );
+
+    private static final java.util.regex.Pattern MULTI_WHITESPACE = java.util.regex.Pattern.compile("\\s+");
+
     private boolean isSsmlInput(String script) {
         if (script == null || script.isBlank()) {
             return false;
         }
-        String s = script;
-        return s.contains("<speak")
-                || s.contains("</speak>")
-                || s.contains("<break")
-                || s.contains("<p")
-                || s.contains("</p>")
-                || s.contains("<s")
-                || s.contains("</s>")
-                || s.contains("<prosody")
-                || s.contains("</prosody>")
-                || s.contains("<emphasis")
-                || s.contains("</emphasis>")
-                || s.contains("<amazon:effect")
-                || s.contains("</amazon:effect>")
-                || s.contains("<say-as")
-                || s.contains("</say-as>")
-                || s.contains("<sub")
-                || s.contains("</sub>")
-                || s.contains("<lang")
-                || s.contains("</lang>")
-                || s.contains("<phoneme")
-                || s.contains("</phoneme>");
+        if (script.indexOf('<') < 0) {
+            return false;
+        }
+        return SSML_KNOWN_TAG_DETECT.matcher(script).find();
+    }
+
+    private String stripKnownSsmlTagsToPlainText(String input) {
+        if (input == null || input.isBlank()) {
+            return input;
+        }
+        if (input.indexOf('<') < 0) {
+            return input;
+        }
+        String stripped = SSML_KNOWN_TAG_STRIP.matcher(input).replaceAll(" ");
+        stripped = MULTI_WHITESPACE.matcher(stripped).replaceAll(" ").trim();
+        return stripped;
+    }
+
+    private String sanitizeSsmlForDidProvider(String input) {
+        if (input == null || input.isBlank()) {
+            return input;
+        }
+        if (input.indexOf('<') < 0) {
+            return input;
+        }
+        return SSML_AMAZON_EFFECT_STRIP.matcher(input).replaceAll("");
     }
     
     /**
@@ -858,6 +842,22 @@ public class DIDService {
         }
         List<DIDAvatar> matches = avatarRepository.findByPresenterNameTrimmedIgnoreCase(trimmedName);
         return (matches == null || matches.isEmpty()) ? Optional.empty() : Optional.of(matches.get(0));
+    }
+
+    private DIDPresenter getPresenterByName(String name) {
+        if (name == null || name.trim().isEmpty()) {
+            return null;
+        }
+
+        String trimmed = name.trim();
+
+        Optional<DIDAvatar> avatar = getAvatarByName(trimmed);
+        if (avatar.isEmpty()) {
+            refreshPresenters();
+            avatar = getAvatarByName(trimmed);
+        }
+
+        return avatar.map(a -> getPresenterByIdPreferDbThenApi(a.getPresenterId())).orElse(null);
     }
     
     /**
@@ -1111,6 +1111,80 @@ public class DIDService {
         return clips;
     }
 
+    public Map<String, Object> getClipStatus(String videoId) {
+        Map<String, Object> out = new HashMap<>();
+        if (videoId == null || videoId.isBlank()) {
+            out.put("success", false);
+            out.put("error", "Invalid videoId");
+            return out;
+        }
+
+        String id = videoId.trim();
+        boolean isScene = id.startsWith("scn_") || id.startsWith("scene_");
+        String path = isScene ? "/scenes/{id}" : "/clips/{id}";
+
+        try {
+            String response = webClient.get()
+                    .uri(path, id)
+                    .header(HttpHeaders.AUTHORIZATION, getAuthHeader())
+                    .retrieve()
+                    .bodyToMono(String.class)
+                    .timeout(READ_TIMEOUT)
+                    .block();
+
+            if (response == null || response.isBlank()) {
+                out.put("success", false);
+                out.put("error", "Empty response from D-ID");
+                return out;
+            }
+
+            JsonNode root = objectMapper.readTree(response);
+            String status = root.has("status") && !root.get("status").isNull() ? root.get("status").asText() : "";
+
+            String resultUrl = null;
+            if (root.has("result_url") && !root.get("result_url").isNull()) {
+                resultUrl = root.get("result_url").asText();
+            } else if (root.has("result") && root.get("result").isObject() && root.get("result").has("url")) {
+                resultUrl = root.get("result").get("url").asText();
+            }
+
+            String pendingUrl = null;
+            if (root.has("pending_url") && !root.get("pending_url").isNull()) {
+                pendingUrl = root.get("pending_url").asText();
+            } else if (root.has("url") && !root.get("url").isNull()) {
+                pendingUrl = root.get("url").asText();
+            }
+
+            String err = null;
+            if (root.has("error") && !root.get("error").isNull()) {
+                err = root.get("error").asText();
+            } else if (root.has("message") && !root.get("message").isNull()) {
+                err = root.get("message").asText();
+            }
+
+            out.put("success", true);
+            out.put("id", id);
+            out.put("type", isScene ? "scene" : "clip");
+            out.put("status", status == null ? "" : status);
+            out.put("result_url", resultUrl);
+            out.put("pending_url", pendingUrl);
+            if (err != null && !err.isBlank()) {
+                out.put("error", err);
+            }
+            return out;
+        } catch (WebClientResponseException wce) {
+            out.put("success", false);
+            out.put("error", "D-ID status failed: status=" + wce.getStatusCode().value());
+            out.put("status", "error");
+            return out;
+        } catch (Exception e) {
+            out.put("success", false);
+            out.put("error", e.getMessage());
+            out.put("status", "error");
+            return out;
+        }
+    }
+
     private void ensureLocalSampleVoiceIfAvailable(String presenterId) {
         if (presenterId == null || presenterId.isBlank()) {
             return;
@@ -1145,9 +1219,23 @@ public class DIDService {
                 return;
             }
 
-            ensureClonedVoiceIdFromLocalSample(pid, name.trim());
-        } catch (Exception ignored) {
-            // best-effort only
+            String trimmedName = name.trim();
+            boolean hasSample = findAudioManagementEntry(pid, trimmedName).isPresent();
+            if (!hasSample) {
+                return;
+            }
+
+            Optional<String> ensured = ensureClonedVoiceIdFromLocalSample(pid, trimmedName);
+            if (hasSample && (ensured.isEmpty() || ensured.get().isBlank()) && strictAudioManagementVoice) {
+                throw new RuntimeException("Audio-management sample exists but voice cloning failed for presenterId=" + pid);
+            }
+        } catch (Exception e) {
+            if (strictAudioManagementVoice) {
+                if (e instanceof RuntimeException re) {
+                    throw re;
+                }
+                throw new RuntimeException(e);
+            }
         }
     }
 
@@ -1161,31 +1249,40 @@ public class DIDService {
             Optional<DIDAvatar> db = avatarRepository.findByPresenterId(pid);
             if (db.isPresent()) {
                 DIDAvatar a = db.get();
-                String rawType = a.getVoiceType();
                 String presenterName = a.getPresenterName();
 
-                // Priority 1: Voice override in config (highest priority)
-                String overrideVoiceId = resolveAmazonVoiceOverride(pid, presenterName);
-                if (overrideVoiceId != null && !overrideVoiceId.isBlank()) {
-                    logger.info("Using Amazon Polly voice override for presenter {}: {}", pid, overrideVoiceId);
-                    return buildAmazonNeuralProvider(overrideVoiceId.trim());
+                // Priority 1: Use existing custom/cloned voice saved on the avatar (from audio-management)
+                String voiceId = a.getVoiceId();
+                String rawType = a.getVoiceType();
+                if (voiceId != null && !voiceId.isBlank() && rawType != null && !rawType.isBlank()
+                        && rawType.trim().toLowerCase(Locale.ROOT).startsWith(CUSTOM_VOICE_PREFIX)) {
+                    String providerType = normalizeVoiceType(rawType);
+                    if (providerType == null
+                            || !(providerType.equalsIgnoreCase("d-id") || providerType.equalsIgnoreCase("did"))) {
+                        return null;
+                    }
+                    Map<String, Object> provider = new HashMap<>();
+                    provider.put("type", "d-id");
+                    provider.put("voice_id", voiceId.trim());
+                    logger.info("Using audio-management voice for presenter {}: type=d-id voice_id={}", pid, voiceId.trim());
+                    return provider;
                 }
 
-                // Priority 2: Check if avatar has audio sample in audio-management
-                // If audio-management has a sample for this avatar, use Amazon Polly
-                if (hasAudioManagementSample(pid, presenterName)) {
-                    String amazonVoice = defaultAmazonVoice != null && !defaultAmazonVoice.isBlank() 
-                            ? defaultAmazonVoice.trim() : "Aria";
-                    logger.info("Avatar {} has audio-management sample, using Amazon Polly voice: {}", pid, amazonVoice);
-                    return buildAmazonNeuralProvider(amazonVoice);
-                }
+                // Priority 2: If audio-management has a sample, ensure a cloned/custom voice exists and use it
+                Optional<AvatarAudio> audioEntry = findAudioManagementEntry(pid, presenterName);
+                if (audioEntry.isPresent()) {
+                    String cloneName = (presenterName == null || presenterName.isBlank()) ? pid : presenterName.trim();
+                    Optional<String> ensuredVoiceId = ensureClonedVoiceIdFromLocalSample(pid, cloneName);
+                    if (ensuredVoiceId.isPresent() && !ensuredVoiceId.get().isBlank()) {
+                        Map<String, Object> provider = new HashMap<>();
+                        provider.put("type", "d-id");
+                        provider.put("voice_id", ensuredVoiceId.get().trim());
+                        logger.info("Using audio-management voice (ensured) for presenter {}: type=d-id voice_id={}", pid, ensuredVoiceId.get().trim());
+                        return provider;
+                    }
 
-                // Priority 3: Check if explicitly configured as Amazon voice
-                if (rawType != null && isAmazonVoiceType(rawType)) {
-                    String rawId = a.getVoiceId();
-                    if (rawId != null && !rawId.isBlank() && isLikelyAmazonPollyVoiceId(rawId)) {
-                        logger.info("Using configured Amazon Polly voice for presenter {}: {}", pid, rawId.trim());
-                        return buildAmazonNeuralProvider(rawId.trim());
+                    if (strictAudioManagementVoice) {
+                        throw new RuntimeException("Audio-management sample exists but voice cloning failed for presenterId=" + pid);
                     }
                 }
             }
@@ -1196,16 +1293,18 @@ public class DIDService {
             return null;
             
         } catch (Exception e) {
+            if (strictAudioManagementVoice) {
+                if (e instanceof RuntimeException re) {
+                    throw re;
+                }
+                throw new RuntimeException(e);
+            }
             logger.warn("Error resolving voice provider for presenter {}: {}", pid, e.getMessage());
             return null;
         }
     }
 
-    /**
-     * Check if avatar has an audio sample in audio-management.
-     * This is used to determine if we should use Amazon Polly voice.
-     */
-    private boolean hasAudioManagementSample(String presenterId, String presenterName) {
+    private Optional<AvatarAudio> findAudioManagementEntry(String presenterId, String presenterName) {
         List<String> keys = new ArrayList<>();
 
         if (presenterName != null && !presenterName.isBlank()) {
@@ -1231,166 +1330,24 @@ public class DIDService {
                 .distinct()
                 .toList();
 
-        for (String key : normalizedKeys) {
-            if (key == null || key.isBlank()) {
-                continue;
-            }
-            Optional<AvatarAudio> match = avatarAudioRepository.findFirstByNormalizedKey(key);
-            if (match.isPresent()) {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    /**
-     * Build Amazon Polly provider with neural voice for best quality.
-     * D-ID automatically selects the appropriate engine based on the voice.
-     * For Indonesian: Aria (neural) is the only option but provides excellent quality.
-     * For English: Neural voices like Joanna, Matthew, Amy provide consistent output.
-     */
-    private Map<String, Object> buildAmazonNeuralProvider(String voiceId) {
-        Map<String, Object> provider = new HashMap<>();
-        provider.put("type", "amazon");
-        provider.put("voice_id", voiceId);
-        
-        // D-ID doesn't support voice_config.engine for Amazon Polly
-        // The engine (neural/standard) is determined by the voice itself
-        // All voices in NEURAL_VOICES set are guaranteed to use neural engine
-        
-        String engine = determineVoiceEngine(voiceId);
-        logger.debug("Amazon Polly voice: {} (engine: {})", voiceId, engine);
-        
-        return provider;
-    }
-
-    /**
-     * Determine the expected engine type for a given voice (for logging purposes).
-     * D-ID/Amazon automatically selects this based on the voice_id.
-     */
-    private String determineVoiceEngine(String voiceId) {
-        if (voiceId == null || voiceId.isBlank()) {
-            return "standard";
-        }
-        
-        String v = voiceId.trim();
-        
-        // Generative engine - highest quality, most natural (English only)
-        if (GENERATIVE_VOICES.contains(v)) {
-            return "generative";
-        }
-        
-        // Long-form engine - optimized for long content (English only)
-        if (LONG_FORM_VOICES.contains(v)) {
-            return "long-form";
-        }
-        
-        // Neural engine - high quality, most languages
-        if (NEURAL_VOICES.contains(v)) {
-            return "neural";
-        }
-        
-        // Unknown voice - assume standard
-        return "standard";
-    }
-
-    private boolean isLikelyAmazonPollyVoiceId(String voiceId) {
-        if (voiceId == null) {
-            return false;
-        }
-        String v = voiceId.trim();
-        if (v.isEmpty()) {
-            return false;
-        }
-        if (v.length() > 64) {
-            return false;
-        }
-        return v.matches("[A-Za-z]{2,64}");
-    }
-
-    private boolean isAmazonVoiceType(String rawType) {
-        if (rawType == null || rawType.isBlank()) {
-            return false;
-        }
-        String t = rawType.trim().toLowerCase(Locale.ROOT);
-        if (t.startsWith(CUSTOM_VOICE_PREFIX)) {
-            t = t.substring(CUSTOM_VOICE_PREFIX.length()).trim();
-        }
-        return t.equals("amazon") || t.equals("amazon_polly") || t.equals("polly") || t.startsWith("amazon");
-    }
-
-    private String resolveAmazonVoiceOverride(String presenterId, String presenterName) {
-        String raw = amazonVoiceOverrides == null ? "" : amazonVoiceOverrides.trim();
-        if (raw.isBlank()) {
-            return null;
-        }
-
-        String pid = presenterId == null ? "" : presenterId.trim();
-        String pname = presenterName == null ? "" : presenterName.trim();
-        String[] parts = raw.split("[\\n\\r,;]+");
-        for (String part : parts) {
-            if (part == null) {
-                continue;
-            }
-            String p = part.trim();
-            if (p.isEmpty()) {
-                continue;
-            }
-            int eq = p.indexOf('=');
-            if (eq <= 0 || eq >= p.length() - 1) {
-                continue;
-            }
-            String k = p.substring(0, eq).trim();
-            String v = p.substring(eq + 1).trim();
-            if (k.isEmpty() || v.isEmpty()) {
-                continue;
-            }
-            if (!pid.isEmpty() && k.equals(pid)) {
-                return v;
-            }
-            if (!pname.isEmpty() && k.equalsIgnoreCase(pname)) {
-                return v;
-            }
-        }
-
-        return null;
-    }
-
-    private String normalizeSsmlBreakTagsForAmazon(String input) {
-        if (input == null || input.isBlank()) {
-            return input;
+        if (normalizedKeys.isEmpty()) {
+            return Optional.empty();
         }
 
         try {
-            java.util.regex.Pattern p = java.util.regex.Pattern.compile("(?is)<\\s*break\\b([^>]*)/\\s*>");
-            java.util.regex.Matcher m = p.matcher(input);
-            StringBuffer sb = new StringBuffer();
-            while (m.find()) {
-                String attrs = m.group(1);
-                long ms = parseSsmlBreakTimeMs(attrs);
-                double seconds = Math.max(0d, ms / 1000d);
-                if (seconds > 10.0d) {
-                    seconds = 10.0d;
+            return avatarAudioRepository.findFirstByNormalizedKeyIn(normalizedKeys);
+        } catch (Exception ignored) {
+            // Fallback to single lookups
+            for (String key : normalizedKeys) {
+                if (key == null || key.isBlank()) {
+                    continue;
                 }
-                if (seconds <= 0d) {
-                    seconds = 0.1d;
+                Optional<AvatarAudio> match = avatarAudioRepository.findFirstByNormalizedKey(key);
+                if (match.isPresent()) {
+                    return match;
                 }
-
-                String formatted;
-                if (Math.abs(seconds - Math.rint(seconds)) < 0.0001d) {
-                    formatted = String.valueOf((int) Math.rint(seconds));
-                } else {
-                    formatted = String.format(java.util.Locale.ROOT, "%.1f", seconds);
-                }
-
-                String repl = "<break time=\"" + formatted + "s\"/>";
-                m.appendReplacement(sb, java.util.regex.Matcher.quoteReplacement(repl));
             }
-            m.appendTail(sb);
-            return sb.toString();
-        } catch (Exception ignore) {
-            return input;
+            return Optional.empty();
         }
     }
 
@@ -1612,26 +1569,26 @@ public class DIDService {
 
                     Map<String, Object> provider = resolveProviderForPresenter(avatarId);
                     String providerType = provider == null ? null : String.valueOf(provider.get("type"));
+                    boolean ssmlAllowed = canUseSsml && providerType != null
+                        && (providerType.equalsIgnoreCase("d-id") || providerType.equalsIgnoreCase("did"));
                     
                     // Log the voice configuration being used
                     if (provider != null) {
                         String logVoiceType = String.valueOf(provider.get("type"));
                         String logVoiceId = String.valueOf(provider.get("voice_id"));
-                        if ("amazon".equalsIgnoreCase(logVoiceType)) {
-                            logger.info("Scene {} using Amazon Polly voice: voice_id={}", avatarId, logVoiceId);
-                        } else {
-                            logger.info("Scene {} using {} voice: voice_id={}", avatarId, logVoiceType, logVoiceId);
-                        }
+                        logger.info("Scene {} using {} voice: voice_id={}", avatarId, logVoiceType, logVoiceId);
                     } else {
                         logger.info("Scene {} using avatar's native voice (no audio-management sample)", avatarId);
                     }
 
                     String scriptInput = script;
-                    if (canUseSsml && providerType != null && providerType.equalsIgnoreCase("amazon")) {
-                        scriptInput = normalizeSsmlBreakTagsForAmazon(script);
+                    if (ssmlAllowed) {
+                        scriptInput = sanitizeSsmlForDidProvider(script);
+                    } else if (canUseSsml) {
+                        scriptInput = stripKnownSsmlTagsToPlainText(script);
                     }
                     scriptObj.put("input", scriptInput);
-                    if (canUseSsml) {
+                    if (ssmlAllowed) {
                         scriptObj.put("ssml", true);
                     }
 
@@ -1664,19 +1621,37 @@ public class DIDService {
 
                         Map<String, Object> provider = resolveProviderForPresenter(avatarId);
                         String providerType = provider == null ? null : String.valueOf(provider.get("type"));
+                        boolean ssmlAllowed = canUseSsml && providerType != null
+                            && (providerType.equalsIgnoreCase("d-id") || providerType.equalsIgnoreCase("did"));
 
                         String scriptInput = script;
-                        if (canUseSsml && providerType != null && providerType.equalsIgnoreCase("amazon")) {
-                            scriptInput = normalizeSsmlBreakTagsForAmazon(script);
+                        if (ssmlAllowed) {
+                            scriptInput = sanitizeSsmlForDidProvider(script);
+                        } else if (canUseSsml) {
+                            scriptInput = stripKnownSsmlTagsToPlainText(script);
                         }
                         textScript.put("input", scriptInput);
-                        if (canUseSsml) {
+                        if (ssmlAllowed) {
                             textScript.put("ssml", true);
                         }
                         if (provider != null) {
                             textScript.put("provider", provider);
                         }
                         requestBody.put("script", textScript);
+                        response = postScene(requestBody);
+                    } else if (!usingAudio && isSsmlInput(script) && wce.getStatusCode().is4xxClientError()) {
+                        logger.warn("Scenes SSML rejected (status={}). Retrying with plain text.", wce.getStatusCode().value());
+
+                        Map<String, Object> fallbackTextScript = new HashMap<>();
+                        fallbackTextScript.put("type", "text");
+                        fallbackTextScript.put("input", stripKnownSsmlTagsToPlainText(script));
+
+                        Map<String, Object> provider = resolveProviderForPresenter(avatarId);
+                        if (provider != null) {
+                            fallbackTextScript.put("provider", provider);
+                        }
+
+                        requestBody.put("script", fallbackTextScript);
                         response = postScene(requestBody);
                     } else if (!usingAudio && script != null && script.contains("<break") && wce.getStatusCode().is4xxClientError()) {
                         logger.warn("Scenes SSML rejected (status={}). Retrying without SSML breaks.", wce.getStatusCode().value());
@@ -1777,12 +1752,16 @@ public class DIDService {
                     scriptObj.put("type", "text");
                     boolean canUseSsml = isSsmlInput(script);
                     String providerType = provider == null ? null : String.valueOf(provider.get("type"));
+                    boolean ssmlAllowed = canUseSsml && providerType != null
+                            && (providerType.equalsIgnoreCase("d-id") || providerType.equalsIgnoreCase("did"));
                     String scriptInput = script;
-                    if (canUseSsml && providerType != null && providerType.equalsIgnoreCase("amazon")) {
-                        scriptInput = normalizeSsmlBreakTagsForAmazon(script);
+                    if (ssmlAllowed) {
+                        scriptInput = sanitizeSsmlForDidProvider(script);
+                    } else if (canUseSsml) {
+                        scriptInput = stripKnownSsmlTagsToPlainText(script);
                     }
                     scriptObj.put("input", scriptInput);
-                    if (canUseSsml) {
+                    if (ssmlAllowed) {
                         scriptObj.put("ssml", true);
                     }
                 }
@@ -1799,11 +1778,7 @@ public class DIDService {
                     scriptWithProvider.put("provider", provider);
                     String voiceType = String.valueOf(provider.get("type"));
                     String voiceId = String.valueOf(provider.get("voice_id"));
-                    if ("amazon".equalsIgnoreCase(voiceType)) {
-                        logger.info("Clip {} using Amazon Polly voice: voice_id={}", presenterId, voiceId);
-                    } else {
-                        logger.info("Clip {} using {} voice: voice_id={}", presenterId, voiceType, voiceId);
-                    }
+                    logger.info("Clip {} using {} voice: voice_id={}", presenterId, voiceType, voiceId);
                 } else {
                     logger.info("Clip {} using presenter's native voice (no audio-management sample)", presenterId);
                 }
@@ -1829,12 +1804,16 @@ public class DIDService {
                         Map<String, Object> fallbackProvider = resolveClipsVoiceProvider(presenterId);
                         boolean canUseSsml = isSsmlInput(script);
                         String fallbackProviderType = fallbackProvider == null ? null : String.valueOf(fallbackProvider.get("type"));
+                        boolean ssmlAllowed = canUseSsml && fallbackProviderType != null
+                            && (fallbackProviderType.equalsIgnoreCase("d-id") || fallbackProviderType.equalsIgnoreCase("did"));
                         String scriptInput = script;
-                        if (canUseSsml && fallbackProviderType != null && fallbackProviderType.equalsIgnoreCase("amazon")) {
-                            scriptInput = normalizeSsmlBreakTagsForAmazon(script);
+                        if (ssmlAllowed) {
+                            scriptInput = sanitizeSsmlForDidProvider(script);
+                        } else if (canUseSsml) {
+                            scriptInput = stripKnownSsmlTagsToPlainText(script);
                         }
                         textScriptObj.put("input", scriptInput);
-                        if (canUseSsml) {
+                        if (ssmlAllowed) {
                             textScriptObj.put("ssml", true);
                         }
 
@@ -1850,6 +1829,27 @@ public class DIDService {
                         textBodyNoProvider.put("script", textScriptObj);
 
                         response = fallbackProvider != null ? postClip(textBody) : postClip(textBodyNoProvider);
+                    } else
+                    if (!usingAudio && isSsmlInput(script) && wce.getStatusCode().is4xxClientError()) {
+                        logger.warn("Clips SSML rejected (status={}). Retrying with plain text.", wce.getStatusCode().value());
+
+                        Map<String, Object> fallbackTextScript = new HashMap<>();
+                        fallbackTextScript.put("type", "text");
+                        fallbackTextScript.put("input", stripKnownSsmlTagsToPlainText(script));
+
+                        Map<String, Object> bodyWithProvider = new HashMap<>(requestBody);
+                        Map<String, Object> bodyWithoutProvider = new HashMap<>(requestBody);
+
+                        Map<String, Object> s1 = new HashMap<>(fallbackTextScript);
+                        Map<String, Object> s2 = new HashMap<>(fallbackTextScript);
+                        if (provider != null) {
+                            s1.put("provider", provider);
+                        }
+
+                        bodyWithProvider.put("script", s1);
+                        bodyWithoutProvider.put("script", s2);
+
+                        response = provider != null ? postClip(bodyWithProvider) : postClip(bodyWithoutProvider);
                     } else
                     if (!usingAudio && script != null && script.contains("<break") && wce.getStatusCode().is4xxClientError()) {
                         logger.warn("Clips SSML rejected (status={}). Retrying without SSML breaks.", wce.getStatusCode().value());
@@ -2126,174 +2126,6 @@ public class DIDService {
         }
     }
 
-
-    /**
-     * Get video status and result URL from D-ID
-     * Handles both scenes and clips
-     */
-    public Map<String, Object> getClipStatus(String videoId) {
-        // Try scenes first if it looks like a scene ID
-        if (videoId.startsWith("scn_")) {
-            return getSceneStatus(videoId);
-        }
-        return getClipsStatus(videoId);
-    }
-    
-    private Map<String, Object> getSceneStatus(String sceneId) {
-        Map<String, Object> result = new HashMap<>();
-        
-        try {
-            String response = webClient.get()
-                    .uri("/scenes/" + sceneId)
-                    .header(HttpHeaders.AUTHORIZATION, getAuthHeader())
-                    .retrieve()
-                    .bodyToMono(String.class)
-                    .block();
-
-            if (response != null) {
-                JsonNode root = objectMapper.readTree(response);
-                result.put("success", true);
-                result.put("id", sceneId);
-                result.put("status", root.has("status") ? root.get("status").asText() : "unknown");
-                result.put("result_url", extractResultUrl(root));
-                result.put("pending_url", root.has("pending_url") ? root.get("pending_url").asText() : null);
-                result.put("type", "scene");
-                
-                String err = extractDidError(root);
-                if (err != null && !err.isBlank()) {
-                    result.put("error", err);
-                }
-            }
-        } catch (Exception e) {
-            logger.error("Error getting D-ID scene status: {}", e.getMessage());
-            result.put("success", false);
-            result.put("error", e.getMessage());
-        }
-        
-        return result;
-    }
-    
-    private Map<String, Object> getClipsStatus(String clipId) {
-        Map<String, Object> result = new HashMap<>();
-        
-        try {
-            String response = webClient.get()
-                    .uri("/clips/" + clipId)
-                    .header(HttpHeaders.AUTHORIZATION, getAuthHeader())
-                    .retrieve()
-                    .bodyToMono(String.class)
-                    .block();
-
-            if (response != null) {
-                JsonNode root = objectMapper.readTree(response);
-                result.put("success", true);
-                result.put("id", clipId);
-                result.put("status", root.has("status") ? root.get("status").asText() : "unknown");
-                result.put("result_url", extractResultUrl(root));
-                result.put("type", "clip");
-                
-                String err = extractDidError(root);
-                if (err != null && !err.isBlank()) {
-                    result.put("error", err);
-                }
-            }
-        } catch (Exception e) {
-            logger.error("Error getting D-ID clip status: {}", e.getMessage());
-            result.put("success", false);
-            result.put("error", e.getMessage());
-        }
-        
-        return result;
-    }
-
-    private String extractResultUrl(JsonNode root) {
-        if (root == null) return null;
-
-        String[] directKeys = new String[] { "result_url", "resultUrl", "url", "video_url" };
-        for (String k : directKeys) {
-            if (root.has(k) && !root.get(k).isNull()) {
-                String v = root.get(k).asText();
-                if (v != null && !v.isBlank()) return v;
-            }
-        }
-
-        JsonNode result = root.get("result");
-        if (result != null && result.isObject()) {
-            String[] nestedKeys = new String[] { "result_url", "url", "video_url", "mp4_url" };
-            for (String k : nestedKeys) {
-                if (result.has(k) && !result.get(k).isNull()) {
-                    String v = result.get(k).asText();
-                    if (v != null && !v.isBlank()) return v;
-                }
-            }
-        }
-
-        return null;
-    }
-
-    private String extractDidError(JsonNode root) {
-        if (root == null) {
-            return null;
-        }
-
-        JsonNode err = root.get("error");
-        if (err == null || err.isNull()) {
-            return null;
-        }
-
-        String val;
-        if (err.isTextual()) {
-            val = err.asText();
-        } else {
-            val = err.toString();
-        }
-        if (val == null) {
-            return null;
-        }
-        val = val.trim();
-        if (val.isBlank()) {
-            return null;
-        }
-        return truncate(val, 1500);
-    }
-
-    /**
-     * Get presenter details by ID
-     */
-    public DIDPresenter getPresenterById(String presenterId) {
-        String forcedId = normalize(forcedPresenterId);
-        if (forcedId != null) {
-            return presenterCache.get(forcedId);
-        }
-        if (presenterCache.isEmpty()) {
-            getPresenters();
-        }
-        return presenterCache.get(presenterId);
-    }
-    
-    /**
-     * Get presenter by name (case-insensitive)
-     * Returns the first matching presenter
-     */
-    public DIDPresenter getPresenterByName(String name) {
-        String forcedId = normalize(forcedPresenterId);
-        if (forcedId != null) {
-            return getPresenterByIdPreferDbThenApi(forcedId);
-        }
-        if (presenterCache.isEmpty()) {
-            getPresenters();
-        }
-        
-        // Search by name (case-insensitive)
-        for (DIDPresenter presenter : presenterCache.values()) {
-            if (presenter.getPresenter_name() != null && 
-                presenter.getPresenter_name().equalsIgnoreCase(name)) {
-                return presenter;
-            }
-        }
-        return null;
-    }
-    
     /**
      * Validate if a presenter exists by name
      */
@@ -2552,7 +2384,7 @@ public class DIDService {
      * Get voice policy information for the current configuration.
      * Voice selection priority:
      * 1. Cloned voice from audio-management (if avatar name matches audio sample)
-     * 2. Express Avatar's native ElevenLabs voice (created when avatar was made in D-ID Studio)
+     * 2. Express Avatar's native voice (no provider)
      * @return Map containing voice policy information
      */
     public Map<String, Object> getVoicePolicyInfo() {
@@ -2561,13 +2393,12 @@ public class DIDService {
         // Current configuration
         Map<String, Object> config = new HashMap<>();
         config.put("cloneLanguage", cloneVoiceLanguage);
-        config.put("voiceOverrides", amazonVoiceOverrides == null || amazonVoiceOverrides.isBlank() ? "none" : "configured");
         result.put("config", config);
         
         // Voice selection priority
         result.put("priority", List.of(
             Map.of("order", 1, "type", "audio-management", "description", "Cloned voice from audio sample matching avatar name (D-ID voice cloning)"),
-            Map.of("order", 2, "type", "native-elevenlabs", "description", "Express Avatar's native ElevenLabs voice (created in D-ID Studio)")
+            Map.of("order", 2, "type", "native", "description", "Express Avatar's native voice (no provider specified)")
         ));
         
         // How to add custom voice
