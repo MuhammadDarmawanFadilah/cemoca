@@ -1715,8 +1715,11 @@ public class DIDService {
 
                     Map<String, Object> provider = resolveProviderForPresenter(avatarId);
                     String providerType = provider == null ? null : String.valueOf(provider.get("type"));
-                    boolean ssmlAllowed = canUseSsml && providerType != null
-                        && (providerType.equalsIgnoreCase("d-id") || providerType.equalsIgnoreCase("did") || providerType.equalsIgnoreCase("amazon"));
+                    boolean providerAllowsSsml = providerType == null
+                        || providerType.equalsIgnoreCase("d-id")
+                        || providerType.equalsIgnoreCase("did")
+                        || providerType.equalsIgnoreCase("amazon");
+                    boolean ssmlAllowed = canUseSsml && providerAllowsSsml;
                     
                     // Log the voice configuration being used
                     if (provider != null) {
@@ -1729,7 +1732,7 @@ public class DIDService {
 
                     String scriptInput = script;
                     if (ssmlAllowed) {
-                        scriptInput = providerType != null && providerType.equalsIgnoreCase("amazon")
+                        scriptInput = providerType == null || providerType.equalsIgnoreCase("amazon")
                                 ? sanitizeSsmlForAmazonProvider(script)
                                 : sanitizeSsmlForDidProvider(script);
                     } else if (canUseSsml) {
@@ -1769,12 +1772,15 @@ public class DIDService {
 
                         Map<String, Object> provider = resolveProviderForPresenter(avatarId);
                         String providerType = provider == null ? null : String.valueOf(provider.get("type"));
-                        boolean ssmlAllowed = canUseSsml && providerType != null
-                            && (providerType.equalsIgnoreCase("d-id") || providerType.equalsIgnoreCase("did") || providerType.equalsIgnoreCase("amazon"));
+                        boolean providerAllowsSsml = providerType == null
+                            || providerType.equalsIgnoreCase("d-id")
+                            || providerType.equalsIgnoreCase("did")
+                            || providerType.equalsIgnoreCase("amazon");
+                        boolean ssmlAllowed = canUseSsml && providerAllowsSsml;
 
                         String scriptInput = script;
                         if (ssmlAllowed) {
-                            scriptInput = providerType != null && providerType.equalsIgnoreCase("amazon")
+                            scriptInput = providerType == null || providerType.equalsIgnoreCase("amazon")
                                     ? sanitizeSsmlForAmazonProvider(script)
                                     : sanitizeSsmlForDidProvider(script);
                         } else if (canUseSsml) {
@@ -1902,11 +1908,14 @@ public class DIDService {
                     scriptObj.put("type", "text");
                     boolean canUseSsml = isSsmlInput(script);
                     String providerType = provider == null ? null : String.valueOf(provider.get("type"));
-                    boolean ssmlAllowed = canUseSsml && providerType != null
-                            && (providerType.equalsIgnoreCase("d-id") || providerType.equalsIgnoreCase("did") || providerType.equalsIgnoreCase("amazon"));
+                    boolean providerAllowsSsml = providerType == null
+                            || providerType.equalsIgnoreCase("d-id")
+                            || providerType.equalsIgnoreCase("did")
+                            || providerType.equalsIgnoreCase("amazon");
+                    boolean ssmlAllowed = canUseSsml && providerAllowsSsml;
                     String scriptInput = script;
                     if (ssmlAllowed) {
-                        scriptInput = providerType != null && providerType.equalsIgnoreCase("amazon")
+                        scriptInput = providerType == null || providerType.equalsIgnoreCase("amazon")
                                 ? sanitizeSsmlForAmazonProvider(script)
                                 : sanitizeSsmlForDidProvider(script);
                     } else if (canUseSsml) {
@@ -1956,11 +1965,14 @@ public class DIDService {
                         Map<String, Object> fallbackProvider = resolveClipsVoiceProvider(presenterId);
                         boolean canUseSsml = isSsmlInput(script);
                         String fallbackProviderType = fallbackProvider == null ? null : String.valueOf(fallbackProvider.get("type"));
-                        boolean ssmlAllowed = canUseSsml && fallbackProviderType != null
-                            && (fallbackProviderType.equalsIgnoreCase("d-id") || fallbackProviderType.equalsIgnoreCase("did") || fallbackProviderType.equalsIgnoreCase("amazon"));
+                        boolean providerAllowsSsml = fallbackProviderType == null
+                            || fallbackProviderType.equalsIgnoreCase("d-id")
+                            || fallbackProviderType.equalsIgnoreCase("did")
+                            || fallbackProviderType.equalsIgnoreCase("amazon");
+                        boolean ssmlAllowed = canUseSsml && providerAllowsSsml;
                         String scriptInput = script;
                         if (ssmlAllowed) {
-                            scriptInput = fallbackProviderType != null && fallbackProviderType.equalsIgnoreCase("amazon")
+                            scriptInput = fallbackProviderType == null || fallbackProviderType.equalsIgnoreCase("amazon")
                                     ? sanitizeSsmlForAmazonProvider(script)
                                     : sanitizeSsmlForDidProvider(script);
                         } else if (canUseSsml) {

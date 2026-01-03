@@ -1,26 +1,289 @@
-Kính chào Ngài,
-Mặc dù trong nhiều năm qua, ngành bảo hiểm đã không ngừng đầu tư vào hoa hồng, sản phẩm, đào tạo và các công cụ số, nhưng vẫn còn một thách thức chưa được giải quyết triệt để trong lĩnh vực bảo hiểm nhân thọ: duy trì tỷ lệ hoạt động và hiệu suất làm việc của đội ngũ tư vấn viên. Trên toàn ngành, tình trạng đại lý không gắn bó với tổ chức tiếp tục làm giảm sự tăng trưởng và lợi nhuận đầu tư.
-Phân tích dữ liệu của 8.380 tư vấn viên mới được tuyển dụng trong giai đoạn 2024–2025 cho thấy bức tranh rất rõ ràng:
-•	63% còn hoạt động tại tháng cấp mã số,
-•	10% còn hoạt động đến tháng thứ 3,
-•	và chỉ 5% còn hoạt động đến tháng thứ 6.
-Điều này đồng nghĩa với việc 95% tư vấn viên mới không còn hoạt động trong vòng 6 tháng. Mỗi tư vấn viên không còn hoạt động là sự lãng phí chi phí tuyển dụng, chi phí đào tạo, thời gian của cấp quản lý, cũng như làm mất đi lời nhuận doanh thu APE. Ở quy mô lớn, điều này tương đương với hàng triệu đơn vị doanh thu chưa được hiện thực hóa mỗi năm.
-Tuy nhiên, đây chính là cơ hội. Nếu chúng ta chỉ cần cải thiện tỷ lệ hoạt động của tư vấn viên thêm 10% ở mỗi nhóm theo tháng, thì:
-•	APE sẽ tăng 57% vào tháng thứ 6,
-•	và tăng 91% vào tháng thứ 12.
-Kết quả này đạt được mà không cần tăng hoa hồng, không cần sản phẩm mới, cũng không cần tuyển dụng tư vấn viên mới. Đây không phải là vấn đề đào tạo, mà là khoảng trống trong việc tạo sự gắn kết và thực thi hiệu quả dành cho tư vấn viên.
-Về bản chất, bảo hiểm là một ngành kinh doanh dựa trên con người. Tuy nhiên, việc quản lý đội ngũ tư vấn viên ở quy mô lớn ngày nay đòi hỏi cả về khoa học và sự kết nối giữa con người – sử dụng dữ liệu và trí tuệ nhân tạo AI, được củng cố bằng ghi nhận kịp thời, tạo động lực thúc đẩy và huấn luyện đúng thời điểm. Chính niềm tin đó đã thôi thúc tôi đồng sáng lập CeMoCA.
-CeMoCA là một nền tảng kích hoạt sự gắn kết và hiệu suất của tư vấn viên, được triển khai trực tiếp qua WhatsApp – kênh tư vấn viên đã quen thuộc, với tỷ lệ đọc tin nhắn lên đến 98%.
-Mỗi tư vấn viên nhận được 8–10 điểm chạm cá nhân hóa và có cấu trúc mỗi tháng, bao gồm:
-•	ghi nhận tức thì cho các hợp đồng phát hành,
-•	cập nhật rõ ràng về tiến độ và chỉ tiêu còn lại,
-•	đào tạo vi mô vào Ngày 14 và Ngày 28,
-•	thông điệp khởi động tháng và chương trình khuyến khích,
-•	báo cáo hiệu quả theo tháng (MTD) và theo năm (YTD),
-•	chúc mừng sinh nhật và các dịp lễ.
-Tất cả đều tự động hóa, không cần hệ thống mới, chi phí vận hành thấp, và quan trọng nhất là mọi thông điệp đều được cá nhân hóa cho từng tư vấn viên.
-Kết quả mang lại là: tỷ lệ hoạt động ổn định hơn, tỷ lệ duy trì tư vấn viên giai đoạn đầu cao hơn, hiệu quả đầu tư tuyển dụng và đào tạo được cải thiện rõ rệt, và tăng trưởng APE đáng kể mà không cần mở rộng lực lượng bán hàng. CeMoCA không thay thế các hệ thống hiện hữu của bạn, mà kích hoạt và phát huy hiệu quả của chúng.
-Tóm lại, CeMoCA giúp các công ty bảo hiểm xây dựng một hệ sinh thái bán hàng dựa trên hoạt động, mang lại hiệu suất ổn định hơn và khả năng giữ chân tư vấn viên tốt hơn.
-Chúng tôi tin rằng CeMoCA là một sáng kiến chuyển đổi thực tiễn cho kế hoạch hành động năm 2026, đồng thời là một thông điệp rõ ràng gửi đến lực lượng đại lý rằng công ty đang thay đổi cách thức hỗ trợ sự thành công của tư vấn viên.
-Xin trân trọng cảm ơn và mong được tiếp tục trao đổi cùng Anh/Chị.
+<speak>
+	<amazon:effect name="drc">
+		<p>
+			<s>
+				<prosody rate="medium" pitch="+8%">Kính chào</prosody>
+				<break time="350ms"/>
+				<prosody rate="medium" pitch="+2%">:name.</prosody>
+			</s>
+		</p>
 
+		<p>
+			<s>
+				Mặc dù trong nhiều năm qua, ngành bảo hiểm đã không ngừng đầu tư vào hoa hồng,
+				<break time="250ms"/>
+				sản phẩm,
+				<break time="200ms"/>
+				đào tạo,
+				<break time="200ms"/>
+				và các công cụ số,
+				<break time="350ms"/>
+				nhưng vẫn còn một thách thức chưa được giải quyết triệt để trong lĩnh vực bảo hiểm nhân thọ:
+				<break time="450ms"/>
+				<emphasis level="moderate">duy trì tỷ lệ hoạt động và hiệu suất làm việc của đội ngũ tư vấn viên</emphasis>.
+			</s>
+			<s>
+				Trên toàn ngành,
+				<break time="250ms"/>
+				tình trạng đại lý không gắn bó với tổ chức
+				<break time="200ms"/>
+				tiếp tục làm giảm sự tăng trưởng
+				<break time="200ms"/>
+				và lợi nhuận đầu tư.
+			</s>
+		</p>
+
+		<p>
+			<s>
+				Phân tích dữ liệu của tám nghìn ba trăm tám mươi tư vấn viên mới
+				<break time="250ms"/>
+				được tuyển dụng trong giai đoạn hai nghìn không trăm hai mươi tư
+				<break time="200ms"/>
+				đến hai nghìn không trăm hai mươi lăm,
+				<break time="350ms"/>
+				cho thấy bức tranh rất rõ ràng.
+			</s>
+			<s>
+				<break time="250ms"/>
+				<emphasis level="moderate">Sáu mươi ba phần trăm</emphasis>
+				<break time="250ms"/>
+				còn hoạt động tại tháng cấp mã số.
+				<break time="450ms"/>
+				<emphasis level="moderate">Mười phần trăm</emphasis>
+				<break time="250ms"/>
+				còn hoạt động đến tháng thứ ba.
+				<break time="450ms"/>
+				Và chỉ
+				<break time="200ms"/>
+				<emphasis level="moderate">năm phần trăm</emphasis>
+				<break time="200ms"/>
+				còn hoạt động đến tháng thứ sáu.
+			</s>
+			<s>
+				<break time="500ms"/>
+				Điều này đồng nghĩa với việc
+				<break time="250ms"/>
+				<emphasis level="strong">chín mươi lăm phần trăm</emphasis>
+				<break time="250ms"/>
+				tư vấn viên mới không còn hoạt động trong vòng sáu tháng.
+			</s>
+		</p>
+
+		<p>
+			<s>
+				Mỗi tư vấn viên không còn hoạt động là sự lãng phí
+				<break time="250ms"/>
+				chi phí tuyển dụng,
+				<break time="200ms"/>
+				chi phí đào tạo,
+				<break time="200ms"/>
+				thời gian của cấp quản lý,
+				<break time="200ms"/>
+				và làm mất đi lợi nhuận doanh thu APE.
+			</s>
+			<s>
+				Ở quy mô lớn,
+				<break time="250ms"/>
+				điều này tương đương với
+				<break time="200ms"/>
+				<emphasis level="moderate">hàng triệu</emphasis>
+				<break time="200ms"/>
+				đơn vị doanh thu chưa được hiện thực hóa
+				<break time="200ms"/>
+				mỗi năm.
+			</s>
+		</p>
+
+		<p>
+			<s>
+				<break time="650ms"/>
+				<prosody rate="medium" pitch="+10%">Tuy nhiên, đây chính là cơ hội.</prosody>
+			</s>
+		</p>
+
+		<p>
+			<s>
+				Nếu chúng ta chỉ cần cải thiện tỷ lệ hoạt động của tư vấn viên
+				<break time="250ms"/>
+				thêm
+				<break time="200ms"/>
+				<emphasis level="strong">mười phần trăm</emphasis>
+				<break time="250ms"/>
+				ở mỗi nhóm theo tháng,
+				<break time="350ms"/>
+				thì APE sẽ tăng
+				<break time="200ms"/>
+				<emphasis level="moderate">năm mươi bảy phần trăm</emphasis>
+				<break time="250ms"/>
+				vào tháng thứ sáu,
+				<break time="350ms"/>
+				và tăng
+				<break time="200ms"/>
+				<emphasis level="moderate">chín mươi mốt phần trăm</emphasis>
+				<break time="250ms"/>
+				vào tháng thứ mười hai.
+			</s>
+			<s>
+				<break time="350ms"/>
+				Kết quả này đạt được
+				<break time="200ms"/>
+				mà không cần tăng hoa hồng,
+				<break time="200ms"/>
+				không cần sản phẩm mới,
+				<break time="200ms"/>
+				và cũng không cần tuyển dụng tư vấn viên mới.
+			</s>
+			<s>
+				<break time="450ms"/>
+				Đây không phải là vấn đề đào tạo,
+				<break time="250ms"/>
+				mà là khoảng trống trong việc
+				<break time="200ms"/>
+				<emphasis level="strong">tạo sự gắn kết và thực thi hiệu quả</emphasis>
+				<break time="200ms"/>
+				dành cho tư vấn viên.
+			</s>
+		</p>
+
+		<p>
+			<s>
+				Về bản chất,
+				<break time="250ms"/>
+				bảo hiểm là một ngành kinh doanh dựa trên con người.
+				<break time="450ms"/>
+				Tuy nhiên,
+				<break time="200ms"/>
+				việc quản lý đội ngũ tư vấn viên ở quy mô lớn ngày nay
+				<break time="250ms"/>
+				đòi hỏi cả khoa học
+				<break time="200ms"/>
+				và sự kết nối giữa con người.
+			</s>
+			<s>
+				Sử dụng dữ liệu và trí tuệ nhân tạo,
+				<break time="250ms"/>
+				được củng cố bằng ghi nhận kịp thời,
+				<break time="200ms"/>
+				tạo động lực thúc đẩy,
+				<break time="200ms"/>
+				và huấn luyện đúng thời điểm.
+			</s>
+			<s>
+				<break time="350ms"/>
+				Chính niềm tin đó đã thôi thúc tôi đồng sáng lập
+				<break time="200ms"/>
+				<emphasis level="moderate">CeMoCA</emphasis>.
+			</s>
+		</p>
+
+		<p>
+			<s>
+				CeMoCA là một nền tảng kích hoạt sự gắn kết
+				<break time="200ms"/>
+				và hiệu suất của tư vấn viên,
+				<break time="250ms"/>
+				được triển khai trực tiếp qua WhatsApp,
+				<break time="250ms"/>
+				với tỷ lệ đọc tin nhắn lên đến
+				<break time="200ms"/>
+				<emphasis level="moderate">chín mươi tám phần trăm</emphasis>.
+			</s>
+			<s>
+				Mỗi tư vấn viên nhận được
+				<break time="200ms"/>
+				<emphasis level="moderate">tám đến mười</emphasis>
+				<break time="200ms"/>
+				điểm chạm cá nhân hóa
+				<break time="200ms"/>
+				và có cấu trúc mỗi tháng,
+				<break time="250ms"/>
+				bao gồm:
+			</s>
+			<s>
+				<break time="250ms"/>
+				ghi nhận tức thì cho các hợp đồng phát hành,
+				<break time="200ms"/>
+				cập nhật rõ ràng về tiến độ và chỉ tiêu còn lại,
+				<break time="200ms"/>
+				đào tạo vi mô vào Ngày mười bốn và Ngày hai mươi tám,
+				<break time="200ms"/>
+				thông điệp khởi động tháng và chương trình khuyến khích,
+				<break time="200ms"/>
+				báo cáo hiệu quả theo tháng và theo năm,
+				<break time="200ms"/>
+				chúc mừng sinh nhật và các dịp lễ.
+			</s>
+			<s>
+				<break time="350ms"/>
+				Tất cả đều tự động hóa.
+				<break time="250ms"/>
+				Không cần hệ thống mới.
+				<break time="250ms"/>
+				Chi phí vận hành thấp.
+			</s>
+			<s>
+				<break time="350ms"/>
+				Và quan trọng nhất,
+				<break time="200ms"/>
+				<emphasis level="strong">mọi thông điệp đều được cá nhân hóa</emphasis>
+				<break time="200ms"/>
+				cho từng tư vấn viên.
+			</s>
+		</p>
+
+		<p>
+			<s>
+				Kết quả mang lại là:
+				<break time="250ms"/>
+				tỷ lệ hoạt động ổn định hơn,
+				<break time="200ms"/>
+				tỷ lệ duy trì tư vấn viên giai đoạn đầu cao hơn,
+				<break time="200ms"/>
+				hiệu quả đầu tư tuyển dụng và đào tạo được cải thiện rõ rệt,
+				<break time="200ms"/>
+				và tăng trưởng APE đáng kể
+				<break time="200ms"/>
+				mà không cần mở rộng lực lượng bán hàng.
+			</s>
+			<s>
+				CeMoCA không thay thế các hệ thống hiện hữu của bạn,
+				<break time="250ms"/>
+				mà kích hoạt và phát huy hiệu quả của chúng.
+			</s>
+		</p>
+
+		<p>
+			<s>
+				Tóm lại,
+				<break time="250ms"/>
+				CeMoCA giúp các công ty bảo hiểm xây dựng
+				<break time="200ms"/>
+				một hệ sinh thái bán hàng dựa trên hoạt động,
+				<break time="200ms"/>
+				mang lại hiệu suất ổn định hơn
+				<break time="200ms"/>
+				và khả năng giữ chân tư vấn viên tốt hơn.
+			</s>
+		</p>
+
+		<p>
+			<s>
+				Chúng tôi tin rằng CeMoCA là một sáng kiến chuyển đổi thực tiễn
+				<break time="250ms"/>
+				cho kế hoạch hành động năm hai nghìn không trăm hai mươi sáu,
+				<break time="300ms"/>
+				đồng thời là một thông điệp rõ ràng gửi đến lực lượng đại lý
+				<break time="200ms"/>
+				rằng công ty đang thay đổi cách thức
+				<break time="200ms"/>
+				hỗ trợ sự thành công của tư vấn viên.
+			</s>
+			<s>
+				<break time="500ms"/>
+				<prosody rate="medium" pitch="+6%">Xin trân trọng cảm ơn.</prosody>
+				<break time="350ms"/>
+				<prosody rate="medium" pitch="+6%">Mong được tiếp tục trao đổi cùng Anh hoặc Chị.</prosody>
+			</s>
+		</p>
+	</amazon:effect>
+</speak>
