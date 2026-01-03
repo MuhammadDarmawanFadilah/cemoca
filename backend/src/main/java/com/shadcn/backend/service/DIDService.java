@@ -721,7 +721,27 @@ public class DIDService {
             return false;
         }
         String s = script;
-        return s.contains("<speak") || s.contains("</speak>") || s.contains("<break");
+        return s.contains("<speak")
+                || s.contains("</speak>")
+                || s.contains("<break")
+                || s.contains("<p")
+                || s.contains("</p>")
+                || s.contains("<s")
+                || s.contains("</s>")
+                || s.contains("<prosody")
+                || s.contains("</prosody>")
+                || s.contains("<emphasis")
+                || s.contains("</emphasis>")
+                || s.contains("<amazon:effect")
+                || s.contains("</amazon:effect>")
+                || s.contains("<say-as")
+                || s.contains("</say-as>")
+                || s.contains("<sub")
+                || s.contains("</sub>")
+                || s.contains("<lang")
+                || s.contains("</lang>")
+                || s.contains("<phoneme")
+                || s.contains("</phoneme>");
     }
     
     /**
