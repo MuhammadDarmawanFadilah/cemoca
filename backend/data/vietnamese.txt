@@ -1,0 +1,105 @@
+<speak xmlns="http://www.w3.org/2001/10/synthesis" xmlns:amazon="http://www.amazon.com/ssml">
+  <amazon:effect name="drc">
+    <amazon:domain name="news">
+      <lang xml:lang="vi-VN">
+        <prosody rate="medium" pitch="+2%">Chào buổi sáng, <emphasis level="moderate">:name</emphasis>.</prosody>
+        <break time="450ms"/>
+
+        Trong nhiều thập kỷ ở ngành bảo hiểm nhân thọ, có một thách thức luôn tồn tại:
+        <break time="250ms"/>
+        làm sao duy trì <emphasis level="moderate">tính nhất quán</emphasis> về hiệu suất bán hàng,
+        mức độ hoạt động và tỷ lệ gắn bó của đại lý—cả mới lẫn hiện hữu.
+        <break time="350ms"/>
+        Dù đã đầu tư liên tục,
+        <prosody rate="medium" pitch="-1%"><emphasis level="strong">mức sụt giảm vẫn rất dốc</emphasis>.</prosody>
+        <break time="550ms"/>
+
+        Trong một phân tích gần đây với <say-as interpret-as="cardinal">8386</say-as> đại lý mới tuyển trong
+        <say-as interpret-as="date" format="y">2024</say-as> và <say-as interpret-as="date" format="y">2025</say-as>,
+        các con số cho thấy một bức tranh rõ ràng.
+        <break time="350ms"/>
+
+        Tháng một, tỷ lệ hoạt động là <emphasis level="moderate">sáu mươi ba phần trăm</emphasis>.
+        <break time="250ms"/>
+        Đến tháng ba, giảm còn <emphasis level="moderate">mười phần trăm</emphasis>.
+        <break time="250ms"/>
+        Và đến tháng sáu, chỉ còn <emphasis level="moderate">năm phần trăm</emphasis> đại lý tiếp tục hoạt động.
+        <break time="400ms"/>
+        Tức là mức disengagement <emphasis level="strong">chín mươi lăm phần trăm</emphasis> trong vòng sáu tháng.
+        <break time="600ms"/>
+
+        Đây là cơ hội.
+        <break time="300ms"/>
+        Nếu chúng ta cải thiện hoạt động của đại lý chỉ <emphasis level="moderate">mười điểm phần trăm</emphasis>
+        ở mỗi nhóm theo tháng,
+        kết quả là tăng <emphasis level="moderate">năm mươi bảy phần trăm</emphasis> APE vào tháng sáu
+        và tăng <emphasis level="moderate">chín mươi mốt phần trăm</emphasis> vào tháng mười hai.
+        <break time="450ms"/>
+        Đây <emphasis level="strong">không</emphasis> phải vấn đề đào tạo.
+        <break time="200ms"/>
+        Đây là vấn đề hệ thống và engagement.
+        <break time="200ms"/>
+        Và nó <emphasis level="strong">có thể giải quyết</emphasis>.
+        <break time="650ms"/>
+
+        Hầu hết các công ty bảo hiểm đã có hỗ trợ tài chính có cấu trúc,
+        chương trình phát triển đại lý, sản phẩm đơn giản hóa,
+        và hệ thống tạo khách hàng tiềm năng.
+        <break time="350ms"/>
+        Những điều này là cần thiết.
+        <break time="250ms"/>
+        Nhưng ngay cả trong kịch bản tốt nhất, chúng chỉ kéo dài hoạt động thêm một chút
+        và hiếm khi vượt qua tháng chín.
+        <break time="600ms"/>
+
+        Vậy câu hỏi là:
+        <break time="250ms"/>
+        <emphasis level="strong">thiếu điều gì</emphasis>
+        giữa tuyển dụng và hiệu suất bền vững?
+        <break time="650ms"/>
+
+        Bảo hiểm, về bản chất, là kinh doanh con người.
+        <break time="300ms"/>
+        Quản trị đại lý cần cả khoa học lẫn kết nối con người:
+        dữ liệu và AI, được củng cố bằng ghi nhận, động lực và coaching đúng lúc.
+        <break time="400ms"/>
+        Niềm tin này đã dẫn tôi đồng sáng lập <sub alias="Xê-mô-ca">CeMoCA</sub>.
+        <break time="650ms"/>
+
+        <sub alias="Xê-mô-ca">CeMoCA</sub> là viết tắt của Celebrate, Motivate, Coach và Active.
+        <break time="500ms"/>
+
+        Chúng tôi chúc mừng thành tích bằng thông điệp cá nhân hóa và chứng nhận
+        trong vòng <say-as interpret-as="cardinal">24</say-as> giờ sau một giao dịch hoặc cột mốc,
+        khi động lực còn cao.
+        <break time="500ms"/>
+
+        Chúng tôi tạo động lực qua theo dõi hiệu suất rõ ràng,
+        chỉ số balance-to-go và tính minh bạch về incentive,
+        biến nỗ lực thành mục tiêu tiếp theo.
+        <break time="500ms"/>
+
+        Chúng tôi coaching liên tục qua micro-learning có cấu trúc,
+        như một lớp reinforcement trước và giữa các chương trình của công ty.
+        <break time="650ms"/>
+
+        Trong nửa đầu <say-as interpret-as="date" format="y">2026</say-as>,
+        <sub alias="Xê-mô-ca">CeMoCA</sub> sẽ cung cấp hơn <say-as interpret-as="cardinal">80</say-as> mô-đun,
+        phát hành <emphasis level="moderate">ba</emphasis> mô-đun mới mỗi tuần.
+        <break time="650ms"/>
+
+        Chúng tôi giúp đại lý duy trì hoạt động bằng những “nudges” kịp thời và giao tiếp rõ ràng.
+        <break time="300ms"/>
+        <sub alias="Xê-mô-ca">CeMoCA</sub> không thay thế hệ thống hiện có.
+        Nó vận hành qua nền tảng push như WhatsApp—nơi tỷ lệ đọc đạt <emphasis level="moderate">chín mươi tám phần trăm</emphasis>.
+        <break time="700ms"/>
+
+        Tóm lại, <sub alias="Xê-mô-ca">CeMoCA</sub> giúp doanh nghiệp xây dựng hệ sinh thái bán hàng dựa trên hoạt động,
+        tạo ra hiệu suất nhất quán hơn và cải thiện tỷ lệ gắn bó.
+        <break time="500ms"/>
+
+        Cảm ơn bạn đã dành thời gian. Tôi mong có cơ hội tiếp tục trao đổi.
+      </lang>
+    </amazon:domain>
+  </amazon:effect>
+</speak>

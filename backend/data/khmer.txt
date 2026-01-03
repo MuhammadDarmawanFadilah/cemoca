@@ -1,0 +1,73 @@
+<speak xmlns="http://www.w3.org/2001/10/synthesis" xmlns:amazon="http://www.amazon.com/ssml">
+  <amazon:effect name="drc">
+    <amazon:domain name="news">
+      <lang xml:lang="km-KH">
+        <prosody rate="medium" pitch="+2%">អរុណសួស្តី <emphasis level="moderate">:name</emphasis>។</prosody>
+        <break time="450ms"/>
+
+        ក្នុងរយៈពេលជាច្រើនទសវត្សរ៍នៅក្នុងឧស្សាហកម្មធានាជីវិត មានបញ្ហាមួយដែលនៅតែដូចเดิมជានិច្ច៖
+        <break time="250ms"/>
+        តើធ្វើដូចម្តេចដើម្បីរក្សា <emphasis level="moderate">ភាពស្ថិតស្ថេរ</emphasis> នៃលទ្ធផលលក់
+        សកម្មភាព និងការរក្សាទុកភ្នាក់ងារ ទាំងថ្មី និងចាស់។
+        <break time="350ms"/>
+        ទោះបីមានការវិនិយោគបន្តៗក៏ដោយ
+        <prosody rate="medium" pitch="-1%"><emphasis level="strong">អត្រាធ្លាក់ចុះនៅតែខ្លាំង</emphasis></prosody>។
+        <break time="550ms"/>
+
+        តាមការវិភាគថ្មីៗលើភ្នាក់ងារថ្មីចំនួន <say-as interpret-as="cardinal">8386</say-as> នាក់ ក្នុងឆ្នាំ
+        <say-as interpret-as="date" format="y">2024</say-as> និង <say-as interpret-as="date" format="y">2025</say-as>
+        លទ្ធផលបង្ហាញយ៉ាងច្បាស់។
+        <break time="350ms"/>
+
+        ខែទី១ អត្រាសកម្មគឺ <emphasis level="moderate">៦៣%</emphasis>។
+        <break time="250ms"/>
+        ដល់ខែទី៣ ធ្លាក់ចុះទៅ <emphasis level="moderate">១០%</emphasis>។
+        <break time="250ms"/>
+        និងដល់ខែទី៦ នៅសល់តែ <emphasis level="moderate">៥%</emphasis> ប៉ុណ្ណោះ។
+        <break time="400ms"/>
+        នោះមានន័យថា <emphasis level="strong">៩៥%</emphasis> បាន disengage ក្នុងរយៈពេល ៦ ខែ។
+        <break time="600ms"/>
+
+        តែនេះជាឱកាស។
+        <break time="300ms"/>
+        ប្រសិនបើយើងបង្កើនសកម្មភាពភ្នាក់ងារត្រឹមតែ <emphasis level="moderate">១០ ពិន្ទុភាគរយ</emphasis>
+        នៅក្នុង cohort ប្រចាំខែនីមួយៗ
+        នោះលទ្ធផលគឺកើន <emphasis level="moderate">៥៧%</emphasis> APE នៅខែទី៦
+        និងកើន <emphasis level="moderate">៩១%</emphasis> នៅខែទី១២។
+        <break time="450ms"/>
+        នេះ <emphasis level="strong">មិនមែន</emphasis> ជាបញ្ហាបណ្តុះបណ្តាលទេ។
+        <break time="200ms"/>
+        វាជាបញ្ហាប្រព័ន្ធ និង engagement។
+        <break time="200ms"/>
+        ហើយវា <emphasis level="strong">អាចដោះស្រាយបាន</emphasis>។
+        <break time="650ms"/>
+
+        ក្រុមហ៊ុនធានាភាគច្រើនមានការគាំទ្រហិរញ្ញវត្ថុ កម្មវិធីអភិវឌ្ឍភ្នាក់ងារ ផលិតផលងាយស្រួល និងប្រព័ន្ធ lead generation រួចហើយ។
+        <break time="350ms"/>
+        ទាំងនេះចាំបាច់។
+        <break time="250ms"/>
+        ប៉ុន្តែក្នុងករណីល្អបំផុត វាគ្រាន់តែពន្យារសកម្មភាពបន្តិចបន្តួច ហើយកម្រ​ឆ្លងកាត់ខែទី៩។
+        <break time="600ms"/>
+
+        ដូច្នេះសំណួរគឺ៖
+        <break time="250ms"/>
+        <emphasis level="strong">អ្វីកំពុងខ្វះ</emphasis>
+        រវាងការជ្រើសរើស និងលទ្ធផលយូរអង្វែង?
+        <break time="650ms"/>
+
+        ធានាជាជំនួញមនុស្ស។
+        <break time="300ms"/>
+        ការគ្រប់គ្រងភ្នាក់ងារត្រូវការទាំងវិទ្យាសាស្ត្រ និងការតភ្ជាប់មនុស្ស៖
+        ទិន្នន័យ និង AI ព្រមទាំងការសរសើរ ការលើកទឹកចិត្ត និង coaching ទាន់ពេល។
+        <break time="400ms"/>
+        ជំនឿនេះបាននាំឱ្យខ្ញុំរួមបង្កើត <sub alias="ស៊ី-ម៉ូ-កា">CeMoCA</sub>។
+        <break time="650ms"/>
+
+        <sub alias="ស៊ី-ម៉ូ-កា">CeMoCA</sub> តំណាងឱ្យ Celebrate, Motivate, Coach, និង Active។
+        <break time="500ms"/>
+
+        សូមអរគុណចំពោះពេលវេលារបស់អ្នក។ ខ្ញុំទន្ទឹងរង់ចាំឱកាសក្នុងការបន្តការសន្ទនា។
+      </lang>
+    </amazon:domain>
+  </amazon:effect>
+</speak>

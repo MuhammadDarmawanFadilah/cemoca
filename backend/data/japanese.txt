@@ -1,0 +1,70 @@
+<speak xmlns="http://www.w3.org/2001/10/synthesis" xmlns:amazon="http://www.amazon.com/ssml">
+  <amazon:effect name="drc">
+    <amazon:domain name="news">
+      <lang xml:lang="ja-JP">
+        <prosody rate="medium" pitch="+2%">おはようございます、<emphasis level="moderate">:name</emphasis> さん。</prosody>
+        <break time="450ms"/>
+
+        生命保険業界で数十年にわたり、常に変わらない課題がひとつあります。
+        <break time="250ms"/>
+        それは、新人・既存を問わず、エージェントの営業成果、活動量、そして定着を
+        <emphasis level="moderate">継続的に</emphasis>維持することです。
+        <break time="350ms"/>
+        投資を続けても、
+        <prosody rate="medium" pitch="-1%"><emphasis level="strong">離脱のスピードは依然として速い</emphasis></prosody>。
+        <break time="550ms"/>
+
+        <say-as interpret-as="cardinal">2024</say-as>年と<say-as interpret-as="cardinal">2025</say-as>年に新規採用された
+        <say-as interpret-as="cardinal">8386</say-as>名の分析では、数字がはっきり示しています。
+        <break time="350ms"/>
+
+        1か月目の稼働率は<emphasis level="moderate">63%</emphasis>。
+        <break time="250ms"/>
+        3か月目には<emphasis level="moderate">10%</emphasis>まで低下。
+        <break time="250ms"/>
+        6か月目には、稼働を続けるのは<emphasis level="moderate">5%</emphasis>のみ。
+        <break time="400ms"/>
+        つまり、6か月で<emphasis level="strong">95%</emphasis>が離脱しているのです。
+        <break time="600ms"/>
+
+        しかし、ここに機会があります。
+        <break time="300ms"/>
+        毎月のコホートで活動率をわずか<emphasis level="moderate">10ポイント</emphasis>引き上げるだけで、
+        6か月目の <sub alias="annual premium equivalent">APE</sub> は<emphasis level="moderate">57%</emphasis>増加し、
+        12か月目には<emphasis level="moderate">91%</emphasis>増加します。
+        <break time="450ms"/>
+        これは研修の問題ではありません。
+        <break time="200ms"/>
+        システムとエンゲージメントの問題です。
+        <break time="200ms"/>
+        そして、<emphasis level="strong">解決できます</emphasis>。
+        <break time="650ms"/>
+
+        多くの保険会社は、財務支援、育成プログラム、商品簡素化、リード獲得などを既に導入しています。
+        <break time="350ms"/>
+        これらは必要です。
+        <break time="250ms"/>
+        ただし最良の場合でも、活動を少し延ばす程度で、9か月を超えることは稀です。
+        <break time="600ms"/>
+
+        では、採用から持続的な成果までの間で、何が足りないのでしょうか。
+        <break time="650ms"/>
+
+        保険は本質的に「人」のビジネスです。
+        <break time="300ms"/>
+        いま求められるのは、データとAIという科学に加え、承認・動機づけ・タイムリーなコーチングによる人間的なつながりです。
+        <break time="400ms"/>
+        この考えから、私は <sub alias="セモカ">CeMoCA</sub> を共同創業しました。
+        <break time="650ms"/>
+
+        <sub alias="セモカ">CeMoCA</sub> は Celebrate, Motivate, Coach, Active の頭文字です。
+        <break time="500ms"/>
+
+        <sub alias="セモカ">CeMoCA</sub> は、WhatsApp などのプッシュ配信を通じて迅速に導入でき、拡張も容易です。
+        <break time="650ms"/>
+
+        ありがとうございました。引き続きお話しできる機会を楽しみにしています。
+      </lang>
+    </amazon:domain>
+  </amazon:effect>
+</speak>

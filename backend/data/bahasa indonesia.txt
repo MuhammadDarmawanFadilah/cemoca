@@ -1,0 +1,134 @@
+<speak xmlns="http://www.w3.org/2001/10/synthesis" xmlns:amazon="http://www.amazon.com/ssml">
+  <amazon:effect name="drc">
+    <amazon:domain name="news">
+      <prosody rate="medium" pitch="+2%">Selamat pagi, <emphasis level="moderate">:name</emphasis>.</prosody>
+      <break time="450ms"/>
+
+      Selama puluhan tahun di industri asuransi jiwa, ada satu tantangan yang terus berulang:
+      <break time="250ms"/>
+      bagaimana menjaga <emphasis level="moderate">konsistensi</emphasis> performa penjualan,
+      aktivitas agen, dan retensi—baik agen baru maupun agen lama.
+      <break time="350ms"/>
+      Meski investasi terus dilakukan,
+      <prosody rate="medium" pitch="-1%"><emphasis level="strong">penurunannya tetap curam</emphasis>.</prosody>
+      <break time="550ms"/>
+
+      Dalam analisis terbaru terhadap <say-as interpret-as="cardinal">8386</say-as> agen yang direkrut sepanjang
+      <say-as interpret-as="date" format="y">2024</say-as> dan <say-as interpret-as="date" format="y">2025</say-as>,
+      angkanya sangat jelas.
+      <break time="350ms"/>
+
+      Di bulan pertama, tingkat agen aktif adalah <emphasis level="moderate">enam puluh tiga persen</emphasis>.
+      <break time="250ms"/>
+      Di bulan ketiga, turun menjadi <emphasis level="moderate">sepuluh persen</emphasis>.
+      <break time="250ms"/>
+      Dan di bulan keenam, hanya <emphasis level="moderate">lima persen</emphasis> agen yang masih aktif.
+      <break time="400ms"/>
+      Artinya, <emphasis level="strong">sembilan puluh lima persen</emphasis> mengalami disengagement dalam enam bulan.
+      <break time="600ms"/>
+
+      Sekarang, inilah peluangnya.
+      <break time="300ms"/>
+      Jika kita meningkatkan aktivitas agen hanya <emphasis level="moderate">sepuluh poin persentase</emphasis>
+      di setiap cohort bulanan,
+      dampaknya adalah kenaikan <emphasis level="moderate">lima puluh tujuh persen</emphasis> pada
+      <sub alias="annual premium equivalent">APE</sub> di bulan keenam,
+      dan kenaikan <emphasis level="moderate">sembilan puluh satu persen</emphasis> di bulan kedua belas.
+      <break time="450ms"/>
+      Ini <emphasis level="strong">bukan</emphasis> masalah training.
+      <break time="200ms"/>
+      Ini masalah sistem dan engagement.
+      <break time="200ms"/>
+      Dan ini <emphasis level="strong">bisa diselesaikan</emphasis>.
+      <break time="650ms"/>
+
+      Sebagian besar perusahaan asuransi sudah menerapkan dukungan finansial terstruktur,
+      program pengembangan agen,
+      produk yang disederhanakan,
+      serta sistem lead generation.
+      <break time="350ms"/>
+      Inisiatif ini memang penting.
+      <break time="250ms"/>
+      Namun, pada skenario terbaik sekalipun,
+      dampaknya biasanya hanya memperpanjang aktivitas sedikit,
+      dan jarang bertahan melewati bulan sembilan.
+      <break time="600ms"/>
+
+      Jadi pertanyaannya menjadi:
+      <break time="250ms"/>
+      <emphasis level="strong">apa yang hilang</emphasis>
+      antara rekrutmen dan performa yang berkelanjutan?
+      <break time="650ms"/>
+
+      Asuransi pada dasarnya adalah bisnis manusia.
+      <break time="300ms"/>
+      Di tahap evolusi industri saat ini, mengelola agen membutuhkan sains dan koneksi manusia:
+      data dan AI,
+      diperkuat dengan apresiasi,
+      motivasi,
+      dan coaching yang tepat waktu.
+      <break time="400ms"/>
+      Keyakinan ini mendorong saya ikut mendirikan <sub alias="Si-moh-ka">CeMoCA</sub>.
+      <break time="650ms"/>
+
+      <sub alias="Si-moh-ka">CeMoCA</sub> adalah singkatan dari:
+      <break time="250ms"/>
+      <emphasis level="moderate">Celebrate</emphasis>,
+      <emphasis level="moderate">Motivate</emphasis>,
+      <emphasis level="moderate">Coach</emphasis>,
+      dan <emphasis level="moderate">Active</emphasis>.
+      <break time="500ms"/>
+
+      Kami merayakan pencapaian dengan pesan ucapan selamat yang dipersonalisasi
+      dan sertifikat yang dikirim dalam <say-as interpret-as="cardinal">24</say-as> jam
+      setelah penjualan atau milestone,
+      saat momentum masih tinggi.
+      <break time="500ms"/>
+
+      Kami memotivasi agen melalui pelacakan performa yang jelas,
+      indikator balance-to-go,
+      dan visibilitas insentif,
+      sehingga usaha berubah menjadi target berikutnya yang nyata.
+      <break time="500ms"/>
+
+      Kami melakukan coaching berkelanjutan melalui micro-learning terstruktur,
+      menjadi lapisan penguat
+      sebelum dan di antara program perusahaan,
+      sekaligus menutup gap akibat keterbatasan waktu
+      atau coaching agency yang tidak konsisten.
+      <break time="650ms"/>
+
+      Pada paruh pertama <say-as interpret-as="date" format="y">2026</say-as>,
+      <sub alias="Si-moh-ka">CeMoCA</sub> akan menghadirkan lebih dari
+      <emphasis level="moderate"><say-as interpret-as="cardinal">80</say-as> modul micro-learning</emphasis>,
+      dengan rilis <emphasis level="moderate">tiga</emphasis> modul baru setiap minggu,
+      didukung AI untuk memastikan kualitas yang konsisten.
+      <break time="650ms"/>
+
+      Kami membantu agen tetap aktif melalui nudges yang tepat waktu dan komunikasi yang jelas.
+      <break time="300ms"/>
+      <sub alias="Si-moh-ka">CeMoCA</sub> tidak menggantikan atau berkompetisi dengan sistem Anda.
+      CeMoCA berjalan melalui platform push seperti WhatsApp,
+      tempat agen sudah aktif berinteraksi,
+      dengan tingkat baca <emphasis level="moderate">sembilan puluh delapan persen</emphasis>.
+      <break time="400ms"/>
+      Implementasinya cepat, sederhana, dan scalable.
+      <break time="700ms"/>
+
+      Singkatnya,
+      <sub alias="Si-moh-ka">CeMoCA</sub> membantu perusahaan membangun ekosistem penjualan berbasis aktivitas
+      yang lebih kuat,
+      menghasilkan performa yang lebih konsisten dan retensi yang lebih baik.
+      <break time="350ms"/>
+      Saya percaya <sub alias="Si-moh-ka">CeMoCA</sub> adalah inisiatif transformasi yang praktis
+      untuk rencana aksi <say-as interpret-as="date" format="y">2026</say-as>,
+      sekaligus sinyal kuat bagi agency force
+      bahwa perusahaan sedang berevolusi dalam mendukung kesuksesan mereka.
+      <break time="650ms"/>
+
+      Terima kasih atas waktunya.
+      <break time="250ms"/>
+      Saya menantikan kesempatan untuk melanjutkan diskusi.
+    </amazon:domain>
+  </amazon:effect>
+</speak>
