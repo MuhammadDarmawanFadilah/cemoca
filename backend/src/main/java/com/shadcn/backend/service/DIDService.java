@@ -108,7 +108,7 @@ public class DIDService {
     @Value("${did.tts.strict-audio-management.fail-on-clone-error:false}")
     private boolean failOnCloneError;
 
-    @Value("${did.tts.strict-audio-management.enforce-consistent-voice:false}")
+    @Value("${did.tts.strict-audio-management.enforce-consistent-voice:true}")
     private boolean enforceConsistentAudioManagementVoice;
 
     @Value("${did.tts.clone.skip-on-validation-error-minutes:1440}")
@@ -744,7 +744,7 @@ public class DIDService {
                         type = root.get("tts_provider").asText();
                     }
                     if (type == null || type.isBlank()) {
-                        type = "d-id";
+                        type = "amazon";
                     }
                     logger.info("D-ID create cloned voice success: presenterId={} voiceId={} type={} language={}", pid, id, type, lang);
                     return Optional.of(new VoiceInfo(id, type));
@@ -1216,6 +1216,14 @@ public class DIDService {
 
         String trimmedAvatarId = avatarId.trim();
 
+        final boolean hasAudioManagementSample;
+        try {
+            hasAudioManagementSample = strictAudioManagementVoice && findAudioManagementEntry(trimmedAvatarId, null).isPresent();
+        } catch (Exception ignored) {
+            // Best-effort
+            hasAudioManagementSample = false;
+        }
+
         // Voice policy: prefer local-sample cloned voice when available; otherwise use presenter default voice.
         // Do not use audio_url.
         audioUrl = null;
@@ -1247,6 +1255,9 @@ public class DIDService {
         String errLower = err.toLowerCase(Locale.ROOT);
 
         if (!errLower.isBlank() && (errLower.contains("avatar not found") || errLower.contains("notfounderror"))) {
+            if (hasAudioManagementSample && enforceConsistentAudioManagementVoice) {
+                return clips;
+            }
             DIDPresenter express = fetchExpressAvatarById(trimmedAvatarId);
             if (express != null) {
                 presenterCache.put(trimmedAvatarId, express);
@@ -1266,6 +1277,9 @@ public class DIDService {
         }
 
         if (!err.isBlank() && (err.contains("UnknownError") || err.startsWith("500") || err.contains(" 500 ") || err.contains("500 Internal Server Error"))) {
+            if (hasAudioManagementSample && enforceConsistentAudioManagementVoice) {
+                return clips;
+            }
             logger.warn("Clips creation failed ({}). Falling back to Scenes for avatar_id={}", truncate(err, 500), trimmedAvatarId);
             Map<String, Object> scene = createSceneWithClipsFallback(trimmedAvatarId, script, backgroundUrl, audioUrl);
             if (Boolean.TRUE.equals(scene.get("success"))) {
@@ -1470,6 +1484,10 @@ public class DIDService {
                         provider.put("voice_id", ensuredVoiceId.get().trim());
                         logger.info("Using audio-management voice (ensured) for presenter {}: type={} voice_id={}", pid, ensuredType, ensuredVoiceId.get().trim());
                         return provider;
+                    }
+
+                    if (enforceConsistentAudioManagementVoice) {
+                        throw new RuntimeException("Audio-management sample exists but no stable voice_id available for presenterId=" + pid);
                     }
 
                     if (strictAudioManagementVoice && failOnCloneError) {
@@ -1782,14 +1800,9 @@ public class DIDService {
 
                     String scriptInput = script;
                     if (ssmlAllowed) {
-                        boolean usingCustomVoice = provider != null;
-                        if (usingCustomVoice) {
-                            scriptInput = sanitizeSsmlForDidProvider(script);
-                        } else {
-                            scriptInput = providerType != null && providerType.equalsIgnoreCase("amazon")
-                                    ? sanitizeSsmlForAmazonProvider(script)
-                                    : sanitizeSsmlForDidProvider(script);
-                        }
+                        scriptInput = providerType != null && providerType.equalsIgnoreCase("amazon")
+                                ? sanitizeSsmlForAmazonProvider(script)
+                                : sanitizeSsmlForDidProvider(script);
                     } else if (canUseSsml) {
                         scriptInput = stripKnownSsmlTagsToPlainText(script);
                     }
@@ -1827,14 +1840,9 @@ public class DIDService {
 
                         String scriptInput = script;
                         if (ssmlAllowed) {
-                            boolean usingCustomVoice = provider != null;
-                            if (usingCustomVoice) {
-                                scriptInput = sanitizeSsmlForDidProvider(script);
-                            } else {
-                                scriptInput = providerType != null && providerType.equalsIgnoreCase("amazon")
-                                        ? sanitizeSsmlForAmazonProvider(script)
-                                        : sanitizeSsmlForDidProvider(script);
-                            }
+                            scriptInput = providerType != null && providerType.equalsIgnoreCase("amazon")
+                                    ? sanitizeSsmlForAmazonProvider(script)
+                                    : sanitizeSsmlForDidProvider(script);
                         } else if (canUseSsml) {
                             scriptInput = stripKnownSsmlTagsToPlainText(script);
                         }
@@ -1960,14 +1968,9 @@ public class DIDService {
                     boolean ssmlAllowed = canUseSsml;
                     String scriptInput = script;
                     if (ssmlAllowed) {
-                        boolean usingCustomVoice = provider != null;
-                        if (usingCustomVoice) {
-                            scriptInput = sanitizeSsmlForDidProvider(script);
-                        } else {
-                            scriptInput = providerType != null && providerType.equalsIgnoreCase("amazon")
-                                    ? sanitizeSsmlForAmazonProvider(script)
-                                    : sanitizeSsmlForDidProvider(script);
-                        }
+                        scriptInput = providerType != null && providerType.equalsIgnoreCase("amazon")
+                                ? sanitizeSsmlForAmazonProvider(script)
+                                : sanitizeSsmlForDidProvider(script);
                     } else if (canUseSsml) {
                         scriptInput = stripKnownSsmlTagsToPlainText(script);
                     }
@@ -2015,14 +2018,9 @@ public class DIDService {
                         boolean ssmlAllowed = canUseSsml;
                         String scriptInput = script;
                         if (ssmlAllowed) {
-                            boolean usingCustomVoice = fallbackProvider != null;
-                            if (usingCustomVoice) {
-                                scriptInput = sanitizeSsmlForDidProvider(script);
-                            } else {
-                                scriptInput = fallbackProviderType != null && fallbackProviderType.equalsIgnoreCase("amazon")
-                                        ? sanitizeSsmlForAmazonProvider(script)
-                                        : sanitizeSsmlForDidProvider(script);
-                            }
+                            scriptInput = fallbackProviderType != null && fallbackProviderType.equalsIgnoreCase("amazon")
+                                    ? sanitizeSsmlForAmazonProvider(script)
+                                    : sanitizeSsmlForDidProvider(script);
                         } else if (canUseSsml) {
                             scriptInput = stripKnownSsmlTagsToPlainText(script);
                         }
