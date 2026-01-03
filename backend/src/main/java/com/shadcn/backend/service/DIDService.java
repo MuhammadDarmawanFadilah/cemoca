@@ -1520,10 +1520,6 @@ public class DIDService {
                         return provider;
                     }
 
-                    if (enforceConsistentAudioManagementVoice) {
-                        throw new RuntimeException("Audio-management sample exists but no stable voice_id available for presenterId=" + pid);
-                    }
-
                     if (strictAudioManagementVoice && failOnCloneError) {
                         throw new RuntimeException("Audio-management sample exists but voice cloning failed for presenterId=" + pid);
                     }
@@ -1549,6 +1545,25 @@ public class DIDService {
             logger.warn("Error resolving voice provider for presenter {}: {}", pid, e.getMessage());
             return null;
         }
+    }
+
+    private Map<String, Object> sanitizeProviderForScenes(Map<String, Object> provider) {
+        if (provider == null) {
+            return null;
+        }
+
+        String type = provider.get("type") == null ? null : String.valueOf(provider.get("type"));
+        if (type == null || type.isBlank()) {
+            return provider;
+        }
+
+        String t = type.trim().toLowerCase(Locale.ROOT);
+        // /scenes does NOT accept provider.type = d-id (union validation error).
+        if (t.equals("d-id") || t.equals("did")) {
+            return null;
+        }
+
+        return provider;
     }
 
     private Optional<AvatarAudio> findAudioManagementEntry(String presenterId, String presenterName) {
@@ -1822,15 +1837,7 @@ public class DIDService {
                         scriptObj.put("ssml", true);
                     }
 
-                    Map<String, Object> provider = resolveProviderForPresenter(avatarId);
-                    boolean pinnedNativeVoice = false;
-                    if (provider == null && voiceId != null && !voiceId.isBlank()) {
-                        Map<String, Object> nativeProvider = new HashMap<>();
-                        nativeProvider.put("type", "d-id");
-                        nativeProvider.put("voice_id", voiceId);
-                        provider = nativeProvider;
-                        pinnedNativeVoice = true;
-                    }
+                    Map<String, Object> provider = sanitizeProviderForScenes(resolveProviderForPresenter(avatarId));
 
                     String providerType = provider == null ? null : String.valueOf(provider.get("type"));
                     boolean ssmlAllowed = canUseSsml;
@@ -1839,11 +1846,7 @@ public class DIDService {
                     if (provider != null) {
                         String logVoiceType = String.valueOf(provider.get("type"));
                         String logVoiceId = String.valueOf(provider.get("voice_id"));
-                        if (pinnedNativeVoice) {
-                            logger.info("Scene {} using pinned native voice_id={}", avatarId, logVoiceId);
-                        } else {
-                            logger.info("Scene {} using {} voice: voice_id={}", avatarId, logVoiceType, logVoiceId);
-                        }
+                        logger.info("Scene {} using {} voice: voice_id={}", avatarId, logVoiceType, logVoiceId);
                     } else {
                         logger.info("Scene {} using avatar's native voice (no audio-management sample)", avatarId);
                     }
@@ -1885,6 +1888,7 @@ public class DIDService {
                         boolean canUseSsml = isSsmlInput(script);
 
                         Map<String, Object> provider = resolveProviderForPresenter(avatarId);
+                        provider = sanitizeProviderForScenes(provider);
                         String providerType = provider == null ? null : String.valueOf(provider.get("type"));
                         boolean ssmlAllowed = canUseSsml;
 
@@ -1910,6 +1914,7 @@ public class DIDService {
                         fallbackTextScript.put("input", stripKnownSsmlTagsToPlainText(script));
 
                         Map<String, Object> provider = resolveProviderForPresenter(avatarId);
+                        provider = sanitizeProviderForScenes(provider);
                         if (provider != null) {
                             fallbackTextScript.put("provider", provider);
                         }
@@ -1923,6 +1928,7 @@ public class DIDService {
                         fallbackTextScript.put("input", convertSsmlBreakTagsToPunctuation(script));
 
                         Map<String, Object> provider = resolveProviderForPresenter(avatarId);
+                        provider = sanitizeProviderForScenes(provider);
                         if (provider != null) {
                             fallbackTextScript.put("provider", provider);
                         }
