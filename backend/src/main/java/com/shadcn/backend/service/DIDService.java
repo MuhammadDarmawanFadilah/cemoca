@@ -121,6 +121,41 @@ public class DIDService {
 
     private static final String CUSTOM_VOICE_PREFIX = "custom:";
 
+    private boolean hasAudioManagementSampleForPresenter(String presenterId) {
+        if (presenterId == null || presenterId.isBlank()) {
+            return false;
+        }
+
+        String pid = presenterId.trim();
+        String name = null;
+
+        try {
+            Optional<DIDAvatar> db = avatarRepository.findByPresenterId(pid);
+            if (db.isPresent()) {
+                name = db.get().getPresenterName();
+            }
+        } catch (Exception ignored) {
+            // ignore
+        }
+
+        if (name == null || name.isBlank()) {
+            try {
+                DIDPresenter cached = presenterCache.get(pid);
+                if (cached != null) {
+                    name = cached.getPresenter_name();
+                }
+            } catch (Exception ignored) {
+                // ignore
+            }
+        }
+
+        try {
+            return findAudioManagementEntry(pid, name).isPresent();
+        } catch (Exception ignored) {
+            return false;
+        }
+    }
+
     public DIDService(ObjectMapper objectMapper, DIDAvatarRepository avatarRepository, AvatarAudioRepository avatarAudioRepository) {
         this.objectMapper = objectMapper;
         this.avatarRepository = avatarRepository;
@@ -1218,7 +1253,7 @@ public class DIDService {
 
         boolean hasAudioManagementSample = false;
         try {
-            hasAudioManagementSample = strictAudioManagementVoice && findAudioManagementEntry(trimmedAvatarId, null).isPresent();
+            hasAudioManagementSample = strictAudioManagementVoice && hasAudioManagementSampleForPresenter(trimmedAvatarId);
         } catch (Exception ignored) {
             // Best-effort
         }
@@ -1662,7 +1697,7 @@ public class DIDService {
 
         // If audio-management exists for this presenter, never fall back to another presenter_id.
         try {
-            if (strictAudioManagementVoice && findAudioManagementEntry(avatarId, null).isPresent()) {
+            if (strictAudioManagementVoice && hasAudioManagementSampleForPresenter(avatarId)) {
                 return scene;
             }
         } catch (Exception ignored) {
@@ -1783,8 +1818,20 @@ public class DIDService {
                 } else {
                     scriptObj.put("type", "text");
                     boolean canUseSsml = isSsmlInput(script);
+                    if (canUseSsml) {
+                        scriptObj.put("ssml", true);
+                    }
 
                     Map<String, Object> provider = resolveProviderForPresenter(avatarId);
+                    boolean pinnedNativeVoice = false;
+                    if (provider == null && voiceId != null && !voiceId.isBlank()) {
+                        Map<String, Object> nativeProvider = new HashMap<>();
+                        nativeProvider.put("type", "d-id");
+                        nativeProvider.put("voice_id", voiceId);
+                        provider = nativeProvider;
+                        pinnedNativeVoice = true;
+                    }
+
                     String providerType = provider == null ? null : String.valueOf(provider.get("type"));
                     boolean ssmlAllowed = canUseSsml;
                     
@@ -1792,7 +1839,11 @@ public class DIDService {
                     if (provider != null) {
                         String logVoiceType = String.valueOf(provider.get("type"));
                         String logVoiceId = String.valueOf(provider.get("voice_id"));
-                        logger.info("Scene {} using {} voice: voice_id={}", avatarId, logVoiceType, logVoiceId);
+                        if (pinnedNativeVoice) {
+                            logger.info("Scene {} using pinned native voice_id={}", avatarId, logVoiceId);
+                        } else {
+                            logger.info("Scene {} using {} voice: voice_id={}", avatarId, logVoiceType, logVoiceId);
+                        }
                     } else {
                         logger.info("Scene {} using avatar's native voice (no audio-management sample)", avatarId);
                     }
@@ -1957,12 +2008,44 @@ public class DIDService {
                 Map<String, Object> scriptObj = new HashMap<>();
                 boolean usingAudio = false;
                 Map<String, Object> provider = usingAudio ? null : resolveClipsVoiceProvider(presenterId);
+                if (!usingAudio && provider == null) {
+                    String nativeVoiceId = null;
+                    try {
+                        Optional<DIDAvatar> dbAvatar = avatarRepository.findByPresenterId(presenterId);
+                        if (dbAvatar.isPresent() && dbAvatar.get().getVoiceId() != null && !dbAvatar.get().getVoiceId().isBlank()) {
+                            nativeVoiceId = dbAvatar.get().getVoiceId().trim();
+                        }
+                    } catch (Exception ignored) {
+                        // ignore
+                    }
+
+                    if (nativeVoiceId == null || nativeVoiceId.isBlank()) {
+                        try {
+                            DIDPresenter cached = presenterCache.get(presenterId);
+                            if (cached != null && cached.getVoice_id() != null && !cached.getVoice_id().isBlank()) {
+                                nativeVoiceId = cached.getVoice_id().trim();
+                            }
+                        } catch (Exception ignored) {
+                            // ignore
+                        }
+                    }
+
+                    if (nativeVoiceId != null && !nativeVoiceId.isBlank()) {
+                        Map<String, Object> nativeProvider = new HashMap<>();
+                        nativeProvider.put("type", "d-id");
+                        nativeProvider.put("voice_id", nativeVoiceId);
+                        provider = nativeProvider;
+                    }
+                }
                 if (usingAudio) {
                     scriptObj.put("type", "audio");
                     scriptObj.put("audio_url", audioUrl);
                 } else {
                     scriptObj.put("type", "text");
                     boolean canUseSsml = isSsmlInput(script);
+                    if (canUseSsml) {
+                        scriptObj.put("ssml", true);
+                    }
                     String providerType = provider == null ? null : String.valueOf(provider.get("type"));
                     boolean ssmlAllowed = canUseSsml;
                     String scriptInput = script;
@@ -2013,6 +2096,9 @@ public class DIDService {
                         textScriptObj.put("type", "text");
                         Map<String, Object> fallbackProvider = resolveClipsVoiceProvider(presenterId);
                         boolean canUseSsml = isSsmlInput(script);
+                        if (canUseSsml) {
+                            textScriptObj.put("ssml", true);
+                        }
                         String fallbackProviderType = fallbackProvider == null ? null : String.valueOf(fallbackProvider.get("type"));
                         boolean ssmlAllowed = canUseSsml;
                         String scriptInput = script;
