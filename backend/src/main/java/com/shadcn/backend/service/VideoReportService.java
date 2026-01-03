@@ -13,6 +13,7 @@ import com.shadcn.backend.repository.VideoReportRepository;
 import com.shadcn.backend.util.VideoLinkEncryptor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.data.domain.Page;
@@ -57,6 +58,7 @@ public class VideoReportService {
 
     private final VideoReportRepository videoReportRepository;
     private final VideoReportItemRepository videoReportItemRepository;
+    private final ObjectProvider<VideoReportService> selfProvider;
     private final DIDService didService;
     private final ExcelService excelService;
     private final WhatsAppService whatsAppService;
@@ -244,6 +246,7 @@ public class VideoReportService {
 
     public VideoReportService(VideoReportRepository videoReportRepository,
                              VideoReportItemRepository videoReportItemRepository,
+                             ObjectProvider<VideoReportService> selfProvider,
                              DIDService didService,
                              ExcelService excelService,
                              WhatsAppService whatsAppService,
@@ -251,11 +254,26 @@ public class VideoReportService {
                              VideoBackgroundRepository videoBackgroundRepository) {
         this.videoReportRepository = videoReportRepository;
         this.videoReportItemRepository = videoReportItemRepository;
+        this.selfProvider = selfProvider;
         this.didService = didService;
         this.excelService = excelService;
         this.whatsAppService = whatsAppService;
         this.videoBackgroundCompositeService = videoBackgroundCompositeService;
         this.videoBackgroundRepository = videoBackgroundRepository;
+    }
+
+    private void startVideoGenerationAsync(Long reportId) {
+        try {
+            VideoReportService proxied = selfProvider.getIfAvailable();
+            if (proxied != null) {
+                proxied.startVideoGeneration(reportId);
+                return;
+            }
+        } catch (Exception ignore) {
+        }
+
+        // Fallback (should be rare): run inline.
+        startVideoGeneration(reportId);
     }
 
     /**
@@ -945,7 +963,7 @@ public class VideoReportService {
         logger.info("[REGENERATE VIDEO] Item {}: Reset to PENDING, triggering regeneration", itemId);
 
         // Use the same batch generation process as initial generation
-        startVideoGeneration(reportId);
+        startVideoGenerationAsync(reportId);
 
         return item;
     }
@@ -1699,7 +1717,7 @@ public class VideoReportService {
         }
         
         // Start video generation for reset items
-        startVideoGeneration(reportId);
+        startVideoGenerationAsync(reportId);
     }
 
     /**
@@ -1750,7 +1768,7 @@ public class VideoReportService {
         logger.info("[REGENERATE ALL] Reset {} items to PENDING, starting generation with auto WA", failedItems.size());
         
         // Start video generation (will auto-send WA when each video completes)
-        startVideoGeneration(reportId);
+        startVideoGenerationAsync(reportId);
         
         return failedItems.size();
     }
