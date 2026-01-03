@@ -1,315 +1,484 @@
-# Instruksi Pengembangan Aplikasi Koperasi Desa
+# Instruksi Pengembangan CeMoCA Application
 
 ## Overview Proyek
-**Nama Aplikasi**: Aplikasi Koperasi Desa  
-**Template Base**: Aplikasi Alumni dengan arsitektur Spring Boot + Next.js  
+**Nama Aplikasi**: CeMoCA (Creative Motion Content Application)  
+**Deskripsi**: Platform AI-powered video generation dengan D-ID API integration untuk membuat video presentasi dengan avatar dan voice cloning  
+**Repository**: https://github.com/MuhammadDarmawanFadilah/cemoca.git  
+**Production URL**: https://cemoca.org  
+
 **Teknologi Stack**:
-- Backend: Java 21, Spring Boot 3.2.0, MySQL
+- Backend: Java 21, Spring Boot 3.4.1, MySQL, Tomcat
 - Frontend: Next.js 15.3.0, Shadcn/ui, TailwindCSS
-- Support: Desktop/Mobile responsive, Dark/Light theme
+- External API: D-ID (video generation & voice cloning), AWS Polly (TTS)
+- Support: Desktop/Mobile responsive, Dark/Light theme, PWA
 
-## Analisis Template Existing
-Template aplikasi alumni memiliki fitur-fitur berikut yang dapat dijadikan referensi:
-- Authentication & Authorization (User, Role)
-- CRUD Operations dengan JPA/Hibernate
-- File Upload & Management
-- RESTful API dengan pagination
-- Wilayah management dengan integrasi wilayah.id
-- Dashboard dengan charts dan statistics
-- PWA Support
-- Responsive design dengan dark/light theme
+## Server Access & Deployment
 
-## Tahapan Pengembangan
+### Production Server
+**Host**: 72.61.208.104  
+**User**: root  
+**Password**: P@ssw0rdAfan  
+**Access Method**: SSH via PuTTY/plink
 
-### FASE 1: SETUP PROJECT & CLEANUP
-#### Backend Cleanup
-1. **Database Schema Cleanup**
-   - Hapus tabel yang tidak diperlukan (alumni-specific tables)
-   - Pertahankan: users, roles, master data tables, file upload tables
-   - Buat database baru: `koperasi_desa`
-
-2. **Model & Entity Cleanup**
-   - Hapus model Alumni, Biografi, Berita, Pelaksanaan, dll
-   - Pertahankan: User, Role, Wilayah entities
-   - Cleanup repository & service yang tidak diperlukan
-
-3. **Controller Cleanup**
-   - Hapus controller yang tidak diperlukan
-   - Pertahankan: AuthController, WilayahController, UserController
-
-#### Frontend Cleanup
-1. **Page Cleanup**
-   - Hapus semua page kecuali: login, dashboard
-   - Cleanup components yang tidak diperlukan
-   - Pertahankan: layout, theme provider, authentication components
-
-2. **Navigation Update**
-   - Update sidebar/navigation untuk menu koperasi
-   - Remove alumni-specific menu items
-
-### FASE 2: BACKEND DEVELOPMENT
-
-#### 2.1 Database Design & Models
-1. **Kategori Entity**
-   ```java
-   @Entity
-   public class Kategori {
-       private Long id;
-       private String nama;
-       private String deskripsi;
-       private LocalDateTime createdAt;
-       private LocalDateTime updatedAt;
-   }
-   ```
-
-2. **Barang Entity**
-   ```java
-   @Entity
-   public class Barang {
-       private Long id;
-       private String nama;
-       private Double berat;
-       private Kategori kategori;
-       private Integer stock;
-       private BigDecimal harga;
-       private Integer poin;
-       private String gambar;
-       private LocalDateTime createdAt;
-       private LocalDateTime updatedAt;
-   }
-   ```
-
-3. **Member Entity** (gunakan template Wilayah management)
-   ```java
-   @Entity
-   public class Member {
-       private Long id;
-       private String nama;
-       private String alamat;
-       private WilayahProvinsi provinsi;
-       private WilayahKota kota;
-       private WilayahKecamatan kecamatan;
-       private WilayahKelurahan kelurahan;
-       private String telepon;
-       private String email;
-       private LocalDateTime createdAt;
-       private LocalDateTime updatedAt;
-   }
-   ```
-
-4. **Karyawan Entity** (extend dari User dengan role KARYAWAN)
-   ```java
-   // Extend existing User entity dengan fields tambahan
-   // Atau buat relasi OneToOne dengan User
-   ```
-
-5. **Pesanan & Detail Pesanan Entity**
-   ```java
-   @Entity
-   public class Pesanan {
-       private Long id;
-       private Member member;
-       private User karyawan;
-       private BigDecimal totalHarga;
-       private Integer totalPoin;
-       private StatusPesanan status;
-       private LocalDateTime tanggalPesanan;
-       private List<DetailPesanan> details;
-   }
-
-   @Entity
-   public class DetailPesanan {
-       private Long id;
-       private Pesanan pesanan;
-       private Barang barang;
-       private Integer jumlah;
-       private BigDecimal hargaSatuan;
-       private BigDecimal subtotal;
-   }
-   ```
-
-#### 2.2 Repository Layer
-1. Buat repository untuk setiap entity
-2. Implement custom queries jika diperlukan
-3. Extend existing UserRepository untuk karyawan management
-
-#### 2.3 Service Layer
-1. **KategoriService** - CRUD kategori
-2. **BarangService** - CRUD barang dengan upload gambar
-3. **MemberService** - CRUD member dengan wilayah integration
-4. **KaryawanService** - extend UserService
-5. **PesananService** - business logic untuk pesanan & keranjang
-
-#### 2.4 Controller Layer
-1. **KategoriController** - REST API untuk kategori
-2. **BarangController** - REST API untuk barang
-3. **MemberController** - REST API untuk member
-4. **KaryawanController** - REST API untuk karyawan
-5. **PesananController** - REST API untuk pesanan
-
-#### 2.5 Security & Authorization
-1. Update SecurityConfig untuk role-based access
-2. Add KARYAWAN role
-3. Protect endpoints sesuai kebutuhan
-
-### FASE 3: FRONTEND DEVELOPMENT
-
-#### 3.1 Authentication & Dashboard
-1. **Login Page** - gunakan existing login
-2. **Dashboard** - update untuk metrics koperasi
-   - Total barang
-   - Total member
-   - Pesanan hari ini
-   - Revenue charts
-
-#### 3.2 Master Data Management
-1. **Kategori Management**
-   - List kategoris dengan DataTable
-   - Form add/edit kategori
-   - Delete confirmation
-
-2. **Barang Management**
-   - List barang dengan filter by kategori
-   - Form add/edit barang dengan upload gambar
-   - Stock management
-
-#### 3.3 Member & Karyawan Management
-1. **Member Management** (gunakan template Biografi management)
-   - List members dengan search & filter
-   - Form add/edit member dengan wilayah selector
-   - Member card generation (gunakan template kartu alumni)
-
-2. **Karyawan Management**
-   - List karyawans
-   - Form add/edit karyawan
-   - Role assignment
-
-#### 3.4 Pesanan Management
-1. **Keranjang & Checkout**
-   - Product catalog dengan add to cart
-   - Shopping cart component
-   - Checkout form
-
-2. **Pesanan Management**
-   - List pesanan dengan status
-   - Detail pesanan view
-   - Update status pesanan
-
-#### 3.5 Member Card Feature
-1. **Kartu Member** (adaptasi dari kartu alumni)
-   - Design kartu member
-   - QR code generation
-   - PDF export functionality
-
-### FASE 4: INTEGRATION & TESTING
-
-#### 4.1 API Integration
-1. Connect frontend dengan backend APIs
-2. Implement proper error handling
-3. Add loading states
-
-#### 4.2 File Upload Integration
-1. Setup image upload untuk barang
-2. Update existing upload service
-3. Implement image optimization
-
-#### 4.3 Wilayah Integration
-1. Ensure wilayah.id integration works for member address
-2. Test dropdown cascade functionality
-
-#### 4.4 Testing
-1. Test semua CRUD operations
-2. Test pesanan flow end-to-end
-3. Test responsive design
-4. Test dark/light theme
-
-### FASE 5: FINALIZATION
-
-#### 5.1 UI/UX Polish
-1. Consistent styling dengan shadcn/ui
-2. Proper form validations
-3. Toast notifications
-4. Loading indicators
-
-#### 5.2 Performance Optimization
-1. Implement caching where needed
-2. Optimize database queries
-3. Image optimization
-
-#### 5.3 Deployment Preparation
-1. Update environment configurations
-2. Database migration scripts
-3. Build optimization
-
-## File Structure Target
-
-### Backend
+### Deployment Scripts
+**Backend Redeploy**:
+```bash
+bash /opt/CEMOCA/redeploy-backend.sh
 ```
-src/main/java/com/shadcn/backend/
-├── config/           # Existing configs
+
+**Frontend Redeploy**:
+```bash
+bash /opt/CEMOCA/redeploy-frontend.sh
+```
+
+### Deployment dari Windows (PowerShell)
+```powershell
+# Backend
+echo y | plink -ssh root@72.61.208.104 -pw "P@ssw0rdAfan" "bash /opt/CEMOCA/redeploy-backend.sh"
+
+# Frontend
+echo y | plink -ssh root@72.61.208.104 -pw "P@ssw0rdAfan" "bash /opt/CEMOCA/redeploy-frontend.sh"
+```
+
+### Deployment Workflow
+1. **Edit code** di local (auto-compilation aktif, no need to run)
+2. **Commit & push** ke git repository
+   ```bash
+   git add .
+   git commit -m "description"
+   git push
+   ```
+3. **Redeploy** di production server (gunakan command di atas)
+
+### Server Directory Structure
+```
+/opt/
+├── CEMOCA/
+│   ├── redeploy-backend.sh
+│   ├── redeploy-frontend.sh
+│   └── deployment-init.sh
+├── cemoca/
+│   └── app/
+│       ├── backend/    # Backend source & WAR
+│       └── frontend/   # Frontend build
+├── tomcat/
+│   ├── webapps/
+│   │   └── cemoca.war
+│   └── logs/
+│       ├── catalina.out
+│       └── application.log
+└── file/               # Upload directory
+```
+
+### Monitoring & Logs
+```bash
+# Tomcat logs
+sudo tail -f /opt/tomcat/logs/catalina.out
+
+# Application logs
+sudo tail -f /opt/tomcat/logs/application.log
+
+# Check Tomcat status
+sudo systemctl status tomcat
+
+# Restart Tomcat manually
+sudo systemctl restart tomcat
+```
+
+## Fitur Utama Aplikasi
+
+### 1. D-ID Video Generation
+- **AI Avatar Videos**: Generate video dengan avatar realistis dan lip-sync
+- **Voice Cloning**: Clone suara dari audio sample untuk konsistensi suara
+- **SSML Support**: Text-to-speech dengan SSML tags untuk natural intonation
+- **Batch Processing**: Generate hingga 1000+ videos dengan avatar consistency
+
+### 2. Audio Management
+- **Voice Sample Library**: Upload dan manage audio samples per avatar
+- **Strict Voice Policy**: Enforce penggunaan cloned voice (no fallback)
+- **Multi-language Support**: English, Indonesian, dan bahasa lainnya
+
+### 3. Video Reporting & Analytics
+- **Personal Sales Reports**: Generate video reports untuk sales performance
+- **Clip Status Tracking**: Monitor progress video generation real-time
+- **Schedule Management**: Automated video generation scheduling
+
+### 4. User & Authentication
+- **Role-based Access**: ADMIN, KARYAWAN roles
+- **JWT Authentication**: Secure API endpoints
+- **User Management**: CRUD operations untuk users
+
+## Konfigurasi Penting
+
+### D-ID Configuration (application.properties)
+```properties
+# D-ID API
+did.api.key=YOUR_API_KEY
+did.api.url=https://api.d-id.com
+
+# Voice Cloning Configuration
+did.tts.clone.language=english  # Language of voice SAMPLE, not script
+did.tts.strict-audio-management=true  # Enforce cloned voice, no fallback
+
+# Video Generation
+did.video.cache-enabled=true
+did.webhook.enabled=true
+```
+
+### Key Configuration Notes
+- `did.tts.clone.language`: Refers to language of uploaded audio sample (e.g., "english", "indonesian"), NOT the script text language
+- `did.tts.strict-audio-management=true`: Throws exception if audio sample exists but cloning fails (prevents voice drift)
+- SSML sanitization: Automatically strips `<amazon:effect>` tags incompatible with D-ID cloned voices
+
+### Database Configuration
+```properties
+spring.datasource.url=jdbc:mysql://localhost:3306/cemoca_db
+spring.datasource.username=root
+spring.datasource.password=YOUR_PASSWORD
+```
+
+## Arsitektur Aplikasi
+
+### Backend Architecture
+```
+backend/src/main/java/com/shadcn/backend/
+├── config/
+│   ├── SecurityConfig.java          # JWT & Security
+│   ├── WebConfig.java               # CORS & Web settings
+│   └── SchedulerConfig.java         # Async & scheduling
 ├── controller/
-│   ├── AuthController.java      # Existing
-│   ├── BarangController.java    # New
-│   ├── KategoriController.java  # New
-│   ├── MemberController.java    # New
-│   ├── KaryawanController.java  # New
-│   └── PesananController.java   # New
+│   ├── AuthController.java          # Login & authentication
+│   ├── VideoReportController.java   # Video generation endpoints
+│   ├── DIDWebhookController.java    # D-ID callback handler
+│   ├── AudioManagementController.java
+│   └── UserController.java
+├── service/
+│   ├── DIDService.java              # D-ID API integration (CRITICAL)
+│   ├── AudioManagementService.java  # Voice sample management
+│   ├── VideoReportService.java      # Video generation logic
+│   ├── LearningSchedulerService.java # Batch processing
+│   └── AuthService.java
 ├── model/
-│   ├── User.java               # Existing
-│   ├── Role.java               # Existing
-│   ├── Barang.java             # New
-│   ├── Kategori.java           # New
-│   ├── Member.java             # New
-│   ├── Pesanan.java            # New
-│   └── DetailPesanan.java      # New
-├── repository/      # Corresponding repositories
-├── service/         # Corresponding services
-└── dto/            # Data Transfer Objects
+│   ├── User.java
+│   ├── Member.java
+│   ├── AvatarAudio.java            # Voice sample entity
+│   ├── VideoClip.java              # Generated video tracking
+│   └── LearningScheduler.java
+└── repository/
+    ├── UserRepository.java
+    ├── AvatarAudioRepository.java
+    └── VideoClipRepository.java
 ```
 
-### Frontend
+### Frontend Architecture
 ```
-src/app/
-├── (auth)/
-│   └── login/              # Existing
-├── dashboard/              # Updated
-├── master-data/
-│   ├── kategori/          # New
-│   └── barang/            # New
-├── member/                # New
-├── karyawan/              # New
-├── pesanan/               # New
-└── kartu-member/          # New
+frontend/src/
+├── app/
+│   ├── (auth)/
+│   │   └── login/                  # Login page
+│   ├── dashboard/                  # Main dashboard
+│   ├── report-video/
+│   │   └── personal-sales/         # Video generation UI
+│   ├── audio-management/           # Voice sample management
+│   └── users/                      # User management
+├── components/
+│   ├── ui/                         # Shadcn/ui components
+│   ├── layout/                     # Layout components
+│   └── video/                      # Video-specific components
+├── lib/
+│   ├── api.ts                      # API client
+│   ├── auth.ts                     # Auth utilities
+│   └── utils.ts                    # Helper functions
+└── types/
+    └── index.ts                    # TypeScript types
 ```
 
-## Commands untuk Memulai
+### Key Backend Services
 
-### Database Setup
-```sql
-CREATE DATABASE koperasi_desa;
-```
+#### DIDService.java (MOST CRITICAL)
+Handles all D-ID API interactions:
+- `createScene()`: Create video with avatar and script
+- `createClipsVideo()`: Generate video clips
+- `getClipStatus()`: Poll video generation status
+- `ensureLocalSampleVoiceIfAvailable()`: Voice cloning logic
+- `sanitizeSsmlForDidProvider()`: SSML sanitization for D-ID compatibility
+- **Strict Voice Policy**: Enforces audio-management voice, prevents fallback
 
-### Backend Start
+#### AudioManagementService.java
+Manages voice samples:
+- Upload audio samples per avatar
+- Normalized key matching (e.g., "Gilbert Sit" → "gilbertsit")
+- File storage and retrieval
+
+#### VideoReportService.java
+Business logic for video generation:
+- Read CSV data files
+- Process batch video generation
+- Track video status
+- Handle D-ID webhooks
+
+#### LearningSchedulerService.java
+Automated batch processing:
+- Schedule video generation tasks
+- Process multiple videos in sequence
+- Monitor and retry failed jobs
+
+## Development Workflow
+
+### Local Development Setup
+
+#### Backend
 ```bash
 cd backend
-mvn clean install
-mvn spring-boot:run
+# Configuration: edit src/main/resources/application-local.properties
+# Auto-compilation is active via Spring Boot DevTools
+# DO NOT RUN unless checking for errors
 ```
 
-### Frontend Start
+#### Frontend
 ```bash
 cd frontend
-npm install
-npm run dev
+# Configuration: .env.local
+# Auto-compilation is active via Next.js Turbopack
+# DO NOT RUN unless checking for errors
 ```
 
-## Catatan Penting
-1. Pertahankan existing authentication system
-2. Gunakan existing wilayah integration untuk member address
-3. Adaptasi kartu alumni menjadi kartu member
-4. Maintain responsive design dan theme support
-5. Follow existing code patterns dan naming conventions
-6. Gunakan existing components shadcn/ui sebanyak mungkin
+### Making Changes
+
+1. **Edit Code**
+   - Backend: Auto-compilation via Spring Boot DevTools
+   - Frontend: Auto-reload via Next.js Turbopack
+   - **NEVER RUN** backend/frontend unless user asks to check errors
+
+2. **Check Logs for Errors**
+   - Local: `C:\PROJEK\CEMOCAPPS\backend\logs\application.log`
+   - Production: `/opt/tomcat/logs/application.log` or `/opt/tomcat/logs/catalina.out`
+
+3. **Commit & Push**
+   ```bash
+   git add .
+   git commit -m "description"
+   git push
+   ```
+
+4. **Deploy to Production**
+   ```powershell
+   # Backend
+   echo y | plink -ssh root@72.61.208.104 -pw "P@ssw0rdAfan" "bash /opt/CEMOCA/redeploy-backend.sh"
+   
+   # Frontend
+   echo y | plink -ssh root@72.61.208.104 -pw "P@ssw0rdAfan" "bash /opt/CEMOCA/redeploy-frontend.sh"
+   ```
+
+### Common Tasks
+
+#### Add New Feature
+1. Edit backend/frontend code
+2. Test locally (auto-compilation handles it)
+3. Commit & push
+4. Deploy to production
+
+#### Fix Production Error
+1. Check production logs via SSH:
+   ```bash
+   sudo tail -f /opt/tomcat/logs/application.log
+   ```
+2. Identify issue
+3. Fix in local code
+4. Commit, push, redeploy
+
+#### Update D-ID Configuration
+1. Edit `application-local.properties` or `application-prod.properties`
+2. Common settings:
+   - `did.api.key`: D-ID API key
+   - `did.tts.clone.language`: Voice sample language (english, indonesian, etc.)
+   - `did.tts.strict-audio-management`: Enable/disable strict voice mode
+3. Commit, push, redeploy backend
+
+#### Add Voice Sample
+1. Upload audio file via frontend (Audio Management page)
+2. Ensure normalized key matches avatar name
+3. System will auto-use for video generation
+
+## Critical Files & Their Purpose
+
+### Backend
+- **DIDService.java**: Core D-ID API integration (voice cloning, video generation)
+- **application-local.properties**: Local development config
+- **application-prod.properties**: Production config
+- **pom.xml**: Maven dependencies
+
+### Frontend
+- **src/app/(auth)/login/page.tsx**: Login page
+- **src/app/dashboard/page.tsx**: Main dashboard
+- **src/app/report-video/personal-sales/[id]/page.tsx**: Video generation UI
+- **src/lib/api.ts**: API client configuration
+- **.env.local**: Environment variables
+
+### Data Files
+- **backend/data/list.txt**: CSV data for batch video generation
+- **backend/data/english.txt**: SSML script template
+
+## Troubleshooting Guide
+
+### Common Issues
+
+#### 1. Voice Generation Errors
+**Symptom**: "unsupported language" error
+**Solution**:
+- Check `did.tts.clone.language` in application.properties
+- Must match audio sample language, not script language
+- Supported: english, spanish, italian, indonesian, etc.
+
+#### 2. Voice Drift/Inconsistency
+**Symptom**: Videos use different voices despite having audio sample
+**Solution**:
+- Ensure `did.tts.strict-audio-management=true`
+- Check audio sample exists in database (AvatarAudio entity)
+- Verify normalized key matches (e.g., "Gilbert Sit" → "gilbertsit")
+
+#### 3. SSML Tags Not Working
+**Symptom**: Amazon-specific SSML tags causing errors
+**Solution**:
+- System auto-strips `<amazon:effect>` tags via `sanitizeSsmlForDidProvider()`
+- Use standard SSML: `<break>`, `<prosody>`, `<emphasis>`
+- Avoid Amazon-only tags when using D-ID cloned voices
+
+#### 4. Deployment Fails
+**Symptom**: Redeploy script fails or hangs
+**Solution**:
+- Check SSH connection: `plink -ssh root@72.61.208.104 "pwd"`
+- Verify git push succeeded
+- Check Tomcat status: `sudo systemctl status tomcat`
+- Review logs: `sudo tail -f /opt/tomcat/logs/catalina.out`
+
+#### 5. Maven Build Errors
+**Symptom**: Compilation fails during redeploy
+**Solution**:
+- Check syntax errors in Java files
+- Verify imports are correct
+- Review error in `/opt/cemoca/app/backend/target/` during build
+
+## Server Access Guide
+
+### SSH Connection Methods
+
+#### Method 1: Using plink (PowerShell)
+```powershell
+# Interactive session
+plink -ssh root@72.61.208.104
+
+# Single command
+plink -ssh root@72.61.208.104 "ls -la /opt/"
+
+# Auto-accept host key
+echo y | plink -ssh root@72.61.208.104 "command"
+
+# With password inline (for automation)
+echo y | plink -ssh root@72.61.208.104 -pw "P@ssw0rdAfan" "command"
+```
+
+#### Method 2: Using PuTTY GUI
+1. Open PuTTY
+2. Host: `72.61.208.104`
+3. Port: `22`
+4. Connection type: SSH
+5. Login: `root`
+6. Password: `P@ssw0rdAfan`
+
+#### Method 3: Using VS Code Remote SSH
+1. Install "Remote - SSH" extension
+2. Add SSH config:
+   ```
+   Host cemoca
+     HostName 72.61.208.104
+     User root
+     Password P@ssw0rdAfan
+   ```
+3. Connect via command palette
+
+### Deployment Commands Reference
+
+#### Deploy Backend
+```powershell
+# Full command with auto-accept
+echo y | plink -ssh root@72.61.208.104 -pw "P@ssw0rdAfan" "bash /opt/CEMOCA/redeploy-backend.sh"
+
+# Expected output:
+# - Pulling latest code
+# - Building with Maven
+# - Removing old WAR
+# - Deploying new WAR
+# - Restarting Tomcat
+# - Verification check
+```
+
+#### Deploy Frontend
+```powershell
+# Full command with auto-accept
+echo y | plink -ssh root@72.61.208.104 -pw "P@ssw0rdAfan" "bash /opt/CEMOCA/redeploy-frontend.sh"
+
+# Expected output:
+# - Pulling latest code
+# - Installing dependencies
+# - Building Next.js
+# - Deploying to production
+# - Verification check
+```
+
+#### Check Application Status
+```powershell
+# Check Tomcat status
+echo y | plink -ssh root@72.61.208.104 -pw "P@ssw0rdAfan" "sudo systemctl status tomcat"
+
+# Check backend API
+echo y | plink -ssh root@72.61.208.104 -pw "P@ssw0rdAfan" "curl http://localhost:8080/cemoca/api/health"
+
+# Check frontend
+echo y | plink -ssh root@72.61.208.104 -pw "P@ssw0rdAfan" "curl http://localhost:3000"
+```
+
+#### View Logs
+```powershell
+# Tomcat logs (last 100 lines)
+echo y | plink -ssh root@72.61.208.104 -pw "P@ssw0rdAfan" "sudo tail -n 100 /opt/tomcat/logs/catalina.out"
+
+# Application logs (last 100 lines)
+echo y | plink -ssh root@72.61.208.104 -pw "P@ssw0rdAfan" "sudo tail -n 100 /opt/tomcat/logs/application.log"
+
+# Follow logs in real-time (Ctrl+C to exit)
+echo y | plink -ssh root@72.61.208.104 -pw "P@ssw0rdAfan" "sudo tail -f /opt/tomcat/logs/application.log"
+```
+
+### File Management on Server
+
+#### Upload Files
+```powershell
+# Using pscp (PuTTY scp)
+pscp -pw "P@ssw0rdAfan" local-file.txt root@72.61.208.104:/opt/cemoca/
+
+# Upload directory
+pscp -r -pw "P@ssw0rdAfan" local-dir/ root@72.61.208.104:/opt/cemoca/
+```
+
+#### Download Files
+```powershell
+# Download single file
+pscp -pw "P@ssw0rdAfan" root@72.61.208.104:/opt/tomcat/logs/application.log ./
+
+# Download directory
+pscp -r -pw "P@ssw0rdAfan" root@72.61.208.104:/opt/file/ ./downloads/
+```
+
+#### Edit Files on Server
+```bash
+# SSH into server first
+echo y | plink -ssh root@72.61.208.104 -pw "P@ssw0rdAfan"
+
+# Then use nano or vi
+nano /opt/cemoca/app/backend/src/main/resources/application-prod.properties
+vi /opt/cemoca/app/backend/src/main/resources/application-prod.properties
+```
 
 ## Instruksi Pengembangan & Debugging
 1. **Auto-Compilation**: Backend dan frontend sudah menggunakan auto-compilation
@@ -324,17 +493,18 @@ npm run dev
 - **NEVER explain, describe, or give any explanations** 
 - **FOCUS ON CODE ONLY** - no descriptions needed
 - **NEVER RUN backend or frontend** unless user specifically asks to fix errors
-- **READ LOGS if there are errors**: C:\PROJEK\penjualan\backend\logs\application.log
+- **READ LOGS if there are errors**: C:\PROJEK\CEMOCAPPS\backend\logs\application.log
 - **Just write "Success" when finished**
 
 ## Success Criteria
-- [ ] Aplikasi bisa login sebagai karyawan
-- [ ] CRUD kategori berfungsi
-- [ ] CRUD barang dengan upload gambar berfungsi
-- [ ] CRUD member dengan wilayah selector berfungsi
-- [ ] CRUD karyawan berfungsi
-- [ ] Pesanan flow (catalog → cart → checkout) berfungsi
-- [ ] Kartu member bisa digenerate dan diexport
-- [ ] Responsive design di desktop dan mobile
-- [ ] Dark/light theme berfungsi
-- [ ] Backend dan frontend bisa running tanpa error
+- [x] D-ID video generation with avatar & voice cloning works
+- [x] Strict audio-management voice policy prevents voice drift
+- [x] SSML sanitization for D-ID compatibility
+- [x] Batch video generation (1000+ videos) with consistent voice
+- [x] Audio management module for voice samples
+- [x] Video status tracking and webhooks
+- [x] Automated scheduling for batch processing
+- [x] Production deployment workflow established
+- [x] Server access and monitoring tools configured
+- [x] Backend & frontend auto-compilation active
+- [x] Git-based deployment pipeline functional
