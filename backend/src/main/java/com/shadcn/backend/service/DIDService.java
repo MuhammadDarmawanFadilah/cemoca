@@ -97,11 +97,22 @@ public class DIDService {
     @Value("${did.fallback.presenter.id:}")
     private String fallbackPresenterId;
 
-    @Value("${did.tts.clone.language:id}")
+    @Value("${did.tts.clone.language:english}")
     private String cloneVoiceLanguage;
 
     @Value("${did.tts.strict-audio-management:true}")
     private boolean strictAudioManagementVoice;
+
+    @Value("${did.tts.strict-audio-management.fail-on-clone-error:false}")
+    private boolean failOnCloneError;
+
+    @Value("${did.tts.clone.skip-on-validation-error-minutes:1440}")
+    private long cloneSkipOnValidationErrorMinutes;
+
+    @Value("${did.tts.clone.skip-on-transient-error-minutes:5}")
+    private long cloneSkipOnTransientErrorMinutes;
+
+    private final Map<String, Long> voiceCloneSkipUntilMsByPresenterId = new ConcurrentHashMap<>();
 
     private static final String CUSTOM_VOICE_PREFIX = "custom:";
 
@@ -510,13 +521,17 @@ public class DIDService {
             return Optional.of(vid);
         }
 
+        if (shouldSkipVoiceClone(pid)) {
+            return Optional.empty();
+        }
+
         Optional<ByteArrayResource> sample = loadAvatarSampleFromAudioManagement(pid, avatarName.trim());
         if (sample.isEmpty()) {
             clonedVoiceNoSample.add(pid);
             return Optional.empty();
         }
 
-        Optional<VoiceInfo> created = createClonedVoice(sample.get(), avatarName.trim());
+        Optional<VoiceInfo> created = createClonedVoice(sample.get(), avatarName.trim(), pid);
         Optional<String> voiceId = created.map(v -> v.voiceId);
         created.ifPresent(v -> {
             avatar.setVoiceId(v.voiceId);
@@ -532,6 +547,34 @@ public class DIDService {
             }
         });
         return voiceId;
+    }
+
+    private boolean shouldSkipVoiceClone(String presenterId) {
+        if (presenterId == null || presenterId.isBlank()) {
+            return false;
+        }
+        Long until = voiceCloneSkipUntilMsByPresenterId.get(presenterId);
+        if (until == null) {
+            return false;
+        }
+        long now = System.currentTimeMillis();
+        if (until <= now) {
+            voiceCloneSkipUntilMsByPresenterId.remove(presenterId);
+            return false;
+        }
+        return true;
+    }
+
+    private void markVoiceCloneSkip(String presenterId, long minutes) {
+        if (presenterId == null || presenterId.isBlank()) {
+            return;
+        }
+        long safeMinutes = Math.max(0, minutes);
+        if (safeMinutes == 0) {
+            return;
+        }
+        long until = System.currentTimeMillis() + (safeMinutes * 60_000L);
+        voiceCloneSkipUntilMsByPresenterId.put(presenterId, until);
     }
 
     private Optional<ByteArrayResource> loadAvatarSampleFromAudioManagement(String presenterId, String avatarName) {
@@ -616,58 +659,131 @@ public class DIDService {
         }
     }
 
-    private Optional<VoiceInfo> createClonedVoice(ByteArrayResource file, String name) {
+    private Optional<VoiceInfo> createClonedVoice(ByteArrayResource file, String name, String presenterId) {
         try {
-            MultiValueMap<String, Object> form = new LinkedMultiValueMap<>();
-            form.add("name", name);
-            String lang = cloneVoiceLanguage == null ? "" : cloneVoiceLanguage.trim();
-            if (lang.isBlank()) {
-                lang = "english";  // Default to english if not configured
-            }
-            form.add("language", lang);
-            form.add("file", file);
-
-            String response = webClient.post()
-                    .uri("/tts/voices")
-                    .header(HttpHeaders.AUTHORIZATION, getAuthHeader())
-                    .contentType(MediaType.MULTIPART_FORM_DATA)
-                    .accept(MediaType.APPLICATION_JSON)
-                    .body(BodyInserters.fromMultipartData(form))
-                    .retrieve()
-                    .bodyToMono(String.class)
-                    .timeout(READ_TIMEOUT)
-                    .block();
-
-            if (response == null || response.isBlank()) {
-                logger.warn("D-ID create cloned voice: empty response");
+            String pid = presenterId == null ? "" : presenterId.trim();
+            if (!pid.isBlank() && shouldSkipVoiceClone(pid)) {
                 return Optional.empty();
             }
 
-            JsonNode root = objectMapper.readTree(response);
-            String id = null;
-            if (root.hasNonNull("id") && !root.get("id").asText().isBlank()) {
-                id = root.get("id").asText();
-            } else if (root.hasNonNull("voice_id") && !root.get("voice_id").asText().isBlank()) {
-                id = root.get("voice_id").asText();
+            final int maxAttempts = 3;
+            for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+                MultiValueMap<String, Object> form = new LinkedMultiValueMap<>();
+                form.add("name", name);
+                String lang = cloneVoiceLanguage == null ? "" : cloneVoiceLanguage.trim();
+                if (lang.isBlank()) {
+                    lang = "english";
+                }
+                form.add("language", lang);
+                form.add("file", file);
+
+                try {
+                    String response = webClient.post()
+                            .uri("/tts/voices")
+                            .header(HttpHeaders.AUTHORIZATION, getAuthHeader())
+                            .contentType(MediaType.MULTIPART_FORM_DATA)
+                            .accept(MediaType.APPLICATION_JSON)
+                            .body(BodyInserters.fromMultipartData(form))
+                            .retrieve()
+                            .bodyToMono(String.class)
+                            .timeout(READ_TIMEOUT)
+                            .block();
+
+                    if (response == null || response.isBlank()) {
+                        logger.warn("D-ID create cloned voice: empty response presenterId={} attempt={}", pid, attempt);
+                        if (attempt < maxAttempts) {
+                            continue;
+                        }
+                        if (!pid.isBlank()) {
+                            markVoiceCloneSkip(pid, cloneSkipOnTransientErrorMinutes);
+                        }
+                        return Optional.empty();
+                    }
+
+                    JsonNode root = objectMapper.readTree(response);
+                    String id = null;
+                    if (root.hasNonNull("id") && !root.get("id").asText().isBlank()) {
+                        id = root.get("id").asText();
+                    } else if (root.hasNonNull("voice_id") && !root.get("voice_id").asText().isBlank()) {
+                        id = root.get("voice_id").asText();
+                    }
+
+                    if (id == null || id.isBlank()) {
+                        logger.warn("D-ID create cloned voice: no voice_id in response presenterId={} attempt={}", pid, attempt);
+                        if (attempt < maxAttempts) {
+                            continue;
+                        }
+                        if (!pid.isBlank()) {
+                            markVoiceCloneSkip(pid, cloneSkipOnTransientErrorMinutes);
+                        }
+                        return Optional.empty();
+                    }
+
+                    String type = root.hasNonNull("type") ? root.get("type").asText() : null;
+                    if (type == null || type.isBlank()) {
+                        type = "d-id";
+                    }
+                    logger.info("D-ID create cloned voice success: presenterId={} voiceId={} type={} language={}", pid, id, type, lang);
+                    return Optional.of(new VoiceInfo(id, type));
+                } catch (WebClientResponseException wce) {
+                    String body = truncate(wce.getResponseBodyAsString(), 1500);
+                    int status = wce.getStatusCode().value();
+                    String kind = null;
+                    try {
+                        String raw = wce.getResponseBodyAsString();
+                        if (raw != null && !raw.isBlank()) {
+                            JsonNode errRoot = objectMapper.readTree(raw);
+                            if (errRoot.hasNonNull("kind")) {
+                                kind = errRoot.get("kind").asText();
+                            }
+                        }
+                    } catch (com.fasterxml.jackson.core.JacksonException ignored) {
+                        // ignore
+                    }
+
+                    logger.error(
+                            "D-ID create cloned voice failed: presenterId={} attempt={} status={} kind={} body={}",
+                            pid,
+                            attempt,
+                            status,
+                            kind,
+                            body
+                    );
+
+                    boolean isValidationConsent = kind != null && kind.toLowerCase(Locale.ROOT).contains("consent");
+                    if (isValidationConsent) {
+                        if (!pid.isBlank()) {
+                            markVoiceCloneSkip(pid, cloneSkipOnValidationErrorMinutes);
+                        }
+                        return Optional.empty();
+                    }
+
+                    boolean retryable = status == 429 || status >= 500;
+                    if (retryable && attempt < maxAttempts) {
+                        continue;
+                    }
+                    if (!pid.isBlank()) {
+                        markVoiceCloneSkip(pid, cloneSkipOnTransientErrorMinutes);
+                    }
+                    return Optional.empty();
+                } catch (Exception e) {
+                    logger.error(
+                            "D-ID create cloned voice failed: presenterId={} attempt={} error={}",
+                            pid,
+                            attempt,
+                            truncate(e.getMessage(), 300),
+                            e
+                    );
+                    if (attempt < maxAttempts) {
+                        continue;
+                    }
+                    if (!pid.isBlank()) {
+                        markVoiceCloneSkip(pid, cloneSkipOnTransientErrorMinutes);
+                    }
+                    return Optional.empty();
+                }
             }
 
-            if (id == null || id.isBlank()) {
-                logger.warn("D-ID create cloned voice: no voice_id in response");
-                return Optional.empty();
-            }
-
-            String type = root.hasNonNull("type") ? root.get("type").asText() : null;
-            if (type == null || type.isBlank()) {
-                type = "d-id";
-            }
-            logger.info("D-ID create cloned voice success: voiceId={} type={} language={}", id, type, lang);
-            return Optional.of(new VoiceInfo(id, type));
-        } catch (WebClientResponseException wce) {
-            logger.error(
-                    "D-ID create cloned voice failed: status={} body={}",
-                    wce.getStatusCode().value(),
-                    truncate(wce.getResponseBodyAsString(), 1500)
-            );
             return Optional.empty();
         } catch (Exception e) {
             logger.error("D-ID create cloned voice failed: {}", truncate(e.getMessage(), 300), e);
@@ -1229,11 +1345,11 @@ public class DIDService {
             }
 
             Optional<String> ensured = ensureClonedVoiceIdFromLocalSample(pid, trimmedName);
-            if (hasSample && (ensured.isEmpty() || ensured.get().isBlank()) && strictAudioManagementVoice) {
+            if (hasSample && (ensured.isEmpty() || ensured.get().isBlank()) && strictAudioManagementVoice && failOnCloneError) {
                 throw new RuntimeException("Audio-management sample exists but voice cloning failed for presenterId=" + pid);
             }
         } catch (Exception e) {
-            if (strictAudioManagementVoice) {
+            if (strictAudioManagementVoice && failOnCloneError) {
                 if (e instanceof RuntimeException re) {
                     throw re;
                 }
@@ -1284,7 +1400,7 @@ public class DIDService {
                         return provider;
                     }
 
-                    if (strictAudioManagementVoice) {
+                    if (strictAudioManagementVoice && failOnCloneError) {
                         throw new RuntimeException("Audio-management sample exists but voice cloning failed for presenterId=" + pid);
                     }
                 }
@@ -1296,7 +1412,7 @@ public class DIDService {
             return null;
             
         } catch (Exception e) {
-            if (strictAudioManagementVoice) {
+            if (strictAudioManagementVoice && failOnCloneError) {
                 if (e instanceof RuntimeException re) {
                     throw re;
                 }
@@ -1513,13 +1629,11 @@ public class DIDService {
             try {
                 // First get the avatar to retrieve voice_id - check database first, then cache
                 String voiceId = null;
-                String voiceType = null;
                 
                 // 1. Try to get voice_id from database (most reliable)
                 Optional<DIDAvatar> dbAvatar = avatarRepository.findByPresenterId(avatarId);
                 if (dbAvatar.isPresent() && dbAvatar.get().getVoiceId() != null && !dbAvatar.get().getVoiceId().isEmpty()) {
                     voiceId = dbAvatar.get().getVoiceId();
-                    voiceType = dbAvatar.get().getVoiceType();
                     logger.debug("Using voice_id '{}' from database for avatar '{}'", voiceId, avatarId);
                 }
                 
@@ -1528,7 +1642,6 @@ public class DIDService {
                     DIDPresenter cachedAvatar = presenterCache.get(avatarId);
                     if (cachedAvatar != null && cachedAvatar.getVoice_id() != null && !cachedAvatar.getVoice_id().isEmpty()) {
                         voiceId = cachedAvatar.getVoice_id();
-                        voiceType = cachedAvatar.getVoice_type();
                         logger.debug("Using voice_id '{}' from cache for avatar '{}'", voiceId, avatarId);
                     }
                 }
@@ -1540,7 +1653,6 @@ public class DIDService {
                     dbAvatar = avatarRepository.findByPresenterId(avatarId);
                     if (dbAvatar.isPresent() && dbAvatar.get().getVoiceId() != null && !dbAvatar.get().getVoiceId().isEmpty()) {
                         voiceId = dbAvatar.get().getVoiceId();
-                        voiceType = dbAvatar.get().getVoiceType();
                         logger.info("After refresh, using voice_id '{}' for avatar '{}'", voiceId, avatarId);
                     }
                 }
