@@ -744,7 +744,7 @@ public class DIDService {
                         type = root.get("tts_provider").asText();
                     }
                     if (type == null || type.isBlank()) {
-                        type = "amazon";
+                        type = "d-id";
                     }
                     logger.info("D-ID create cloned voice success: presenterId={} voiceId={} type={} language={}", pid, id, type, lang);
                     return Optional.of(new VoiceInfo(id, type));
@@ -1782,9 +1782,14 @@ public class DIDService {
 
                     String scriptInput = script;
                     if (ssmlAllowed) {
-                        scriptInput = providerType != null && providerType.equalsIgnoreCase("amazon")
-                                ? sanitizeSsmlForAmazonProvider(script)
-                                : sanitizeSsmlForDidProvider(script);
+                        boolean usingCustomVoice = provider != null;
+                        if (usingCustomVoice) {
+                            scriptInput = sanitizeSsmlForDidProvider(script);
+                        } else {
+                            scriptInput = providerType != null && providerType.equalsIgnoreCase("amazon")
+                                    ? sanitizeSsmlForAmazonProvider(script)
+                                    : sanitizeSsmlForDidProvider(script);
+                        }
                     } else if (canUseSsml) {
                         scriptInput = stripKnownSsmlTagsToPlainText(script);
                     }
@@ -1822,9 +1827,14 @@ public class DIDService {
 
                         String scriptInput = script;
                         if (ssmlAllowed) {
-                            scriptInput = providerType != null && providerType.equalsIgnoreCase("amazon")
-                                    ? sanitizeSsmlForAmazonProvider(script)
-                                    : sanitizeSsmlForDidProvider(script);
+                            boolean usingCustomVoice = provider != null;
+                            if (usingCustomVoice) {
+                                scriptInput = sanitizeSsmlForDidProvider(script);
+                            } else {
+                                scriptInput = providerType != null && providerType.equalsIgnoreCase("amazon")
+                                        ? sanitizeSsmlForAmazonProvider(script)
+                                        : sanitizeSsmlForDidProvider(script);
+                            }
                         } else if (canUseSsml) {
                             scriptInput = stripKnownSsmlTagsToPlainText(script);
                         }
@@ -1950,9 +1960,14 @@ public class DIDService {
                     boolean ssmlAllowed = canUseSsml;
                     String scriptInput = script;
                     if (ssmlAllowed) {
-                        scriptInput = providerType != null && providerType.equalsIgnoreCase("amazon")
-                                ? sanitizeSsmlForAmazonProvider(script)
-                                : sanitizeSsmlForDidProvider(script);
+                        boolean usingCustomVoice = provider != null;
+                        if (usingCustomVoice) {
+                            scriptInput = sanitizeSsmlForDidProvider(script);
+                        } else {
+                            scriptInput = providerType != null && providerType.equalsIgnoreCase("amazon")
+                                    ? sanitizeSsmlForAmazonProvider(script)
+                                    : sanitizeSsmlForDidProvider(script);
+                        }
                     } else if (canUseSsml) {
                         scriptInput = stripKnownSsmlTagsToPlainText(script);
                     }
@@ -2000,9 +2015,14 @@ public class DIDService {
                         boolean ssmlAllowed = canUseSsml;
                         String scriptInput = script;
                         if (ssmlAllowed) {
-                            scriptInput = fallbackProviderType != null && fallbackProviderType.equalsIgnoreCase("amazon")
-                                    ? sanitizeSsmlForAmazonProvider(script)
-                                    : sanitizeSsmlForDidProvider(script);
+                            boolean usingCustomVoice = fallbackProvider != null;
+                            if (usingCustomVoice) {
+                                scriptInput = sanitizeSsmlForDidProvider(script);
+                            } else {
+                                scriptInput = fallbackProviderType != null && fallbackProviderType.equalsIgnoreCase("amazon")
+                                        ? sanitizeSsmlForAmazonProvider(script)
+                                        : sanitizeSsmlForDidProvider(script);
+                            }
                         } else if (canUseSsml) {
                             scriptInput = stripKnownSsmlTagsToPlainText(script);
                         }
