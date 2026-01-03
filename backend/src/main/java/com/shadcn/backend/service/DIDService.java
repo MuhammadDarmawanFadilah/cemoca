@@ -622,7 +622,7 @@ public class DIDService {
             form.add("name", name);
             String lang = cloneVoiceLanguage == null ? "" : cloneVoiceLanguage.trim();
             if (lang.isBlank()) {
-                lang = "id";
+                lang = "english";  // Default to english if not configured
             }
             form.add("language", lang);
             form.add("file", file);
@@ -639,6 +639,7 @@ public class DIDService {
                     .block();
 
             if (response == null || response.isBlank()) {
+                logger.warn("D-ID create cloned voice: empty response");
                 return Optional.empty();
             }
 
@@ -651,6 +652,7 @@ public class DIDService {
             }
 
             if (id == null || id.isBlank()) {
+                logger.warn("D-ID create cloned voice: no voice_id in response");
                 return Optional.empty();
             }
 
@@ -658,16 +660,17 @@ public class DIDService {
             if (type == null || type.isBlank()) {
                 type = "d-id";
             }
+            logger.info("D-ID create cloned voice success: voiceId={} type={} language={}", id, type, lang);
             return Optional.of(new VoiceInfo(id, type));
         } catch (WebClientResponseException wce) {
-            logger.warn(
+            logger.error(
                     "D-ID create cloned voice failed: status={} body={}",
                     wce.getStatusCode().value(),
                     truncate(wce.getResponseBodyAsString(), 1500)
             );
             return Optional.empty();
         } catch (Exception e) {
-            logger.warn("D-ID create cloned voice failed: {}", truncate(e.getMessage(), 300));
+            logger.error("D-ID create cloned voice failed: {}", truncate(e.getMessage(), 300), e);
             return Optional.empty();
         }
     }
