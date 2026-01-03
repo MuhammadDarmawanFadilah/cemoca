@@ -106,7 +106,7 @@ public class DIDService {
     @Value("${did.tts.strict-audio-management.fail-on-clone-error:false}")
     private boolean failOnCloneError;
 
-    @Value("${did.tts.strict-audio-management.enforce-consistent-voice:true}")
+    @Value("${did.tts.strict-audio-management.enforce-consistent-voice:false}")
     private boolean enforceConsistentAudioManagementVoice;
 
     @Value("${did.tts.clone.skip-on-validation-error-minutes:1440}")
