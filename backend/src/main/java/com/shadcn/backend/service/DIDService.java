@@ -50,6 +50,8 @@ public class DIDService {
     private final Map<String, String> clonedVoiceIdCache = new ConcurrentHashMap<>();
     private final Set<String> clonedVoiceNoSample = ConcurrentHashMap.newKeySet();
 
+    private final Map<String, Object> voiceCloneLocks = new ConcurrentHashMap<>();
+
     @Value("${app.did.clips.webhook:}")
     private String clipsWebhookUrl;
 
@@ -499,57 +501,68 @@ public class DIDService {
             return Optional.empty();
         }
 
-        Optional<DIDAvatar> existing = avatarRepository.findByPresenterId(pid);
-        if (existing.isEmpty()) {
-            // Best-effort: refresh/sync so we have a DB row to store the cloned voice_id
-            try {
-                refreshPresenters();
-            } catch (Exception ignored) {
-                // ignore
+        Object lock = voiceCloneLocks.computeIfAbsent(pid, k -> new Object());
+        synchronized (lock) {
+            String cachedAfterLock = clonedVoiceIdCache.get(pid);
+            if (cachedAfterLock != null && !cachedAfterLock.isBlank()) {
+                return Optional.of(cachedAfterLock);
             }
-            existing = avatarRepository.findByPresenterId(pid);
-            if (existing.isEmpty()) {
+            if (clonedVoiceNoSample.contains(pid)) {
                 return Optional.empty();
             }
-        }
 
-        DIDAvatar avatar = existing.get();
-        if (avatar.getVoiceId() != null && !avatar.getVoiceId().trim().isBlank()
-            && avatar.getVoiceType() != null
-            && avatar.getVoiceType().trim().toLowerCase(Locale.ROOT).startsWith(CUSTOM_VOICE_PREFIX)) {
-            String vid = avatar.getVoiceId().trim();
-            if (!vid.isBlank()) {
-                clonedVoiceIdCache.put(pid, vid);
+            Optional<DIDAvatar> existing = avatarRepository.findByPresenterId(pid);
+            if (existing.isEmpty()) {
+                // Best-effort: refresh/sync so we have a DB row to store the cloned voice_id
+                try {
+                    refreshPresenters();
+                } catch (Exception ignored) {
+                    // ignore
+                }
+                existing = avatarRepository.findByPresenterId(pid);
+                if (existing.isEmpty()) {
+                    return Optional.empty();
+                }
             }
-            return Optional.of(vid);
-        }
 
-        if (shouldSkipVoiceClone(pid)) {
-            return Optional.empty();
-        }
-
-        Optional<ByteArrayResource> sample = loadAvatarSampleFromAudioManagement(pid, avatarName.trim());
-        if (sample.isEmpty()) {
-            clonedVoiceNoSample.add(pid);
-            return Optional.empty();
-        }
-
-        Optional<VoiceInfo> created = createClonedVoice(sample.get(), avatarName.trim(), pid);
-        Optional<String> voiceId = created.map(v -> v.voiceId);
-        created.ifPresent(v -> {
-            avatar.setVoiceId(v.voiceId);
-            String type = v.voiceType;
-            if (type == null || type.isBlank()) {
-                type = "d-id";
+            DIDAvatar avatar = existing.get();
+            if (avatar.getVoiceId() != null && !avatar.getVoiceId().trim().isBlank()
+                && avatar.getVoiceType() != null
+                && avatar.getVoiceType().trim().toLowerCase(Locale.ROOT).startsWith(CUSTOM_VOICE_PREFIX)) {
+                String vid = avatar.getVoiceId().trim();
+                if (!vid.isBlank()) {
+                    clonedVoiceIdCache.put(pid, vid);
+                }
+                return Optional.of(vid);
             }
-            avatar.setVoiceType(CUSTOM_VOICE_PREFIX + normalizeVoiceType(type));
-            avatarRepository.save(avatar);
 
-            if (v.voiceId != null && !v.voiceId.trim().isBlank()) {
-                clonedVoiceIdCache.put(pid, v.voiceId.trim());
+            if (shouldSkipVoiceClone(pid)) {
+                return Optional.empty();
             }
-        });
-        return voiceId;
+
+            Optional<ByteArrayResource> sample = loadAvatarSampleFromAudioManagement(pid, avatarName.trim());
+            if (sample.isEmpty()) {
+                clonedVoiceNoSample.add(pid);
+                return Optional.empty();
+            }
+
+            Optional<VoiceInfo> created = createClonedVoice(sample.get(), avatarName.trim(), pid);
+            Optional<String> voiceId = created.map(v -> v.voiceId);
+            created.ifPresent(v -> {
+                avatar.setVoiceId(v.voiceId);
+                String type = v.voiceType;
+                if (type == null || type.isBlank()) {
+                    type = "d-id";
+                }
+                avatar.setVoiceType(CUSTOM_VOICE_PREFIX + normalizeVoiceType(type));
+                avatarRepository.save(avatar);
+
+                if (v.voiceId != null && !v.voiceId.trim().isBlank()) {
+                    clonedVoiceIdCache.put(pid, v.voiceId.trim());
+                }
+            });
+            return voiceId;
+        }
     }
 
     private boolean shouldSkipVoiceClone(String presenterId) {
@@ -1367,11 +1380,11 @@ public class DIDService {
 
             Optional<String> ensured = ensureClonedVoiceIdFromLocalSample(pid, trimmedName);
             if (hasSample && (ensured.isEmpty() || ensured.get().isBlank()) && strictAudioManagementVoice
-                    && (failOnCloneError || enforceConsistentAudioManagementVoice)) {
+                    && failOnCloneError) {
                 throw new RuntimeException("Audio-management sample exists but voice cloning failed for presenterId=" + pid);
             }
         } catch (Exception e) {
-            if (strictAudioManagementVoice && (failOnCloneError || enforceConsistentAudioManagementVoice)) {
+            if (strictAudioManagementVoice && failOnCloneError) {
                 if (e instanceof RuntimeException re) {
                     throw re;
                 }
@@ -1444,7 +1457,7 @@ public class DIDService {
                         return provider;
                     }
 
-                    if (strictAudioManagementVoice && (failOnCloneError || enforceConsistentAudioManagementVoice)) {
+                    if (strictAudioManagementVoice && failOnCloneError) {
                         throw new RuntimeException("Audio-management sample exists but voice cloning failed for presenterId=" + pid);
                     }
 
@@ -1460,7 +1473,7 @@ public class DIDService {
             return null;
             
         } catch (Exception e) {
-            if (strictAudioManagementVoice && (failOnCloneError || enforceConsistentAudioManagementVoice)) {
+            if (strictAudioManagementVoice && failOnCloneError) {
                 if (e instanceof RuntimeException re) {
                     throw re;
                 }
@@ -1758,7 +1771,7 @@ public class DIDService {
 
                     String scriptInput = script;
                     if (ssmlAllowed) {
-                        scriptInput = providerType == null || providerType.equalsIgnoreCase("amazon")
+                        scriptInput = providerType != null && providerType.equalsIgnoreCase("amazon")
                                 ? sanitizeSsmlForAmazonProvider(script)
                                 : sanitizeSsmlForDidProvider(script);
                     } else if (canUseSsml) {
@@ -1806,7 +1819,7 @@ public class DIDService {
 
                         String scriptInput = script;
                         if (ssmlAllowed) {
-                            scriptInput = providerType == null || providerType.equalsIgnoreCase("amazon")
+                            scriptInput = providerType != null && providerType.equalsIgnoreCase("amazon")
                                     ? sanitizeSsmlForAmazonProvider(script)
                                     : sanitizeSsmlForDidProvider(script);
                         } else if (canUseSsml) {
@@ -1941,7 +1954,7 @@ public class DIDService {
                     boolean ssmlAllowed = canUseSsml && providerAllowsSsml;
                     String scriptInput = script;
                     if (ssmlAllowed) {
-                        scriptInput = providerType == null || providerType.equalsIgnoreCase("amazon")
+                        scriptInput = providerType != null && providerType.equalsIgnoreCase("amazon")
                                 ? sanitizeSsmlForAmazonProvider(script)
                                 : sanitizeSsmlForDidProvider(script);
                     } else if (canUseSsml) {
@@ -1998,7 +2011,7 @@ public class DIDService {
                         boolean ssmlAllowed = canUseSsml && providerAllowsSsml;
                         String scriptInput = script;
                         if (ssmlAllowed) {
-                            scriptInput = fallbackProviderType == null || fallbackProviderType.equalsIgnoreCase("amazon")
+                            scriptInput = fallbackProviderType != null && fallbackProviderType.equalsIgnoreCase("amazon")
                                     ? sanitizeSsmlForAmazonProvider(script)
                                     : sanitizeSsmlForDidProvider(script);
                         } else if (canUseSsml) {
