@@ -1905,7 +1905,32 @@ public class DIDService {
                         scriptObj.put("ssml", true);
                     }
 
-                    Map<String, Object> provider = sanitizeProviderForScenes(resolveProviderForPresenter(avatarId));
+                    Map<String, Object> provider;
+                    if (strictAudioManagementVoice && canUseSsml) {
+                        String ssmlVoiceId = voiceId;
+                        if (ssmlVoiceId == null || ssmlVoiceId.isBlank()) {
+                            try {
+                                DIDPresenter cachedAvatar = presenterCache.get(avatarId);
+                                if (cachedAvatar != null && cachedAvatar.getVoice_id() != null && !cachedAvatar.getVoice_id().isBlank()) {
+                                    ssmlVoiceId = cachedAvatar.getVoice_id().trim();
+                                }
+                            } catch (Exception ignored) {
+                                // ignore
+                            }
+                        }
+                        if (ssmlVoiceId == null || ssmlVoiceId.isBlank()) {
+                            ssmlVoiceId = fetchExpressAvatarVoiceIdById(avatarId);
+                        }
+                        if (ssmlVoiceId == null || ssmlVoiceId.isBlank()) {
+                            throw new RuntimeException("SSML requires Express Avatar voice_id; missing for avatarId=" + avatarId);
+                        }
+                        provider = new HashMap<>();
+                        provider.put("type", "elevenlabs");
+                        provider.put("voice_id", ssmlVoiceId.trim());
+                        provider = sanitizeProviderForScenes(provider);
+                    } else {
+                        provider = sanitizeProviderForScenes(resolveProviderForPresenter(avatarId));
+                    }
 
                     String providerType = provider == null ? null : String.valueOf(provider.get("type"));
                     boolean ssmlAllowed = canUseSsml;
@@ -2141,6 +2166,43 @@ public class DIDService {
                     if (canUseSsml) {
                         scriptObj.put("ssml", true);
                     }
+
+                    if (strictAudioManagementVoice && canUseSsml) {
+                        String ssmlVoiceId = null;
+                        try {
+                            Optional<DIDAvatar> dbAvatar = avatarRepository.findByPresenterId(presenterId);
+                            if (dbAvatar.isPresent() && dbAvatar.get().getVoiceId() != null && !dbAvatar.get().getVoiceId().isBlank()) {
+                                ssmlVoiceId = dbAvatar.get().getVoiceId().trim();
+                            }
+                        } catch (Exception ignored) {
+                            // ignore
+                        }
+
+                        if (ssmlVoiceId == null || ssmlVoiceId.isBlank()) {
+                            try {
+                                DIDPresenter cached = presenterCache.get(presenterId);
+                                if (cached != null && cached.getVoice_id() != null && !cached.getVoice_id().isBlank()) {
+                                    ssmlVoiceId = cached.getVoice_id().trim();
+                                }
+                            } catch (Exception ignored) {
+                                // ignore
+                            }
+                        }
+
+                        if (ssmlVoiceId == null || ssmlVoiceId.isBlank()) {
+                            ssmlVoiceId = fetchExpressAvatarVoiceIdById(presenterId);
+                        }
+
+                        if (ssmlVoiceId == null || ssmlVoiceId.isBlank()) {
+                            throw new RuntimeException("SSML requires Express Avatar voice_id; missing for presenterId=" + presenterId);
+                        }
+
+                        Map<String, Object> ssmlProvider = new HashMap<>();
+                        ssmlProvider.put("type", "elevenlabs");
+                        ssmlProvider.put("voice_id", ssmlVoiceId.trim());
+                        provider = ssmlProvider;
+                    }
+
                     String providerType = provider == null ? null : String.valueOf(provider.get("type"));
                     boolean ssmlAllowed = canUseSsml;
                     String scriptInput = script;
@@ -2815,8 +2877,9 @@ public class DIDService {
         // Voice selection priority
         if (strictAudioManagementVoice) {
             result.put("priority", List.of(
-                Map.of("order", 1, "type", "amazon", "description", "Amazon Polly voice provider (gender-based voice_id selection)"),
-                Map.of("order", 2, "type", "audio-management-required", "description", "Audio-management entry is required; system fails loudly if missing")
+                Map.of("order", 1, "type", "elevenlabs", "description", "SSML uses ElevenLabs provider with Express Avatar voice_id (SSML supported by D-ID)"),
+                Map.of("order", 2, "type", "amazon", "description", "Non-SSML uses Amazon provider (voice_id Joanna/Matthew)"),
+                Map.of("order", 3, "type", "audio-management-required", "description", "Audio-management entry is required; system fails loudly if missing")
             ));
         } else {
             result.put("priority", List.of(
