@@ -106,6 +106,9 @@ public class DIDService {
     @Value("${did.tts.strict-audio-management.fail-on-clone-error:false}")
     private boolean failOnCloneError;
 
+    @Value("${did.tts.strict-audio-management.enforce-consistent-voice:true}")
+    private boolean enforceConsistentAudioManagementVoice;
+
     @Value("${did.tts.clone.skip-on-validation-error-minutes:1440}")
     private long cloneSkipOnValidationErrorMinutes;
 
@@ -1363,17 +1366,31 @@ public class DIDService {
             }
 
             Optional<String> ensured = ensureClonedVoiceIdFromLocalSample(pid, trimmedName);
-            if (hasSample && (ensured.isEmpty() || ensured.get().isBlank()) && strictAudioManagementVoice && failOnCloneError) {
+            if (hasSample && (ensured.isEmpty() || ensured.get().isBlank()) && strictAudioManagementVoice
+                    && (failOnCloneError || enforceConsistentAudioManagementVoice)) {
                 throw new RuntimeException("Audio-management sample exists but voice cloning failed for presenterId=" + pid);
             }
         } catch (Exception e) {
-            if (strictAudioManagementVoice && failOnCloneError) {
+            if (strictAudioManagementVoice && (failOnCloneError || enforceConsistentAudioManagementVoice)) {
                 if (e instanceof RuntimeException re) {
                     throw re;
                 }
                 throw new RuntimeException(e);
             }
         }
+    }
+
+    private String normalizeCustomProviderTypeOrDefault(String rawType) {
+        String providerType = normalizeVoiceType(rawType);
+        if (providerType == null || providerType.isBlank()) {
+            return "d-id";
+        }
+        String v = providerType.trim().toLowerCase(Locale.ROOT);
+        return switch (v) {
+            case "d-id", "did" -> "d-id";
+            case "amazon" -> "amazon";
+            default -> "d-id";
+        };
     }
 
     private Map<String, Object> resolveProviderForPresenter(String presenterId) {
@@ -1388,37 +1405,46 @@ public class DIDService {
                 DIDAvatar a = db.get();
                 String presenterName = a.getPresenterName();
 
+                Optional<AvatarAudio> audioEntry = findAudioManagementEntry(pid, presenterName);
+                boolean hasAudioManagementSample = audioEntry.isPresent();
+
                 // Priority 1: Use existing custom/cloned voice saved on the avatar (from audio-management)
                 String voiceId = a.getVoiceId();
                 String rawType = a.getVoiceType();
                 if (voiceId != null && !voiceId.isBlank() && rawType != null && !rawType.isBlank()
                         && rawType.trim().toLowerCase(Locale.ROOT).startsWith(CUSTOM_VOICE_PREFIX)) {
-                    String providerType = normalizeVoiceType(rawType);
-                    if (providerType == null
-                            || !(providerType.equalsIgnoreCase("d-id") || providerType.equalsIgnoreCase("did"))) {
-                        return null;
-                    }
+                    String providerType = normalizeCustomProviderTypeOrDefault(rawType);
                     Map<String, Object> provider = new HashMap<>();
-                    provider.put("type", "d-id");
+                    provider.put("type", providerType);
                     provider.put("voice_id", voiceId.trim());
-                    logger.info("Using audio-management voice for presenter {}: type=d-id voice_id={}", pid, voiceId.trim());
+                    logger.info("Using audio-management voice for presenter {}: type={} voice_id={}", pid, providerType, voiceId.trim());
                     return provider;
                 }
 
                 // Priority 2: If audio-management has a sample, ensure a cloned/custom voice exists and use it
-                Optional<AvatarAudio> audioEntry = findAudioManagementEntry(pid, presenterName);
-                if (audioEntry.isPresent()) {
+                if (hasAudioManagementSample) {
                     String cloneName = (presenterName == null || presenterName.isBlank()) ? pid : presenterName.trim();
                     Optional<String> ensuredVoiceId = ensureClonedVoiceIdFromLocalSample(pid, cloneName);
                     if (ensuredVoiceId.isPresent() && !ensuredVoiceId.get().isBlank()) {
+                        // Reload type from DB after ensure, so we use the correct provider type if available
+                        String ensuredType = "d-id";
+                        try {
+                            Optional<DIDAvatar> refreshed = avatarRepository.findByPresenterId(pid);
+                            if (refreshed.isPresent() && refreshed.get().getVoiceType() != null
+                                    && refreshed.get().getVoiceType().trim().toLowerCase(Locale.ROOT).startsWith(CUSTOM_VOICE_PREFIX)) {
+                                ensuredType = normalizeCustomProviderTypeOrDefault(refreshed.get().getVoiceType());
+                            }
+                        } catch (Exception ignored) {
+                            // ignore
+                        }
                         Map<String, Object> provider = new HashMap<>();
-                        provider.put("type", "d-id");
+                        provider.put("type", ensuredType);
                         provider.put("voice_id", ensuredVoiceId.get().trim());
-                        logger.info("Using audio-management voice (ensured) for presenter {}: type=d-id voice_id={}", pid, ensuredVoiceId.get().trim());
+                        logger.info("Using audio-management voice (ensured) for presenter {}: type={} voice_id={}", pid, ensuredType, ensuredVoiceId.get().trim());
                         return provider;
                     }
 
-                    if (strictAudioManagementVoice && failOnCloneError) {
+                    if (strictAudioManagementVoice && (failOnCloneError || enforceConsistentAudioManagementVoice)) {
                         throw new RuntimeException("Audio-management sample exists but voice cloning failed for presenterId=" + pid);
                     }
 
@@ -1434,7 +1460,7 @@ public class DIDService {
             return null;
             
         } catch (Exception e) {
-            if (strictAudioManagementVoice && failOnCloneError) {
+            if (strictAudioManagementVoice && (failOnCloneError || enforceConsistentAudioManagementVoice)) {
                 if (e instanceof RuntimeException re) {
                     throw re;
                 }
