@@ -802,11 +802,11 @@ public class DIDService {
     }
 
     private static final java.util.regex.Pattern SSML_KNOWN_TAG_DETECT = java.util.regex.Pattern.compile(
-            "(?is)<\\s*(speak|break|p|s|prosody|emphasis|amazon:effect|say-as|sub|lang|phoneme)\\b"
+            "(?is)<\\s*(speak|break|p|s|w|prosody|emphasis|amazon:effect|amazon:domain|say-as|sub|lang|phoneme)\\b"
     );
 
     private static final java.util.regex.Pattern SSML_KNOWN_TAG_STRIP = java.util.regex.Pattern.compile(
-            "(?is)</?\\s*(speak|break|p|s|prosody|emphasis|amazon:effect|say-as|sub|lang|phoneme)\\b[^>]*>"
+            "(?is)</?\\s*(speak|break|p|s|w|prosody|emphasis|amazon:effect|amazon:domain|say-as|sub|lang|phoneme)\\b[^>]*>"
     );
 
         private static final java.util.regex.Pattern SSML_AMAZON_EFFECT_STRIP = java.util.regex.Pattern.compile(
@@ -845,6 +845,24 @@ public class DIDService {
             return input;
         }
         return SSML_AMAZON_EFFECT_STRIP.matcher(input).replaceAll("");
+    }
+
+    private String sanitizeSsmlForAmazonProvider(String input) {
+        if (input == null || input.isBlank()) {
+            return input;
+        }
+        if (input.indexOf('<') < 0) {
+            return input;
+        }
+
+        try {
+            return input.replaceAll(
+                    "(?is)</?\\s*(?!speak\\b|break\\b|p\\b|s\\b|w\\b|prosody\\b|emphasis\\b|amazon:effect\\b|amazon:domain\\b|say-as\\b|sub\\b|lang\\b|phoneme\\b)[a-zA-Z0-9:_-]+\\b[^>]*>",
+                    ""
+            );
+        } catch (Exception e) {
+            return input;
+        }
     }
     
     /**
@@ -1403,6 +1421,10 @@ public class DIDService {
                     if (strictAudioManagementVoice && failOnCloneError) {
                         throw new RuntimeException("Audio-management sample exists but voice cloning failed for presenterId=" + pid);
                     }
+
+                    // Do NOT fall back to a different voice/provider when audio-management exists.
+                    // Returning null keeps the selected Express Avatar's native voice.
+                    return null;
                 }
             }
             
@@ -1567,6 +1589,15 @@ public class DIDService {
             return scene;
         }
 
+        // If audio-management exists for this presenter, never fall back to another presenter_id.
+        try {
+            if (strictAudioManagementVoice && findAudioManagementEntry(avatarId, null).isPresent()) {
+                return scene;
+            }
+        } catch (Exception ignored) {
+            // ignore
+        }
+
         Object errObj = scene.get("error");
         String err = errObj == null ? "" : errObj.toString();
         String errLower = err.toLowerCase(Locale.ROOT);
@@ -1685,7 +1716,7 @@ public class DIDService {
                     Map<String, Object> provider = resolveProviderForPresenter(avatarId);
                     String providerType = provider == null ? null : String.valueOf(provider.get("type"));
                     boolean ssmlAllowed = canUseSsml && providerType != null
-                        && (providerType.equalsIgnoreCase("d-id") || providerType.equalsIgnoreCase("did"));
+                        && (providerType.equalsIgnoreCase("d-id") || providerType.equalsIgnoreCase("did") || providerType.equalsIgnoreCase("amazon"));
                     
                     // Log the voice configuration being used
                     if (provider != null) {
@@ -1698,7 +1729,9 @@ public class DIDService {
 
                     String scriptInput = script;
                     if (ssmlAllowed) {
-                        scriptInput = sanitizeSsmlForDidProvider(script);
+                        scriptInput = providerType != null && providerType.equalsIgnoreCase("amazon")
+                                ? sanitizeSsmlForAmazonProvider(script)
+                                : sanitizeSsmlForDidProvider(script);
                     } else if (canUseSsml) {
                         scriptInput = stripKnownSsmlTagsToPlainText(script);
                     }
@@ -1737,11 +1770,13 @@ public class DIDService {
                         Map<String, Object> provider = resolveProviderForPresenter(avatarId);
                         String providerType = provider == null ? null : String.valueOf(provider.get("type"));
                         boolean ssmlAllowed = canUseSsml && providerType != null
-                            && (providerType.equalsIgnoreCase("d-id") || providerType.equalsIgnoreCase("did"));
+                            && (providerType.equalsIgnoreCase("d-id") || providerType.equalsIgnoreCase("did") || providerType.equalsIgnoreCase("amazon"));
 
                         String scriptInput = script;
                         if (ssmlAllowed) {
-                            scriptInput = sanitizeSsmlForDidProvider(script);
+                            scriptInput = providerType != null && providerType.equalsIgnoreCase("amazon")
+                                    ? sanitizeSsmlForAmazonProvider(script)
+                                    : sanitizeSsmlForDidProvider(script);
                         } else if (canUseSsml) {
                             scriptInput = stripKnownSsmlTagsToPlainText(script);
                         }
@@ -1868,10 +1903,12 @@ public class DIDService {
                     boolean canUseSsml = isSsmlInput(script);
                     String providerType = provider == null ? null : String.valueOf(provider.get("type"));
                     boolean ssmlAllowed = canUseSsml && providerType != null
-                            && (providerType.equalsIgnoreCase("d-id") || providerType.equalsIgnoreCase("did"));
+                            && (providerType.equalsIgnoreCase("d-id") || providerType.equalsIgnoreCase("did") || providerType.equalsIgnoreCase("amazon"));
                     String scriptInput = script;
                     if (ssmlAllowed) {
-                        scriptInput = sanitizeSsmlForDidProvider(script);
+                        scriptInput = providerType != null && providerType.equalsIgnoreCase("amazon")
+                                ? sanitizeSsmlForAmazonProvider(script)
+                                : sanitizeSsmlForDidProvider(script);
                     } else if (canUseSsml) {
                         scriptInput = stripKnownSsmlTagsToPlainText(script);
                     }
@@ -1920,10 +1957,12 @@ public class DIDService {
                         boolean canUseSsml = isSsmlInput(script);
                         String fallbackProviderType = fallbackProvider == null ? null : String.valueOf(fallbackProvider.get("type"));
                         boolean ssmlAllowed = canUseSsml && fallbackProviderType != null
-                            && (fallbackProviderType.equalsIgnoreCase("d-id") || fallbackProviderType.equalsIgnoreCase("did"));
+                            && (fallbackProviderType.equalsIgnoreCase("d-id") || fallbackProviderType.equalsIgnoreCase("did") || fallbackProviderType.equalsIgnoreCase("amazon"));
                         String scriptInput = script;
                         if (ssmlAllowed) {
-                            scriptInput = sanitizeSsmlForDidProvider(script);
+                            scriptInput = fallbackProviderType != null && fallbackProviderType.equalsIgnoreCase("amazon")
+                                    ? sanitizeSsmlForAmazonProvider(script)
+                                    : sanitizeSsmlForDidProvider(script);
                         } else if (canUseSsml) {
                             scriptInput = stripKnownSsmlTagsToPlainText(script);
                         }
