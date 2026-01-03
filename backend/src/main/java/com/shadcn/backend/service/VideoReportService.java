@@ -351,7 +351,6 @@ public class VideoReportService {
      * D-ID API supports "tens of thousands of requests in parallel" (100 FPS rendering)
      */
     @Async
-    @Transactional
     public void startVideoGeneration(Long reportId) {
         VideoReport report = videoReportRepository.findById(reportId).orElse(null);
         if (report == null) {
@@ -516,7 +515,6 @@ public class VideoReportService {
     /**
      * Generate video for a single item
      */
-    @Transactional
     public VideoReportItem generateSingleVideo(Long reportId, Long itemId) {
         VideoReportItem item = videoReportItemRepository.findByIdAndVideoReportId(itemId, reportId);
         if (item == null) {
@@ -912,7 +910,6 @@ public class VideoReportService {
     /**
      * Regenerate single video item and auto-send WA when successful
      */
-    @Transactional
     public VideoReportItem regenerateVideo(Long reportId, Long itemId) {
         VideoReportItem item = videoReportItemRepository.findByIdAndVideoReportId(itemId, reportId);
         if (item == null) {
