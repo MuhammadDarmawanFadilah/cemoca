@@ -299,6 +299,15 @@ public class VideoReportController {
     }
 
     /**
+     * Get voice policy information for video generation.
+     * Returns the voice selection priority and how to configure custom voices.
+     */
+    @GetMapping("/voices")
+    public ResponseEntity<Map<String, Object>> getVoiceConfiguration() {
+        return ResponseEntity.ok(didService.getVoicePolicyInfo());
+    }
+
+    /**
      * Download Excel template
      */
     @GetMapping("/template-excel")

@@ -215,24 +215,8 @@ public class VideoReportService {
             new ThreadPoolExecutor.AbortPolicy()
         );
 
-        int workParallelism = Math.max(1, videoGenerationParallelism);
-        this.videoWorkExecutor = new ThreadPoolExecutor(
-            workParallelism,
-            workParallelism,
-            0L,
-            TimeUnit.MILLISECONDS,
-            new ArrayBlockingQueue<>(Math.max(100, workParallelism * 200)),
-            new ThreadPoolExecutor.CallerRunsPolicy()
-        );
-
-        this.clipStatusExecutor = new ThreadPoolExecutor(
-            workParallelism,
-            workParallelism,
-            0L,
-            TimeUnit.MILLISECONDS,
-            new ArrayBlockingQueue<>(Math.max(200, workParallelism * 500)),
-            new ThreadPoolExecutor.CallerRunsPolicy()
-        );
+        this.videoWorkExecutor = Executors.newVirtualThreadPerTaskExecutor();
+        this.clipStatusExecutor = Executors.newVirtualThreadPerTaskExecutor();
 
         this.videoCacheHttpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(videoDownloadConnectTimeoutSeconds))
@@ -412,54 +396,62 @@ public class VideoReportService {
         ExecutorService executor = this.videoWorkExecutor;
         boolean shouldShutdown = false;
         if (executor == null) {
-            executor = Executors.newFixedThreadPool(videoGenerationParallelism);
+            executor = Executors.newVirtualThreadPerTaskExecutor();
             shouldShutdown = true;
         }
 
         final ExecutorService finalExecutor = executor;
+        final int progressUpdateEvery = 50;
+        final java.util.concurrent.atomic.AtomicInteger processedInThisRun = new java.util.concurrent.atomic.AtomicInteger(0);
+        final java.util.concurrent.atomic.AtomicInteger failedInThisRun = new java.util.concurrent.atomic.AtomicInteger(0);
+        final java.util.concurrent.atomic.AtomicInteger lastProgressSavedAt = new java.util.concurrent.atomic.AtomicInteger(0);
         
         try {
-            // Process in batches to save progress periodically
-            List<List<VideoReportItem>> batches = splitIntoBatches(pendingItems, videoGenerationBatchSize);
-            int batchNumber = 0;
-            
-            for (List<VideoReportItem> batch : batches) {
-                batchNumber++;
-                logger.info("[VIDEO GEN] Processing batch {}/{} ({} items)", batchNumber, batches.size(), batch.size());
-                
-                // Submit all items in batch for parallel processing
-                List<CompletableFuture<VideoReportItem>> futures = batch.stream()
-                    .map(item -> CompletableFuture.supplyAsync(() -> processVideoItem(item, backgroundUrl), finalExecutor))
-                        .collect(Collectors.toList());
-                
-                CompletableFuture.allOf(futures.toArray(CompletableFuture[]::new)).join();
-                
-                // Update report progress
+            // Submit ALL items at once; D-ID handles the real rendering load.
+            List<CompletableFuture<Void>> futures = pendingItems.stream()
+                .map(item -> CompletableFuture
+                    .supplyAsync(() -> processVideoItem(item, backgroundUrl), finalExecutor)
+                    .thenAccept(updated -> {
+                        int processedNow = processedInThisRun.incrementAndGet();
+                        if ("FAILED".equals(updated.getStatus())) {
+                            failedInThisRun.incrementAndGet();
+                        }
+
+                        int prev = lastProgressSavedAt.get();
+                        if ((processedNow - prev) >= progressUpdateEvery && lastProgressSavedAt.compareAndSet(prev, processedNow)) {
+                            try {
+                                VideoReport currentReport = videoReportRepository.findById(reportId).orElse(null);
+                                if (currentReport != null) {
+                                    int done = videoReportItemRepository.countNonExcludedByReportIdAndStatus(reportId, "DONE");
+                                    int failed = videoReportItemRepository.countNonExcludedByReportIdAndStatus(reportId, "FAILED");
+
+                                    currentReport.setSuccessCount(done);
+                                    currentReport.setFailedCount(failed);
+                                    currentReport.setProcessedRecords(done + failed);
+                                    videoReportRepository.save(currentReport);
+                                }
+                            } catch (Exception ignore) {
+                            }
+                        }
+                    }))
+                .collect(Collectors.toList());
+
+            CompletableFuture.allOf(futures.toArray(CompletableFuture[]::new)).join();
+
+            // Final progress update
+            try {
                 VideoReport currentReport = videoReportRepository.findById(reportId).orElse(null);
                 if (currentReport != null) {
-                    int totalEligible = videoReportItemRepository.countNonExcludedByReportId(reportId);
-                    int pending = videoReportItemRepository.countNonExcludedByReportIdAndStatus(reportId, "PENDING");
-                    int processed = Math.max(0, totalEligible - pending);
+                    int done = videoReportItemRepository.countNonExcludedByReportIdAndStatus(reportId, "DONE");
                     int failed = videoReportItemRepository.countNonExcludedByReportIdAndStatus(reportId, "FAILED");
-                    
-                    currentReport.setProcessedRecords(processed);
+
+                    currentReport.setSuccessCount(done);
                     currentReport.setFailedCount(failed);
+                    currentReport.setProcessedRecords(done + failed);
                     videoReportRepository.save(currentReport);
-                    
-                    logger.info("[VIDEO GEN] Batch {}/{} complete - Processed: {}, Failed: {}", 
-                            batchNumber, batches.size(), processed, failed);
                 }
-                
-                // Small delay between batches
-                if (batchNumber < batches.size()) {
-                    if (videoGenerationBatchDelayMs > 0) {
-                        Thread.sleep(videoGenerationBatchDelayMs);
-                    }
-                }
+            } catch (Exception ignore) {
             }
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            logger.error("[VIDEO GEN] Interrupted during video generation: {}", e.getMessage());
         } finally {
             if (shouldShutdown) {
                 finalExecutor.shutdown();
@@ -519,18 +511,6 @@ public class VideoReportService {
 
         videoReportItemRepository.save(item);
         return item;
-    }
-    
-    /**
-     * Split list into batches
-     */
-    private <T> List<List<T>> splitIntoBatches(List<T> items, int batchSize) {
-        List<List<T>> batches = new ArrayList<>();
-        for (int i = 0; i < items.size(); i += batchSize) {
-            int end = Math.min(i + batchSize, items.size());
-            batches.add(new ArrayList<>(items.subList(i, end)));
-        }
-        return batches;
     }
     
     /**
@@ -1327,7 +1307,7 @@ public class VideoReportService {
         ExecutorService executor = this.clipStatusExecutor;
         boolean shouldShutdown = false;
         if (executor == null) {
-            executor = Executors.newFixedThreadPool(videoGenerationParallelism);
+            executor = Executors.newVirtualThreadPerTaskExecutor();
             shouldShutdown = true;
         }
 

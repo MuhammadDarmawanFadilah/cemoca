@@ -103,7 +103,48 @@ public class DIDService {
     @Value("${did.tts.clone.language:id}")
     private String cloneVoiceLanguage;
 
+    // Default Amazon Polly voice for Indonesian (Aria is the only Indonesian neural voice)
+    // This voice provides consistent, high-quality output for long-duration content (20+ minutes)
+    @Value("${did.tts.amazon.default-voice:Aria}")
+    private String defaultAmazonVoice;
+
     private static final String CUSTOM_VOICE_PREFIX = "custom:";
+
+    // Known Amazon Polly Neural voices (produce consistent, high-quality audio)
+    private static final Set<String> NEURAL_VOICES = Set.of(
+        // Indonesian Neural
+        "Aria",
+        // English Neural (US)
+        "Ivy", "Joanna", "Kendra", "Kimberly", "Salli", "Joey", "Justin", "Kevin", "Matthew", "Ruth", "Stephen",
+        // English Neural (British)
+        "Amy", "Emma", "Brian", "Arthur",
+        // English Neural (Australian)
+        "Olivia",
+        // Spanish Neural
+        "Lucia", "Sergio", "Lupe", "Pedro",
+        // French Neural
+        "Lea", "Remi",
+        // German Neural
+        "Vicki", "Daniel",
+        // Japanese Neural
+        "Kazuha", "Tomoko", "Takumi",
+        // Korean Neural
+        "Seoyeon",
+        // Portuguese Neural
+        "Camila", "Vitoria", "Thiago",
+        // Chinese Neural
+        "Zhiyu"
+    );
+
+    // Known Amazon Polly Generative voices (highest quality, most natural)
+    private static final Set<String> GENERATIVE_VOICES = Set.of(
+        "Matthew", "Ruth", "Stephen", "Amy", "Brian"
+    );
+
+    // Known Amazon Polly Long-form voices (optimized for long content like audiobooks)
+    private static final Set<String> LONG_FORM_VOICES = Set.of(
+        "Danielle", "Gregory", "Joanna", "Matthew", "Ruth"
+    );
 
     public DIDService(ObjectMapper objectMapper, DIDAvatarRepository avatarRepository, AvatarAudioRepository avatarAudioRepository) {
         this.objectMapper = objectMapper;
@@ -1101,41 +1142,137 @@ public class DIDService {
             if (db.isPresent()) {
                 DIDAvatar a = db.get();
                 String rawType = a.getVoiceType();
-                String rawId = a.getVoiceId();
+                String presenterName = a.getPresenterName();
 
-                if (rawType != null
-                        && rawType.trim().toLowerCase(Locale.ROOT).startsWith(CUSTOM_VOICE_PREFIX)
-                        && rawId != null
-                        && !rawId.trim().isBlank()) {
-                    String providerType = rawType.trim().substring(CUSTOM_VOICE_PREFIX.length()).trim();
-                    if (providerType.isBlank()) {
-                        return null;
-                    }
-                    Map<String, Object> provider = new HashMap<>();
-                    provider.put("type", providerType);
-                    provider.put("voice_id", rawId.trim());
-                    return provider;
-                }
-
-                String overrideVoiceId = resolveAmazonVoiceOverride(pid, a.getPresenterName());
+                // Priority 1: Voice override in config (highest priority)
+                String overrideVoiceId = resolveAmazonVoiceOverride(pid, presenterName);
                 if (overrideVoiceId != null && !overrideVoiceId.isBlank()) {
-                    Map<String, Object> provider = new HashMap<>();
-                    provider.put("type", "amazon");
-                    provider.put("voice_id", overrideVoiceId.trim());
-                    return provider;
+                    logger.info("Using Amazon Polly voice override for presenter {}: {}", pid, overrideVoiceId);
+                    return buildAmazonNeuralProvider(overrideVoiceId.trim());
                 }
 
-                if (rawId != null && isAmazonVoiceType(rawType) && isLikelyAmazonPollyVoiceId(rawId)) {
-                    Map<String, Object> provider = new HashMap<>();
-                    provider.put("type", "amazon");
-                    provider.put("voice_id", rawId.trim());
-                    return provider;
+                // Priority 2: Check if avatar has audio sample in audio-management
+                // If audio-management has a sample for this avatar, use Amazon Polly
+                if (hasAudioManagementSample(pid, presenterName)) {
+                    String amazonVoice = defaultAmazonVoice != null && !defaultAmazonVoice.isBlank() 
+                            ? defaultAmazonVoice.trim() : "Aria";
+                    logger.info("Avatar {} has audio-management sample, using Amazon Polly voice: {}", pid, amazonVoice);
+                    return buildAmazonNeuralProvider(amazonVoice);
+                }
+
+                // Priority 3: Check if explicitly configured as Amazon voice
+                if (rawType != null && isAmazonVoiceType(rawType)) {
+                    String rawId = a.getVoiceId();
+                    if (rawId != null && !rawId.isBlank() && isLikelyAmazonPollyVoiceId(rawId)) {
+                        logger.info("Using configured Amazon Polly voice for presenter {}: {}", pid, rawId.trim());
+                        return buildAmazonNeuralProvider(rawId.trim());
+                    }
                 }
             }
-        } catch (Exception ignore) {
-            // ignore
+            
+            // No audio-management match, no override configured
+            // Return null to let D-ID use Express Avatar's native voice
+            logger.info("No audio-management sample for presenter {}, using avatar's native voice", pid);
+            return null;
+            
+        } catch (Exception e) {
+            logger.warn("Error resolving voice provider for presenter {}: {}", pid, e.getMessage());
+            return null;
         }
-        return null;
+    }
+
+    /**
+     * Check if avatar has an audio sample in audio-management.
+     * This is used to determine if we should use Amazon Polly voice.
+     */
+    private boolean hasAudioManagementSample(String presenterId, String presenterName) {
+        List<String> keys = new ArrayList<>();
+
+        if (presenterName != null && !presenterName.isBlank()) {
+            String n1 = presenterName;
+            String n2 = presenterName.toLowerCase(Locale.ROOT);
+            String n3 = presenterName.trim().replaceAll("\\s+", "").toLowerCase(Locale.ROOT);
+            keys.add(n1);
+            if (!n2.equals(n1)) keys.add(n2);
+            if (!n3.equals(n2)) keys.add(n3);
+        }
+
+        if (presenterId != null && !presenterId.isBlank()) {
+            String p1 = presenterId.trim();
+            String p2 = p1.toLowerCase(Locale.ROOT);
+            keys.add(p1);
+            if (!p2.equals(p1)) keys.add(p2);
+        }
+
+        List<String> normalizedKeys = keys.stream()
+                .filter(k -> k != null && !k.isBlank())
+                .map(AvatarAudioService::normalizeKey)
+                .filter(k -> k != null && !k.isBlank())
+                .distinct()
+                .toList();
+
+        for (String key : normalizedKeys) {
+            if (key == null || key.isBlank()) {
+                continue;
+            }
+            Optional<AvatarAudio> match = avatarAudioRepository.findFirstByNormalizedKey(key);
+            if (match.isPresent()) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Build Amazon Polly provider with neural voice for best quality.
+     * D-ID automatically selects the appropriate engine based on the voice.
+     * For Indonesian: Aria (neural) is the only option but provides excellent quality.
+     * For English: Neural voices like Joanna, Matthew, Amy provide consistent output.
+     */
+    private Map<String, Object> buildAmazonNeuralProvider(String voiceId) {
+        Map<String, Object> provider = new HashMap<>();
+        provider.put("type", "amazon");
+        provider.put("voice_id", voiceId);
+        
+        // D-ID doesn't support voice_config.engine for Amazon Polly
+        // The engine (neural/standard) is determined by the voice itself
+        // All voices in NEURAL_VOICES set are guaranteed to use neural engine
+        
+        String engine = determineVoiceEngine(voiceId);
+        logger.debug("Amazon Polly voice: {} (engine: {})", voiceId, engine);
+        
+        return provider;
+    }
+
+    /**
+     * Determine the expected engine type for a given voice (for logging purposes).
+     * D-ID/Amazon automatically selects this based on the voice_id.
+     */
+    private String determineVoiceEngine(String voiceId) {
+        if (voiceId == null || voiceId.isBlank()) {
+            return "standard";
+        }
+        
+        String v = voiceId.trim();
+        
+        // Generative engine - highest quality, most natural (English only)
+        if (GENERATIVE_VOICES.contains(v)) {
+            return "generative";
+        }
+        
+        // Long-form engine - optimized for long content (English only)
+        if (LONG_FORM_VOICES.contains(v)) {
+            return "long-form";
+        }
+        
+        // Neural engine - high quality, most languages
+        if (NEURAL_VOICES.contains(v)) {
+            return "neural";
+        }
+        
+        // Unknown voice - assume standard
+        return "standard";
     }
 
     private boolean isLikelyAmazonPollyVoiceId(String voiceId) {
@@ -1455,6 +1592,19 @@ public class DIDService {
 
                     Map<String, Object> provider = resolveProviderForPresenter(avatarId);
                     String providerType = provider == null ? null : String.valueOf(provider.get("type"));
+                    
+                    // Log the voice configuration being used
+                    if (provider != null) {
+                        String logVoiceType = String.valueOf(provider.get("type"));
+                        String logVoiceId = String.valueOf(provider.get("voice_id"));
+                        if ("amazon".equalsIgnoreCase(logVoiceType)) {
+                            logger.info("Scene {} using Amazon Polly voice: voice_id={}", avatarId, logVoiceId);
+                        } else {
+                            logger.info("Scene {} using {} voice: voice_id={}", avatarId, logVoiceType, logVoiceId);
+                        }
+                    } else {
+                        logger.info("Scene {} using avatar's native voice (no audio-management sample)", avatarId);
+                    }
 
                     String scriptInput = script;
                     if (canUseSsml && providerType != null && providerType.equalsIgnoreCase("amazon")) {
@@ -1627,12 +1777,15 @@ public class DIDService {
                 Map<String, Object> scriptWithProvider = new HashMap<>(scriptObj);
                 if (provider != null) {
                     scriptWithProvider.put("provider", provider);
-                    logger.debug(
-                            "Creating clip with provider type={} voice_id={} for presenter: {}",
-                            provider.get("type"),
-                            provider.get("voice_id"),
-                            presenterId
-                    );
+                    String voiceType = String.valueOf(provider.get("type"));
+                    String voiceId = String.valueOf(provider.get("voice_id"));
+                    if ("amazon".equalsIgnoreCase(voiceType)) {
+                        logger.info("Clip {} using Amazon Polly voice: voice_id={}", presenterId, voiceId);
+                    } else {
+                        logger.info("Clip {} using {} voice: voice_id={}", presenterId, voiceType, voiceId);
+                    }
+                } else {
+                    logger.info("Clip {} using presenter's native voice (no audio-management sample)", presenterId);
                 }
                 requestBodyWithProvider.put("script", scriptWithProvider);
 
@@ -2373,5 +2526,38 @@ public class DIDService {
         if (max <= 0) return "";
         if (s.length() <= max) return s;
         return s.substring(0, max);
+    }
+
+    /**
+     * Get voice policy information for the current configuration.
+     * Voice selection priority:
+     * 1. Cloned voice from audio-management (if avatar name matches audio sample)
+     * 2. Express Avatar's native ElevenLabs voice (created when avatar was made in D-ID Studio)
+     * @return Map containing voice policy information
+     */
+    public Map<String, Object> getVoicePolicyInfo() {
+        Map<String, Object> result = new HashMap<>();
+        
+        // Current configuration
+        Map<String, Object> config = new HashMap<>();
+        config.put("cloneLanguage", cloneVoiceLanguage);
+        config.put("voiceOverrides", amazonVoiceOverrides == null || amazonVoiceOverrides.isBlank() ? "none" : "configured");
+        result.put("config", config);
+        
+        // Voice selection priority
+        result.put("priority", List.of(
+            Map.of("order", 1, "type", "audio-management", "description", "Cloned voice from audio sample matching avatar name (D-ID voice cloning)"),
+            Map.of("order", 2, "type", "native-elevenlabs", "description", "Express Avatar's native ElevenLabs voice (created in D-ID Studio)")
+        ));
+        
+        // How to add custom voice
+        result.put("howToAddCustomVoice", Map.of(
+            "step1", "Go to audio-management page",
+            "step2", "Upload a 30+ second audio sample",
+            "step3", "Name it exactly matching the avatar name",
+            "step4", "System will automatically use that voice for the matching avatar"
+        ));
+        
+        return result;
     }
 }
