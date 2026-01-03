@@ -1924,6 +1924,19 @@ public class DIDService {
                         scriptInput = providerType != null && providerType.equalsIgnoreCase("amazon")
                                 ? sanitizeSsmlForAmazonProvider(script)
                                 : sanitizeSsmlForDidProvider(script);
+                        if (strictAudioManagementVoice) {
+                            String si = scriptInput == null ? "" : scriptInput;
+                            logger.info(
+                                "Scene {} SSML enabled: provider={} breaks={} prosody={} amazonDomain={} amazonEffect={} len={}",
+                                avatarId,
+                                providerType,
+                                si.contains("<break"),
+                                si.contains("<prosody"),
+                                si.toLowerCase(java.util.Locale.ROOT).contains("<amazon:domain"),
+                                si.toLowerCase(java.util.Locale.ROOT).contains("<amazon:effect"),
+                                si.length()
+                            );
+                        }
                     } else if (canUseSsml) {
                         scriptInput = stripKnownSsmlTagsToPlainText(script);
                     }
@@ -2135,6 +2148,19 @@ public class DIDService {
                         scriptInput = providerType != null && providerType.equalsIgnoreCase("amazon")
                                 ? sanitizeSsmlForAmazonProvider(script)
                                 : sanitizeSsmlForDidProvider(script);
+                        if (strictAudioManagementVoice) {
+                            String si = scriptInput == null ? "" : scriptInput;
+                            logger.info(
+                                "Clips {} SSML enabled: provider={} breaks={} prosody={} amazonDomain={} amazonEffect={} len={}",
+                                presenterId,
+                                providerType,
+                                si.contains("<break"),
+                                si.contains("<prosody"),
+                                si.toLowerCase(java.util.Locale.ROOT).contains("<amazon:domain"),
+                                si.toLowerCase(java.util.Locale.ROOT).contains("<amazon:effect"),
+                                si.length()
+                            );
+                        }
                     } else if (canUseSsml) {
                         scriptInput = stripKnownSsmlTagsToPlainText(script);
                     }
@@ -2768,8 +2794,10 @@ public class DIDService {
     /**
      * Get voice policy information for the current configuration.
      * Voice selection priority:
-     * 1. Cloned voice from audio-management (if avatar name matches audio sample)
-     * 2. Express Avatar's native voice (no provider)
+     * - Strict mode: Amazon Polly provider + audio-management required (no fallback)
+     * - Non-strict mode:
+     *   1. Cloned voice from audio-management (if avatar name matches audio sample)
+     *   2. Express Avatar's native voice (no provider)
      * @return Map containing voice policy information
      */
     public Map<String, Object> getVoicePolicyInfo() {
@@ -2778,13 +2806,24 @@ public class DIDService {
         // Current configuration
         Map<String, Object> config = new HashMap<>();
         config.put("cloneLanguage", cloneVoiceLanguage);
+        config.put("strictAudioManagement", strictAudioManagementVoice);
+        config.put("failOnCloneError", failOnCloneError);
+        config.put("amazonVoiceIdFemale", (amazonVoiceIdFemale == null || amazonVoiceIdFemale.isBlank()) ? "Joanna" : amazonVoiceIdFemale.trim());
+        config.put("amazonVoiceIdMale", (amazonVoiceIdMale == null || amazonVoiceIdMale.isBlank()) ? "Matthew" : amazonVoiceIdMale.trim());
         result.put("config", config);
-        
+
         // Voice selection priority
-        result.put("priority", List.of(
-            Map.of("order", 1, "type", "audio-management", "description", "Cloned voice from audio sample matching avatar name (D-ID voice cloning)"),
-            Map.of("order", 2, "type", "native", "description", "Express Avatar's native voice (no provider specified)")
-        ));
+        if (strictAudioManagementVoice) {
+            result.put("priority", List.of(
+                Map.of("order", 1, "type", "amazon", "description", "Amazon Polly voice provider (gender-based voice_id selection)"),
+                Map.of("order", 2, "type", "audio-management-required", "description", "Audio-management entry is required; system fails loudly if missing")
+            ));
+        } else {
+            result.put("priority", List.of(
+                Map.of("order", 1, "type", "audio-management", "description", "Cloned voice from audio sample matching avatar name (D-ID voice cloning)"),
+                Map.of("order", 2, "type", "native", "description", "Express Avatar's native voice (no provider specified)")
+            ));
+        }
         
         // How to add custom voice
         result.put("howToAddCustomVoice", Map.of(
