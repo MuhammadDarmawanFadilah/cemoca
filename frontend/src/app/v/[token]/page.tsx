@@ -3,7 +3,7 @@
 import { useRef, useState, useEffect } from "react";
 import { useParams } from "next/navigation";
 import { videoReportAPI } from "@/lib/api";
-import ReactPlayer from "react-player/lazy";
+import ReactPlayer from "react-player";
 import { Download, SkipBack, SkipForward } from "lucide-react";
 
 interface VideoData {
