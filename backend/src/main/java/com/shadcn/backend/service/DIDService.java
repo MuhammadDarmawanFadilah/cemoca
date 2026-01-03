@@ -1216,12 +1216,11 @@ public class DIDService {
 
         String trimmedAvatarId = avatarId.trim();
 
-        final boolean hasAudioManagementSample;
+        boolean hasAudioManagementSample = false;
         try {
             hasAudioManagementSample = strictAudioManagementVoice && findAudioManagementEntry(trimmedAvatarId, null).isPresent();
         } catch (Exception ignored) {
             // Best-effort
-            hasAudioManagementSample = false;
         }
 
         // Voice policy: prefer local-sample cloned voice when available; otherwise use presenter default voice.
