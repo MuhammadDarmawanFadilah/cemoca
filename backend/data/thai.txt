@@ -2,99 +2,102 @@
   <amazon:effect name="drc">
     <amazon:domain name="news">
       <lang xml:lang="th-TH">
+		<prosody rate="90%">
         <prosody rate="medium" pitch="+2%">สวัสดีตอนเช้า คุณ <emphasis level="moderate">:name</emphasis></prosody>
-        <break time="450ms"/>
+    <break time="500ms"/>
 
         ตลอดหลายทศวรรษในอุตสาหกรรมประกันชีวิต มีความท้าทายหนึ่งที่ยังคงเหมือนเดิมเสมอ
-        <break time="250ms"/>
+        <break time="300ms"/>
         คือการรักษา <emphasis level="moderate">ความสม่ำเสมอ</emphasis> ของยอดขาย กิจกรรม และการคงอยู่ของตัวแทน
         ทั้งตัวแทนใหม่และตัวแทนเดิม
-        <break time="350ms"/>
+        <break time="400ms"/>
         แม้จะลงทุนอย่างต่อเนื่อง
         <prosody rate="medium" pitch="-1%"><emphasis level="strong">อัตราการลดลงก็ยังสูงมาก</emphasis></prosody>
-        <break time="550ms"/>
+        <break time="650ms"/>
 
         จากการวิเคราะห์ตัวแทนที่รับสมัครใหม่จำนวน <say-as interpret-as="cardinal">8386</say-as> คน ในช่วงปี
         <say-as interpret-as="date" format="y">2024</say-as> และ <say-as interpret-as="date" format="y">2025</say-as>
         ตัวเลขสะท้อนภาพได้ชัดเจน
-        <break time="350ms"/>
+        <break time="400ms"/>
 
         เดือนที่หนึ่ง อัตราตัวแทนที่ยังทำงานอยู่คือ <emphasis level="moderate">หกสิบสามเปอร์เซ็นต์</emphasis>
-        <break time="250ms"/>
+        <break time="300ms"/>
         เดือนที่สาม ลดลงเหลือ <emphasis level="moderate">สิบเปอร์เซ็นต์</emphasis>
-        <break time="250ms"/>
+        <break time="300ms"/>
         และเดือนที่หก เหลือเพียง <emphasis level="moderate">ห้าเปอร์เซ็นต์</emphasis> เท่านั้น
-        <break time="400ms"/>
+        <break time="500ms"/>
         นั่นคืออัตราการ disengagement <emphasis level="strong">เก้าสิบห้าเปอร์เซ็นต์</emphasis> ภายในหกเดือน
-        <break time="600ms"/>
+        <break time="700ms"/>
 
         แต่โอกาสอยู่ตรงนี้
-        <break time="300ms"/>
+        <break time="350ms"/>
         หากเรายกระดับกิจกรรมของตัวแทนขึ้นเพียง <emphasis level="moderate">สิบจุดเปอร์เซ็นต์</emphasis>
         ในแต่ละ cohort รายเดือน
         ผลลัพธ์คือเพิ่มขึ้น <emphasis level="moderate">ห้าสิบเจ็ดเปอร์เซ็นต์</emphasis> ของ
         <sub alias="annual premium equivalent">APE</sub> ภายในเดือนที่หก
         และเพิ่มขึ้น <emphasis level="moderate">เก้าสิบเอ็ดเปอร์เซ็นต์</emphasis> ภายในเดือนที่สิบสอง
         <break time="450ms"/>
+        <break time="500ms"/>
         นี่ไม่ใช่ปัญหาเรื่องการฝึกอบรม
-        <break time="200ms"/>
+        <break time="250ms"/>
         แต่มันคือปัญหาเรื่องระบบและ engagement
-        <break time="200ms"/>
+        <break time="250ms"/>
         และมัน <emphasis level="strong">แก้ได้</emphasis>
-        <break time="650ms"/>
+        <break time="750ms"/>
 
         บริษัทส่วนใหญ่มีการสนับสนุนทางการเงิน โปรแกรมพัฒนาตัวแทน
         ผลิตภัณฑ์ที่ง่ายขึ้น และระบบสร้างลีดอยู่แล้ว
         <break time="350ms"/>
         สิ่งเหล่านี้จำเป็น
-        <break time="250ms"/>
+        <break time="300ms"/>
         แต่แม้ในกรณีที่ดีที่สุด ก็ช่วยได้เพียงเล็กน้อย และมักไม่เกินเดือนที่เก้า
-        <break time="600ms"/>
+        <break time="700ms"/>
 
         คำถามจึงกลายเป็นว่า
-        <break time="250ms"/>
+        <break time="300ms"/>
         <emphasis level="strong">อะไรที่ขาดหายไป</emphasis>
         ระหว่างการรับสมัคร กับประสิทธิภาพที่ยั่งยืน?
-        <break time="650ms"/>
+        <break time="750ms"/>
 
         ธุรกิจประกันคือธุรกิจของผู้คน
-        <break time="300ms"/>
+        <break time="350ms"/>
         การบริหารตัวแทนต้องอาศัยทั้งวิทยาศาสตร์และความเชื่อมโยงของมนุษย์
         ข้อมูลและ AI เสริมด้วยการยกย่อง แรงจูงใจ และการโค้ชที่ทันท่วงที
-        <break time="400ms"/>
+        <break time="500ms"/>
         ความเชื่อนี้ทำให้ผมร่วมก่อตั้ง <sub alias="ซี-โม-คา">CeMoCA</sub>
-        <break time="650ms"/>
+        <break time="750ms"/>
 
         <sub alias="ซี-โม-คา">CeMoCA</sub> ย่อมาจาก Celebrate, Motivate, Coach และ Active
-        <break time="500ms"/>
+        <break time="600ms"/>
 
         เราเฉลิมฉลองความสำเร็จด้วยข้อความแสดงความยินดีแบบเฉพาะบุคคล และใบประกาศ
         ภายใน <say-as interpret-as="cardinal">24</say-as> ชั่วโมง หลังการขายหรือการทำสถิติ
-        <break time="500ms"/>
+        <break time="600ms"/>
 
         เรากระตุ้นตัวแทนด้วยการติดตามผลงานที่ชัดเจน ตัวชี้วัด balance-to-go และความชัดเจนของอินเซนทีฟ
-        <break time="500ms"/>
+        <break time="600ms"/>
 
         เราโค้ชอย่างต่อเนื่องผ่าน micro-learning ที่มีโครงสร้าง
         เป็นชั้น reinforcement ก่อนและระหว่างโปรแกรมของบริษัท
-        <break time="650ms"/>
+        <break time="750ms"/>
 
         ภายในครึ่งแรกของปี <say-as interpret-as="date" format="y">2026</say-as>
         <sub alias="ซี-โม-คา">CeMoCA</sub> จะส่งมอบมากกว่า <say-as interpret-as="cardinal">80</say-as> โมดูล
         และปล่อยโมดูลใหม่ <emphasis level="moderate">สาม</emphasis> โมดูลทุกสัปดาห์
-        <break time="650ms"/>
+        <break time="750ms"/>
 
         เราช่วยให้ตัวแทนยังคง active ด้วยการ nudges ที่ตรงเวลาและการสื่อสารที่ชัดเจน
-        <break time="300ms"/>
+        <break time="350ms"/>
         <sub alias="ซี-โม-คา">CeMoCA</sub> ไม่ได้แทนที่ระบบเดิมของคุณ แต่ทำงานผ่านช่องทาง push เช่น WhatsApp
         ซึ่งมีอัตราการอ่าน <emphasis level="moderate">เก้าสิบแปดเปอร์เซ็นต์</emphasis>
-        <break time="700ms"/>
+        <break time="800ms"/>
 
         สรุปแล้ว <sub alias="ซี-โม-คา">CeMoCA</sub> ช่วยสร้างระบบนิเวศการขายที่ขับเคลื่อนด้วยกิจกรรม
         เพื่อความสม่ำเสมอและการคงอยู่ที่ดีขึ้น
-        <break time="500ms"/>
+        <break time="600ms"/>
 
         ขอบคุณสำหรับเวลาของคุณ และหวังว่าจะได้พูดคุยกันต่อ
+		</prosody>
       </lang>
     </amazon:domain>
   </amazon:effect>

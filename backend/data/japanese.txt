@@ -1,70 +1,199 @@
-<speak xmlns="http://www.w3.org/2001/10/synthesis" xmlns:amazon="http://www.amazon.com/ssml">
-  <amazon:effect name="drc">
-    <amazon:domain name="news">
-      <lang xml:lang="ja-JP">
-        <prosody rate="medium" pitch="+2%">おはようございます、<emphasis level="moderate">:name</emphasis> さん。</prosody>
-        <break time="450ms"/>
+<speak>
+	<amazon:effect name="drc">
+		<p>
+			<s>
+				<prosody rate="medium" pitch="+8%">おはようございます</prosody>
+				<break time="700ms"/>
+				<prosody rate="medium" pitch="+2%">:name.</prosody>
+				<break time="500ms"/>
+			</s>
+		</p>
 
-        生命保険業界で数十年にわたり、常に変わらない課題がひとつあります。
-        <break time="250ms"/>
-        それは、新人・既存を問わず、エージェントの営業成果、活動量、そして定着を
-        <emphasis level="moderate">継続的に</emphasis>維持することです。
-        <break time="350ms"/>
-        投資を続けても、
-        <prosody rate="medium" pitch="-1%"><emphasis level="strong">離脱のスピードは依然として速い</emphasis></prosody>。
-        <break time="550ms"/>
+		<amazon:domain name="news">
+		<prosody rate="90%">
+		<p>
+			<s>
+				報酬、商品、研修、そしてデジタルツールへの投資を重ねてきたにもかかわらず、
+				<break time="700ms"/>
+				生命保険には、変わらない課題がひとつあります。
+				<break time="850ms"/>
+				<prosody rate="medium" pitch="+3%"><emphasis level="moderate">エージェントの活動量と成果を維持すること</emphasis></prosody>です。
+			</s>
+			<s>
+				業界全体で、
+				<break time="500ms"/>
+				エージェントの離脱は、成長と投資収益を損ない続けています。
+			</s>
+		</p>
 
-        <say-as interpret-as="cardinal">2024</say-as>年と<say-as interpret-as="cardinal">2025</say-as>年に新規採用された
-        <say-as interpret-as="cardinal">8386</say-as>名の分析では、数字がはっきり示しています。
-        <break time="350ms"/>
+		<p>
+			<s>
+				二〇二四年と二〇二五年に採用された新規エージェント八千三百八十名を分析すると、
+				<break time="1000ms"/>
+				数字は明確です。
+			</s>
+			<s>
+				<break time="500ms"/>
+				コード付与月に活動しているのは、<emphasis level="moderate">六十三パーセント</emphasis>。
+				<break time="850ms"/>
+				三か月目まで活動しているのは、<emphasis level="moderate">十パーセント</emphasis>。
+				<break time="850ms"/>
+				そして六か月目まで残るのは、<emphasis level="moderate">わずか五パーセント</emphasis>です。
+			</s>
+			<s>
+				<break time="1000ms"/>
+				つまり、新規エージェントの<emphasis level="strong">九十五パーセント</emphasis>が、六か月以内に離脱します。
+			</s>
+			<s>
+				<break time="700ms"/>
+				離脱したエージェントは、採用コストの浪費であり、
+				<break time="500ms"/>
+				研修コスト、
+				<break time="500ms"/>
+				マネジャーの時間、
+				<break time="500ms"/>
+				そして APE の損失を意味します。
+			</s>
+			<s>
+				<break time="700ms"/>
+				規模が大きくなれば、
+				毎年、<emphasis level="moderate">数百万</emphasis>規模の未実現収益につながります。
+			</s>
+		</p>
 
-        1か月目の稼働率は<emphasis level="moderate">63%</emphasis>。
-        <break time="250ms"/>
-        3か月目には<emphasis level="moderate">10%</emphasis>まで低下。
-        <break time="250ms"/>
-        6か月目には、稼働を続けるのは<emphasis level="moderate">5%</emphasis>のみ。
-        <break time="400ms"/>
-        つまり、6か月で<emphasis level="strong">95%</emphasis>が離脱しているのです。
-        <break time="600ms"/>
+		<p>
+			<s>
+				<break time="1350ms"/>
+				<prosody rate="medium" pitch="+10%">しかし、ここにチャンスがあります。</prosody>
+				<break time="500ms"/>
+			</s>
+		</p>
 
-        しかし、ここに機会があります。
-        <break time="300ms"/>
-        毎月のコホートで活動率をわずか<emphasis level="moderate">10ポイント</emphasis>引き上げるだけで、
-        6か月目の <sub alias="annual premium equivalent">APE</sub> は<emphasis level="moderate">57%</emphasis>増加し、
-        12か月目には<emphasis level="moderate">91%</emphasis>増加します。
-        <break time="450ms"/>
-        これは研修の問題ではありません。
-        <break time="200ms"/>
-        システムとエンゲージメントの問題です。
-        <break time="200ms"/>
-        そして、<emphasis level="strong">解決できます</emphasis>。
-        <break time="650ms"/>
+		<p>
+			<s>
+				もし、エージェントの活動量を
+				<break time="700ms"/>
+				各月のコホートごとに、<emphasis level="strong">十ポイント</emphasis>だけ改善できれば、
+				<break time="700ms"/>
+				次の成果が得られます。
+			</s>
+			<s>
+				六か月目までに APE は<emphasis level="moderate">五十七パーセント</emphasis>増加します。
+				<break time="700ms"/>
+				十二か月目までに APE は<emphasis level="moderate">九十一パーセント</emphasis>増加します。
+			</s>
+			<s>
+				<break time="700ms"/>
+				これは、コミッションを増やさず、
+				<break time="500ms"/>
+				新商品も不要で、
+				<break time="500ms"/>
+				採用を増やす必要もありません。
+			</s>
+			<s>
+				<break time="1050ms"/>
+				これは研修の問題ではありません。
+				<break time="750ms"/>
+				<emphasis level="strong">エンゲージメントと実行のギャップ</emphasis>なのです。
+			</s>
+		</p>
 
-        多くの保険会社は、財務支援、育成プログラム、商品簡素化、リード獲得などを既に導入しています。
-        <break time="350ms"/>
-        これらは必要です。
-        <break time="250ms"/>
-        ただし最良の場合でも、活動を少し延ばす程度で、9か月を超えることは稀です。
-        <break time="600ms"/>
+		<p>
+			<s>
+				保険は本質的に、人のビジネスです。
+				<break time="850ms"/>
+				しかし、今日の大規模なエージェントマネジメントには、科学と人のつながりの両方が必要です。
+			</s>
+			<s>
+				データと AI を活用し、
+				<break time="500ms"/>
+				承認と称賛で支え、
+				<break time="400ms"/>
+				モチベーションを高め、
+				<break time="400ms"/>
+				適切なタイミングでコーチングを行う。
+			</s>
+			<s>
+				<break time="700ms"/>
+				その信念が、私を<emphasis level="moderate">CeMoCA</emphasis>の共同創業へと導きました。
+			</s>
+		</p>
 
-        では、採用から持続的な成果までの間で、何が足りないのでしょうか。
-        <break time="650ms"/>
+		<p>
+			<s>
+				CeMoCA は、エージェントのエンゲージメントと成果を活性化するレイヤーです。
+				WhatsApp を通じて提供され、
+				<break time="500ms"/>
+				エージェントがすでに日常的に使っている場所で、
+				既読率は最大で<emphasis level="moderate">九十八パーセント</emphasis>に達します。
+			</s>
+			<s>
+				各エージェントには、毎月<emphasis level="moderate">八回から十回</emphasis>のパーソナライズされた構造的な接点が届きます。
+				内容は、
+				<break time="500ms"/>
+				発行済み契約への即時の称賛、
+				<break time="400ms"/>
+				進捗と残り目標の明確なアップデート、
+				<break time="400ms"/>
+				毎月十四日と二十八日のマイクロラーニング、
+				<break time="400ms"/>
+				月初のキックオフメッセージとインセンティブ、
+				<break time="400ms"/>
+				月次と年次のパフォーマンスサマリー、
+				<break time="400ms"/>
+				そして誕生日や祝日のメッセージです。
+			</s>
+			<s>
+				<break time="700ms"/>
+				すべて自動化されています。
+				<break time="500ms"/>
+				新しいシステムは不要。
+				<break time="500ms"/>
+				運用コストも低い。
+			</s>
+			<s>
+				<break time="600ms"/>
+				そして何より、
+				<prosody rate="medium" pitch="+3%"><emphasis level="strong">すべてのメッセージが、個々のエージェントに合わせて最適化</emphasis></prosody>されています。
+			</s>
+			<s>
+				<break time="600ms"/>
+				その結果、活動の一貫性が高まり、
+				早期離脱が減り、
+				採用と研修の ROI が改善し、
+				APE も大きく伸びます。
+				<break time="450ms"/>
+				しかも、人員を増やさずに。
+			</s>
+			<s>
+				<break time="600ms"/>
+				CeMoCA は、既存システムを置き換えるものではありません。
+				<break time="450ms"/>
+				それらを活性化します。
+			</s>
+			<s>
+				<break time="600ms"/>
+				まとめると、
+				CeMoCA は、活動量を軸にした、より強いセールスエコシステムを構築し、
+				より安定した成果と、より高い定着を実現します。
+			</s>
+		</p>
 
-        保険は本質的に「人」のビジネスです。
-        <break time="300ms"/>
-        いま求められるのは、データとAIという科学に加え、承認・動機づけ・タイムリーなコーチングによる人間的なつながりです。
-        <break time="400ms"/>
-        この考えから、私は <sub alias="セモカ">CeMoCA</sub> を共同創業しました。
-        <break time="650ms"/>
-
-        <sub alias="セモカ">CeMoCA</sub> は Celebrate, Motivate, Coach, Active の頭文字です。
-        <break time="500ms"/>
-
-        <sub alias="セモカ">CeMoCA</sub> は、WhatsApp などのプッシュ配信を通じて迅速に導入でき、拡張も容易です。
-        <break time="650ms"/>
-
-        ありがとうございました。引き続きお話しできる機会を楽しみにしています。
-      </lang>
-    </amazon:domain>
-  </amazon:effect>
+		<p>
+			<s>
+				私たちは、CeMoCA を二〇二六年アクションプランに向けた、実践的な変革イニシアチブだと考えています。
+				<break time="500ms"/>
+				そして、会社がエージェントの成功支援の在り方を変えていくという、
+				代理店組織への明確なメッセージでもあります。
+			</s>
+			<s>
+				<break time="1100ms"/>
+				<prosody rate="medium" pitch="+6%">ありがとうございます。</prosody>
+				<break time="750ms"/>
+				<prosody rate="medium" pitch="+6%">引き続き、お話しできることを楽しみにしています。</prosody>
+			</s>
+		</p>
+		</prosody>
+		</amazon:domain>
+	</amazon:effect>
 </speak>

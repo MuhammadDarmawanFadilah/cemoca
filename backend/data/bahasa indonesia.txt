@@ -1,134 +1,208 @@
-<speak xmlns="http://www.w3.org/2001/10/synthesis" xmlns:amazon="http://www.amazon.com/ssml">
-  <amazon:effect name="drc">
-    <amazon:domain name="news">
-      <prosody rate="medium" pitch="+2%">Selamat pagi, <emphasis level="moderate">:name</emphasis>.</prosody>
-      <break time="450ms"/>
+<speak>
+	<amazon:effect name="drc">
+		<p>
+			<s>
+				<prosody rate="medium" pitch="+8%">Selamat pagi</prosody>
+				<break time="700ms"/>
+				<prosody rate="medium" pitch="+2%">:name.</prosody>
+				<break time="500ms"/>
+			</s>
+		</p>
 
-      Selama puluhan tahun di industri asuransi jiwa, ada satu tantangan yang terus berulang:
-      <break time="250ms"/>
-      bagaimana menjaga <emphasis level="moderate">konsistensi</emphasis> performa penjualan,
-      aktivitas agen, dan retensi—baik agen baru maupun agen lama.
-      <break time="350ms"/>
-      Meski investasi terus dilakukan,
-      <prosody rate="medium" pitch="-1%"><emphasis level="strong">penurunannya tetap curam</emphasis>.</prosody>
-      <break time="550ms"/>
+		<amazon:domain name="news">
+		<prosody rate="90%">
+		<p>
+			<s>
+				Meski selama bertahun-tahun industri asuransi terus berinvestasi pada kompensasi,
+				<break time="700ms"/>
+				produk,
+				<break time="500ms"/>
+				pelatihan,
+				<break time="500ms"/>
+				dan alat digital,
+				<break time="700ms"/>
+				satu tantangan dalam asuransi jiwa tetap belum berubah:
+				<break time="850ms"/>
+				<prosody rate="medium" pitch="+3%"><emphasis level="moderate">menjaga aktivitas dan kinerja agen</emphasis></prosody>.
+			</s>
+			<s>
+				Di seluruh industri,
+				<break time="500ms"/>
+				menurunnya keterlibatan agen terus menggerus pertumbuhan dan imbal hasil investasi.
+			</s>
+		</p>
 
-      Dalam analisis terbaru terhadap <say-as interpret-as="cardinal">8386</say-as> agen yang direkrut sepanjang
-      <say-as interpret-as="date" format="y">2024</say-as> dan <say-as interpret-as="date" format="y">2025</say-as>,
-      angkanya sangat jelas.
-      <break time="350ms"/>
+		<p>
+			<s>
+				Berdasarkan analisis terhadap delapan ribu tiga ratus delapan puluh agen baru
+				<break time="500ms"/>
+				yang direkrut sepanjang tahun dua ribu dua puluh empat dan dua ribu dua puluh lima,
+				<break time="1000ms"/>
+				angkanya sangat jelas.
+			</s>
+			<s>
+				<break time="500ms"/>
+				<emphasis level="moderate">Enam puluh tiga persen</emphasis> masih aktif pada bulan pemberian kode.
+				<break time="850ms"/>
+				<emphasis level="moderate">Sepuluh persen</emphasis> masih aktif hingga bulan ketiga.
+				<break time="850ms"/>
+				Dan hanya <emphasis level="moderate">lima persen</emphasis> yang masih aktif hingga bulan keenam.
+			</s>
+			<s>
+				<break time="1250ms"/>
+				Artinya <emphasis level="strong">sembilan puluh lima persen</emphasis> agen baru berhenti aktif dalam enam bulan.
+			</s>
+			<s>
+				<break time="700ms"/>
+				Setiap agen yang berhenti aktif berarti biaya rekrutmen yang terbuang,
+				<break time="500ms"/>
+				biaya pelatihan,
+				<break time="500ms"/>
+				waktu manajer,
+				<break time="500ms"/>
+				dan hilangnya APE.
+			</s>
+			<s>
+				<break time="700ms"/>
+				Dalam skala besar,
+				ini setara dengan <emphasis level="moderate">jutaan</emphasis> pendapatan yang tidak terealisasi setiap tahun.
+			</s>
+		</p>
 
-      Di bulan pertama, tingkat agen aktif adalah <emphasis level="moderate">enam puluh tiga persen</emphasis>.
-      <break time="250ms"/>
-      Di bulan ketiga, turun menjadi <emphasis level="moderate">sepuluh persen</emphasis>.
-      <break time="250ms"/>
-      Dan di bulan keenam, hanya <emphasis level="moderate">lima persen</emphasis> agen yang masih aktif.
-      <break time="400ms"/>
-      Artinya, <emphasis level="strong">sembilan puluh lima persen</emphasis> mengalami disengagement dalam enam bulan.
-      <break time="600ms"/>
+		<p>
+			<s>
+				<break time="1350ms"/>
+				<prosody rate="medium" pitch="+10%">Namun, di sinilah peluangnya.</prosody>
+				<break time="500ms"/>
+			</s>
+		</p>
 
-      Sekarang, inilah peluangnya.
-      <break time="300ms"/>
-      Jika kita meningkatkan aktivitas agen hanya <emphasis level="moderate">sepuluh poin persentase</emphasis>
-      di setiap cohort bulanan,
-      dampaknya adalah kenaikan <emphasis level="moderate">lima puluh tujuh persen</emphasis> pada
-      <sub alias="annual premium equivalent">APE</sub> di bulan keenam,
-      dan kenaikan <emphasis level="moderate">sembilan puluh satu persen</emphasis> di bulan kedua belas.
-      <break time="450ms"/>
-      Ini <emphasis level="strong">bukan</emphasis> masalah training.
-      <break time="200ms"/>
-      Ini masalah sistem dan engagement.
-      <break time="200ms"/>
-      Dan ini <emphasis level="strong">bisa diselesaikan</emphasis>.
-      <break time="650ms"/>
+		<p>
+			<s>
+				Jika kita meningkatkan aktivitas agen
+				<break time="700ms"/>
+				dengan menambah hanya <emphasis level="strong">sepuluh poin persentase</emphasis>
+				<break time="700ms"/>
+				pada setiap kohort bulanan:
+			</s>
+			<s>
+				APE meningkat <emphasis level="moderate">lima puluh tujuh persen</emphasis> pada bulan keenam.
+				<break time="700ms"/>
+				APE meningkat <emphasis level="moderate">sembilan puluh satu persen</emphasis> pada bulan kedua belas.
+			</s>
+			<s>
+				<break time="700ms"/>
+				Hasil ini dapat dicapai tanpa menaikkan komisi,
+				<break time="500ms"/>
+				tanpa produk baru,
+				<break time="500ms"/>
+				dan tanpa merekrut agen tambahan.
+			</s>
+			<s>
+				<break time="1050ms"/>
+				Ini bukan masalah pelatihan.
+				<break time="600ms"/>
+				Ini adalah <emphasis level="strong">kesenjangan dalam keterlibatan dan eksekusi</emphasis>.
+			</s>
+		</p>
 
-      Sebagian besar perusahaan asuransi sudah menerapkan dukungan finansial terstruktur,
-      program pengembangan agen,
-      produk yang disederhanakan,
-      serta sistem lead generation.
-      <break time="350ms"/>
-      Inisiatif ini memang penting.
-      <break time="250ms"/>
-      Namun, pada skenario terbaik sekalipun,
-      dampaknya biasanya hanya memperpanjang aktivitas sedikit,
-      dan jarang bertahan melewati bulan sembilan.
-      <break time="600ms"/>
+		<p>
+			<s>
+				Pada dasarnya, asuransi adalah bisnis manusia.
+				<break time="850ms"/>
+				Namun, mengelola agen dalam skala besar saat ini membutuhkan ilmu pengetahuan sekaligus koneksi manusia.
+			</s>
+			<s>
+				Dengan memanfaatkan data dan kecerdasan buatan,
+				<break time="500ms"/>
+				diperkuat dengan apresiasi,
+				<break time="400ms"/>
+				motivasi,
+				<break time="400ms"/>
+				dan coaching yang tepat waktu.
+			</s>
+			<s>
+				<break time="700ms"/>
+				Keyakinan itulah yang mendorong saya ikut mendirikan <emphasis level="moderate">CeMoCA</emphasis>.
+			</s>
+		</p>
 
-      Jadi pertanyaannya menjadi:
-      <break time="250ms"/>
-      <emphasis level="strong">apa yang hilang</emphasis>
-      antara rekrutmen dan performa yang berkelanjutan?
-      <break time="650ms"/>
+		<p>
+			<s>
+				CeMoCA adalah lapisan aktivasi keterlibatan dan kinerja agen,
+				disampaikan melalui WhatsApp,
+				<break time="500ms"/>
+				tempat agen sudah berinteraksi,
+				dengan tingkat baca hingga <emphasis level="moderate">sembilan puluh delapan persen</emphasis>.
+			</s>
+			<s>
+				Setiap agen menerima <emphasis level="moderate">delapan hingga sepuluh</emphasis> titik sentuh yang dipersonalisasi dan terstruktur setiap bulan,
+				yang mencakup:
+				<break time="500ms"/>
+				apresiasi instan untuk polis yang terbit,
+				<break time="400ms"/>
+				pembaruan progres dan sisa target yang jelas,
+				<break time="400ms"/>
+				micro learning pada Hari ke-empat belas dan Hari ke-dua puluh delapan,
+				<break time="400ms"/>
+				pesan pembuka bulan dan program insentif,
+				<break time="400ms"/>
+				ringkasan kinerja bulan berjalan dan tahun berjalan,
+				<break time="400ms"/>
+				dan ucapan ulang tahun serta hari besar.
+			</s>
+			<s>
+				<break time="700ms"/>
+				Semuanya otomatis.
+				<break time="500ms"/>
+				Tanpa sistem baru.
+				<break time="500ms"/>
+				Biaya operasional rendah.
+			</s>
+			<s>
+				<break time="700ms"/>
+				Yang paling penting,
+				<prosody rate="medium" pitch="+3%"><emphasis level="strong">setiap pesan disesuaikan untuk setiap agen</emphasis></prosody>.
+			</s>
+			<s>
+				<break time="700ms"/>
+				Hasilnya adalah konsistensi aktivitas yang lebih tinggi,
+				retensi tahap awal yang lebih baik,
+				ROI rekrutmen dan pelatihan yang lebih kuat,
+				dan peningkatan APE yang signifikan
+				<break time="500ms"/>
+				tanpa menambah jumlah tenaga.
+			</s>
+			<s>
+				<break time="700ms"/>
+				CeMoCA tidak menggantikan sistem yang sudah Anda miliki.
+				<break time="500ms"/>
+				CeMoCA mengaktifkannya.
+			</s>
+			<s>
+				<break time="700ms"/>
+				Singkatnya,
+				CeMoCA membantu perusahaan asuransi membangun ekosistem penjualan yang lebih kuat,
+				berbasis aktivitas,
+				yang menghasilkan kinerja lebih konsisten dan retensi lebih baik.
+			</s>
+		</p>
 
-      Asuransi pada dasarnya adalah bisnis manusia.
-      <break time="300ms"/>
-      Di tahap evolusi industri saat ini, mengelola agen membutuhkan sains dan koneksi manusia:
-      data dan AI,
-      diperkuat dengan apresiasi,
-      motivasi,
-      dan coaching yang tepat waktu.
-      <break time="400ms"/>
-      Keyakinan ini mendorong saya ikut mendirikan <sub alias="Si-moh-ka">CeMoCA</sub>.
-      <break time="650ms"/>
-
-      <sub alias="Si-moh-ka">CeMoCA</sub> adalah singkatan dari:
-      <break time="250ms"/>
-      <emphasis level="moderate">Celebrate</emphasis>,
-      <emphasis level="moderate">Motivate</emphasis>,
-      <emphasis level="moderate">Coach</emphasis>,
-      dan <emphasis level="moderate">Active</emphasis>.
-      <break time="500ms"/>
-
-      Kami merayakan pencapaian dengan pesan ucapan selamat yang dipersonalisasi
-      dan sertifikat yang dikirim dalam <say-as interpret-as="cardinal">24</say-as> jam
-      setelah penjualan atau milestone,
-      saat momentum masih tinggi.
-      <break time="500ms"/>
-
-      Kami memotivasi agen melalui pelacakan performa yang jelas,
-      indikator balance-to-go,
-      dan visibilitas insentif,
-      sehingga usaha berubah menjadi target berikutnya yang nyata.
-      <break time="500ms"/>
-
-      Kami melakukan coaching berkelanjutan melalui micro-learning terstruktur,
-      menjadi lapisan penguat
-      sebelum dan di antara program perusahaan,
-      sekaligus menutup gap akibat keterbatasan waktu
-      atau coaching agency yang tidak konsisten.
-      <break time="650ms"/>
-
-      Pada paruh pertama <say-as interpret-as="date" format="y">2026</say-as>,
-      <sub alias="Si-moh-ka">CeMoCA</sub> akan menghadirkan lebih dari
-      <emphasis level="moderate"><say-as interpret-as="cardinal">80</say-as> modul micro-learning</emphasis>,
-      dengan rilis <emphasis level="moderate">tiga</emphasis> modul baru setiap minggu,
-      didukung AI untuk memastikan kualitas yang konsisten.
-      <break time="650ms"/>
-
-      Kami membantu agen tetap aktif melalui nudges yang tepat waktu dan komunikasi yang jelas.
-      <break time="300ms"/>
-      <sub alias="Si-moh-ka">CeMoCA</sub> tidak menggantikan atau berkompetisi dengan sistem Anda.
-      CeMoCA berjalan melalui platform push seperti WhatsApp,
-      tempat agen sudah aktif berinteraksi,
-      dengan tingkat baca <emphasis level="moderate">sembilan puluh delapan persen</emphasis>.
-      <break time="400ms"/>
-      Implementasinya cepat, sederhana, dan scalable.
-      <break time="700ms"/>
-
-      Singkatnya,
-      <sub alias="Si-moh-ka">CeMoCA</sub> membantu perusahaan membangun ekosistem penjualan berbasis aktivitas
-      yang lebih kuat,
-      menghasilkan performa yang lebih konsisten dan retensi yang lebih baik.
-      <break time="350ms"/>
-      Saya percaya <sub alias="Si-moh-ka">CeMoCA</sub> adalah inisiatif transformasi yang praktis
-      untuk rencana aksi <say-as interpret-as="date" format="y">2026</say-as>,
-      sekaligus sinyal kuat bagi agency force
-      bahwa perusahaan sedang berevolusi dalam mendukung kesuksesan mereka.
-      <break time="650ms"/>
-
-      Terima kasih atas waktunya.
-      <break time="250ms"/>
-      Saya menantikan kesempatan untuk melanjutkan diskusi.
-    </amazon:domain>
-  </amazon:effect>
+		<p>
+			<s>
+				Kami percaya CeMoCA adalah inisiatif transformasi yang praktis untuk rencana aksi dua ribu dua puluh enam,
+				<break time="600ms"/>
+				dan sinyal yang jelas bagi tenaga keagenan Anda
+				bahwa perusahaan sedang mengubah cara mendukung kesuksesan agen.
+			</s>
+			<s>
+				<break time="1000ms"/>
+				<prosody rate="medium" pitch="+6%">Terima kasih.</prosody>
+				<break time="850ms"/>
+				<prosody rate="medium" pitch="+6%">Saya menantikan untuk melanjutkan diskusi ini.</prosody>
+			</s>
+		</p>
+		</prosody>
+		</amazon:domain>
+	</amazon:effect>
 </speak>

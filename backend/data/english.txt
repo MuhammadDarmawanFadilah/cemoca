@@ -1,24 +1,27 @@
 <speak>
 	<amazon:effect name="drc">
+		<amazon:domain name="news">
+		<prosody rate="90%">
 		<p>
 			<s>
 				<prosody rate="medium" pitch="+8%">Good morning</prosody>
-				<break time="600ms"/>
+				<break time="700ms"/>
 				<prosody rate="medium" pitch="+2%">:name.</prosody>
+				<break time="500ms"/>
 			</s>
 		</p>
 
 		<p>
 			<s>
 				Despite years of investment in compensation, products, training, and digital tools,
-				<break time="600ms"/>
+				<break time="700ms"/>
 				one challenge in life insurance remains unchanged:
-				<break time="750ms"/>
+				<break time="850ms"/>
 				<emphasis level="moderate">sustaining agent activity and performance</emphasis>.
 			</s>
 			<s>
 				Across the industry,
-				<break time="450ms"/>
+				<break time="500ms"/>
 				agent disengagement continues to erode growth and return on investment.
 			</s>
 		</p>
@@ -26,33 +29,33 @@
 		<p>
 			<s>
 				From an analysis of eight thousand three hundred eighty newly recruited agents across year 2024 and 2025,
-				<break time="750ms"/>
+				<break time="1000ms"/>
 				the numbers are clear.
 			</s>
 			<s>
-				<break time="450ms"/>
+				<break time="700ms"/>
 				<emphasis level="moderate">63 percent</emphasis> active at coding month.
-				<break time="750ms"/>
+				<break time="1000ms"/>
 				<emphasis level="moderate">10 percent</emphasis> active by Month 3.
-				<break time="750ms"/>
+				<break time="1000ms"/>
 				Only <emphasis level="moderate">5 percent</emphasis> active by Month 6.
 			</s>
 			<s>
-				<break time="850ms"/>
+				<break time="1250ms"/>
 				That means <emphasis level="strong">95 percent</emphasis> of new agents disengage within six months.
 			</s>
 			<s>
-				<break time="600ms"/>
+				<break time="700ms"/>
 				Each disengaged agent represents wasted recruitment cost,
-				<break time="450ms"/>
+				<break time="500ms"/>
 				training cost,
-				<break time="450ms"/>
+				<break time="500ms"/>
 				manager time,
-				<break time="450ms"/>
+				<break time="500ms"/>
 				and lost APE.
 			</s>
 			<s>
-				<break time="600ms"/>
+				<break time="700ms"/>
 				At scale,
 				this translates into <emphasis level="moderate">millions</emphasis> in unrealized revenue every year.
 			</s>
@@ -60,36 +63,37 @@
 
 		<p>
 			<s>
-				<break time="1000ms"/>
+				<break time="1350ms"/>
 				<prosody rate="medium" pitch="+10%">Now, here is the opportunity.</prosody>
+				<break time="500ms"/>
 			</s>
 		</p>
 
 		<p>
 			<s>
 				If we improve agent activity
-				<break time="450ms"/>
+				<break time="700ms"/>
 				by adding just <emphasis level="strong">10 percentage points</emphasis>
-				<break time="450ms"/>
+				<break time="700ms"/>
 				at each monthly cohort:
 			</s>
 			<s>
 				APE increases by <emphasis level="moderate">57 percent</emphasis> by Month 6.
-				<break time="600ms"/>
+				<break time="700ms"/>
 				APE increases by <emphasis level="moderate">91 percent</emphasis> by Month 12.
 			</s>
 			<s>
-				<break time="600ms"/>
+				<break time="700ms"/>
 				This is achieved without increasing commission,
-				<break time="450ms"/>
+				<break time="500ms"/>
 				without new products,
-				<break time="450ms"/>
+				<break time="500ms"/>
 				and without hiring more agents.
 			</s>
 			<s>
-				<break time="750ms"/>
+				<break time="850ms"/>
 				This is not a training issue.
-				<break time="500ms"/>
+				<break time="750ms"/>
 				It is an <emphasis level="strong">engagement and execution gap</emphasis>.
 			</s>
 		</p>
@@ -97,20 +101,20 @@
 		<p>
 			<s>
 				Insurance is, at its core, a people business.
-				<break time="750ms"/>
+				<break time="850ms"/>
 				But managing agents at scale today requires both science and human connection.
 			</s>
 			<s>
 				Using data and AI,
-				<break time="450ms"/>
+				<break time="500ms"/>
 				reinforced by recognition,
-				<break time="350ms"/>
+				<break time="400ms"/>
 				motivation,
-				<break time="350ms"/>
+				<break time="400ms"/>
 				and timely coaching.
 			</s>
 			<s>
-				<break time="600ms"/>
+				<break time="700ms"/>
 				That belief led me to cofound <emphasis level="moderate">CeMoCA</emphasis>.
 			</s>
 		</p>
@@ -119,56 +123,56 @@
 			<s>
 				CeMoCA is an agent engagement and performance activation layer,
 				delivered through WhatsApp,
-				<break time="450ms"/>
+				<break time="500ms"/>
 				where agents already engage,
 				achieving up to <emphasis level="moderate">98 percent</emphasis> read rates.
 			</s>
 			<s>
 				Each agent receives <emphasis level="moderate">8 to 10</emphasis> personalized, structured touchpoints per month,
 				including:
-				<break time="450ms"/>
+				<break time="500ms"/>
 				instant recognition for issued cases,
-				<break time="350ms"/>
+				<break time="400ms"/>
 				clear progress and balance to go updates,
-				<break time="350ms"/>
+				<break time="400ms"/>
 				micro learning on Day 14 and Day 28,
-				<break time="350ms"/>
+				<break time="400ms"/>
 				monthly kick-off message and incentives,
-				<break time="350ms"/>
+				<break time="400ms"/>
 				month-to-date and year-to-date performance summaries,
-				<break time="350ms"/>
+				<break time="400ms"/>
 				and birthday and festive greetings.
 			</s>
 			<s>
-				<break time="600ms"/>
+				<break time="700ms"/>
 				All automated.
-				<break time="450ms"/>
+				<break time="500ms"/>
 				No new systems.
-				<break time="450ms"/>
+				<break time="500ms"/>
 				Low operating cost.
 			</s>
 			<s>
-				<break time="600ms"/>
+				<break time="700ms"/>
 				Most importantly,
 				<emphasis level="strong">every message is tailored to the individual agent</emphasis>.
 			</s>
 			<s>
-				<break time="600ms"/>
+				<break time="700ms"/>
 				The result is higher activity consistency,
 				better early-stage retention,
 				stronger ROI on recruitment and training,
 				and material APE uplift
-				<break time="450ms"/>
+				<break time="500ms"/>
 				without expanding headcount.
 			</s>
 			<s>
-				<break time="600ms"/>
+				<break time="700ms"/>
 				CeMoCA does not replace your existing systems.
-				<break time="450ms"/>
+				<break time="500ms"/>
 				It activates them.
 			</s>
 			<s>
-				<break time="600ms"/>
+				<break time="700ms"/>
 				In summary,
 				CeMoCA helps insurers build a stronger,
 				activity-based sales ecosystem,
@@ -179,16 +183,18 @@
 		<p>
 			<s>
 				We believe CeMoCA is a practical transformation initiative for the 2026 action plan,
-				<break time="500ms"/>
+				<break time="600ms"/>
 				and a clear signal to your agency force
 				that the company is changing how it supports agent success.
 			</s>
 			<s>
-				<break time="850ms"/>
+				<break time="1250ms"/>
 				<prosody rate="medium" pitch="+6%">Thank you.</prosody>
-				<break time="600ms"/>
+				<break time="850ms"/>
 				<prosody rate="medium" pitch="+6%">I look forward to continuing the conversation.</prosody>
 			</s>
 		</p>
+		</prosody>
+		</amazon:domain>
 	</amazon:effect>
 </speak>

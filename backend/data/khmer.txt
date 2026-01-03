@@ -1,73 +1,208 @@
-<speak xmlns="http://www.w3.org/2001/10/synthesis" xmlns:amazon="http://www.amazon.com/ssml">
-  <amazon:effect name="drc">
-    <amazon:domain name="news">
-      <lang xml:lang="km-KH">
-        <prosody rate="medium" pitch="+2%">អរុណសួស្តី <emphasis level="moderate">:name</emphasis>។</prosody>
-        <break time="450ms"/>
+<speak>
+	<amazon:effect name="drc">
+		<p>
+			<s>
+				<prosody rate="medium" pitch="+8%">អរុណសួស្តី</prosody>
+				<break time="700ms"/>
+				<prosody rate="medium" pitch="+2%">:name.</prosody>
+				<break time="500ms"/>
+			</s>
+		</p>
 
-        ក្នុងរយៈពេលជាច្រើនទសវត្សរ៍នៅក្នុងឧស្សាហកម្មធានាជីវិត មានបញ្ហាមួយដែលនៅតែដូចเดิมជានិច្ច៖
-        <break time="250ms"/>
-        តើធ្វើដូចម្តេចដើម្បីរក្សា <emphasis level="moderate">ភាពស្ថិតស្ថេរ</emphasis> នៃលទ្ធផលលក់
-        សកម្មភាព និងការរក្សាទុកភ្នាក់ងារ ទាំងថ្មី និងចាស់។
-        <break time="350ms"/>
-        ទោះបីមានការវិនិយោគបន្តៗក៏ដោយ
-        <prosody rate="medium" pitch="-1%"><emphasis level="strong">អត្រាធ្លាក់ចុះនៅតែខ្លាំង</emphasis></prosody>។
-        <break time="550ms"/>
+		<amazon:domain name="news">
+		<prosody rate="90%">
+		<p>
+			<s>
+				ទោះបីជាអស់រយៈពេលជាច្រើនឆ្នាំ ឧស្សាហកម្មបានវិនិយោគលើប្រាក់ឧបត្ថម្ភ,
+				<break time="700ms"/>
+				ផលិតផល,
+				<break time="500ms"/>
+				ការបណ្តុះបណ្តាល,
+				<break time="500ms"/>
+				និងឧបករណ៍ឌីជីថលក្តី,
+				<break time="700ms"/>
+				ប៉ុន្តែក្នុងវិស័យធានារ៉ាប់រងជីវិត នៅតែមានបញ្ហាមួយមិនប្រែប្រួល៖
+				<break time="850ms"/>
+				<prosody rate="medium" pitch="+3%"><emphasis level="moderate">ការរក្សាសកម្មភាព និងប្រសិទ្ធភាពរបស់ភ្នាក់ងារ</emphasis></prosody>។
+			</s>
+			<s>
+				ទូទាំងឧស្សាហកម្ម,
+				<break time="500ms"/>
+				ការខ្វះការចូលរួមរបស់ភ្នាក់ងារ បន្តធ្វើឲ្យការរីកចម្រើន និងផលតបសងវិនិយោគថយចុះ។
+			</s>
+		</p>
 
-        តាមការវិភាគថ្មីៗលើភ្នាក់ងារថ្មីចំនួន <say-as interpret-as="cardinal">8386</say-as> នាក់ ក្នុងឆ្នាំ
-        <say-as interpret-as="date" format="y">2024</say-as> និង <say-as interpret-as="date" format="y">2025</say-as>
-        លទ្ធផលបង្ហាញយ៉ាងច្បាស់។
-        <break time="350ms"/>
+		<p>
+			<s>
+				ពីការវិភាគភ្នាក់ងារថ្មីចំនួន 8,380 នាក់
+				<break time="500ms"/>
+				ដែលត្រូវបានជ្រើសរើសជាប់ការងារក្នុងឆ្នាំ 2024 និង 2025,
+				<break time="1000ms"/>
+				លទ្ធផលគឺច្បាស់លាស់។
+			</s>
+			<s>
+				<break time="500ms"/>
+				<emphasis level="moderate">63 ភាគរយ</emphasis> នៅតែសកម្មនៅខែចេញកូដ។
+				<break time="850ms"/>
+				<emphasis level="moderate">10 ភាគរយ</emphasis> នៅតែសកម្មរហូតដល់ខែទី 3។
+				<break time="850ms"/>
+				ហើយមានតែ <emphasis level="moderate">5 ភាគរយ</emphasis> ប៉ុណ្ណោះដែលនៅតែសកម្មដល់ខែទី 6។
+			</s>
+			<s>
+				<break time="1250ms"/>
+				នោះមានន័យថា <emphasis level="strong">95 ភាគរយ</emphasis> នៃភ្នាក់ងារថ្មី នឹងឈប់សកម្មក្នុងរយៈពេលប្រាំមួយខែ។
+			</s>
+			<s>
+				<break time="700ms"/>
+				ភ្នាក់ងារដែលឈប់សកម្មម្នាក់ៗ មានន័យថា ប្រាក់ចំណាយជ្រើសរើសដែលខាតបង់,
+				<break time="500ms"/>
+				ប្រាក់ចំណាយបណ្តុះបណ្តាល,
+				<break time="500ms"/>
+				ពេលវេលារបស់អ្នកគ្រប់គ្រង,
+				<break time="450ms"/>
+				និង APE ដែលបាត់បង់។
+			</s>
+			<s>
+				<break time="600ms"/>
+				នៅក្នុងមាត្រដ្ឋានធំ,
+				វាប្រែប្រួលទៅជាចំណូលមិនទាន់សម្រេច <emphasis level="moderate">រាប់លាន</emphasis> រៀងរាល់ឆ្នាំ។
+			</s>
+		</p>
 
-        ខែទី១ អត្រាសកម្មគឺ <emphasis level="moderate">៦៣%</emphasis>។
-        <break time="250ms"/>
-        ដល់ខែទី៣ ធ្លាក់ចុះទៅ <emphasis level="moderate">១០%</emphasis>។
-        <break time="250ms"/>
-        និងដល់ខែទី៦ នៅសល់តែ <emphasis level="moderate">៥%</emphasis> ប៉ុណ្ណោះ។
-        <break time="400ms"/>
-        នោះមានន័យថា <emphasis level="strong">៩៥%</emphasis> បាន disengage ក្នុងរយៈពេល ៦ ខែ។
-        <break time="600ms"/>
+		<p>
+			<s>
+				<break time="1250ms"/>
+				<prosody rate="medium" pitch="+10%">ឥឡូវនេះ នេះជាឱកាស។</prosody>
+				<break time="450ms"/>
+			</s>
+		</p>
 
-        តែនេះជាឱកាស។
-        <break time="300ms"/>
-        ប្រសិនបើយើងបង្កើនសកម្មភាពភ្នាក់ងារត្រឹមតែ <emphasis level="moderate">១០ ពិន្ទុភាគរយ</emphasis>
-        នៅក្នុង cohort ប្រចាំខែនីមួយៗ
-        នោះលទ្ធផលគឺកើន <emphasis level="moderate">៥៧%</emphasis> APE នៅខែទី៦
-        និងកើន <emphasis level="moderate">៩១%</emphasis> នៅខែទី១២។
-        <break time="450ms"/>
-        នេះ <emphasis level="strong">មិនមែន</emphasis> ជាបញ្ហាបណ្តុះបណ្តាលទេ។
-        <break time="200ms"/>
-        វាជាបញ្ហាប្រព័ន្ធ និង engagement។
-        <break time="200ms"/>
-        ហើយវា <emphasis level="strong">អាចដោះស្រាយបាន</emphasis>។
-        <break time="650ms"/>
+		<p>
+			<s>
+				បើសិនយើងអាចកែលម្អសកម្មភាពភ្នាក់ងារ
+				<break time="600ms"/>
+				ដោយបន្ថែមតែ <emphasis level="strong">10 ពិន្ទុភាគរយ</emphasis>
+				<break time="600ms"/>
+				នៅក្នុងក្រុមតាមខែនីមួយៗ៖
+			</s>
+			<s>
+				APE នឹងកើនឡើង <emphasis level="moderate">57 ភាគរយ</emphasis> នៅខែទី 6។
+				<break time="700ms"/>
+				APE នឹងកើនឡើង <emphasis level="moderate">91 ភាគរយ</emphasis> នៅខែទី 12។
+			</s>
+			<s>
+				<break time="700ms"/>
+				លទ្ធផលនេះអាចសម្រេចបាន ដោយមិនចាំបាច់បង្កើនកម្រៃជើងសារ,
+				<break time="500ms"/>
+				ដោយមិនចាំបាច់មានផលិតផលថ្មី,
+				<break time="500ms"/>
+				និងដោយមិនចាំបាច់ជ្រើសរើសភ្នាក់ងារបន្ថែម។
+			</s>
+			<s>
+				<break time="1050ms"/>
+				នេះមិនមែនជាបញ្ហាបណ្តុះបណ្តាលទេ។
+				<break time="750ms"/>
+				វាគឺជា <emphasis level="strong">ចន្លោះខ្វះក្នុងការចូលរួម និងការអនុវត្ត</emphasis>។
+			</s>
+		</p>
 
-        ក្រុមហ៊ុនធានាភាគច្រើនមានការគាំទ្រហិរញ្ញវត្ថុ កម្មវិធីអភិវឌ្ឍភ្នាក់ងារ ផលិតផលងាយស្រួល និងប្រព័ន្ធ lead generation រួចហើយ។
-        <break time="350ms"/>
-        ទាំងនេះចាំបាច់។
-        <break time="250ms"/>
-        ប៉ុន្តែក្នុងករណីល្អបំផុត វាគ្រាន់តែពន្យារសកម្មភាពបន្តិចបន្តួច ហើយកម្រ​ឆ្លងកាត់ខែទី៩។
-        <break time="600ms"/>
+		<p>
+			<s>
+				ធានារ៉ាប់រង គឺជាអាជីវកម្មផ្អែកលើមនុស្ស។
+				<break time="750ms"/>
+				ប៉ុន្តែការគ្រប់គ្រងភ្នាក់ងារក្នុងមាត្រដ្ឋានធំនៅសព្វថ្ងៃ ត្រូវការទាំងវិទ្យាសាស្ត្រ និងការភ្ជាប់ទំនាក់ទំនងមនុស្ស។
+			</s>
+			<s>
+				ដោយប្រើទិន្នន័យ និង AI,
+				<break time="450ms"/>
+				ពង្រឹងដោយការសរសើរ និងការទទួលស្គាល់,
+				<break time="350ms"/>
+				ការលើកទឹកចិត្ត,
+				<break time="350ms"/>
+				និង coaching នៅពេលត្រឹមត្រូវ។
+			</s>
+			<s>
+				<break time="600ms"/>
+				ជំនឿនេះ បានជំរុញឲ្យខ្ញុំចូលរួមបង្កើត <emphasis level="moderate">CeMoCA</emphasis>។
+			</s>
+		</p>
 
-        ដូច្នេះសំណួរគឺ៖
-        <break time="250ms"/>
-        <emphasis level="strong">អ្វីកំពុងខ្វះ</emphasis>
-        រវាងការជ្រើសរើស និងលទ្ធផលយូរអង្វែង?
-        <break time="650ms"/>
+		<p>
+			<s>
+				CeMoCA គឺជាស្រទាប់សម្រាប់ជំរុញការចូលរួម និងប្រសិទ្ធភាពរបស់ភ្នាក់ងារ,
+				បញ្ជូនតាម WhatsApp,
+				<break time="450ms"/>
+				ដែលជាកន្លែងភ្នាក់ងារប្រើប្រាស់ជាប្រចាំ,
+				អាចសម្រេចអត្រាអានដល់ <emphasis level="moderate">98 ភាគរយ</emphasis>។
+			</s>
+			<s>
+				ភ្នាក់ងារម្នាក់ៗទទួលបាន <emphasis level="moderate">8 ដល់ 10</emphasis> ចំណុចប៉ះពាល់ដែលប្ដូរតាមបុគ្គល និងមានរចនាសម្ព័ន្ធរៀងរាល់ខែ,
+				រួមមាន៖
+				<break time="450ms"/>
+				ការទទួលស្គាល់ភ្លាមៗសម្រាប់ករណីដែលបានចេញប័ណ្ណ,
+				<break time="350ms"/>
+				ការអាប់ដេតច្បាស់លាស់អំពីវឌ្ឍនភាព និងសមតុល្យដែលនៅសល់ត្រូវសម្រេច,
+				<break time="350ms"/>
+				micro learning នៅថ្ងៃទី 14 និងថ្ងៃទី 28,
+				<break time="350ms"/>
+				សារចាប់ផ្តើមខែ និងកម្មវិធីលើកទឹកចិត្ត,
+				<break time="350ms"/>
+				សេចក្តីសង្ខេបលទ្ធផលប្រចាំខែ និងប្រចាំឆ្នាំ,
+				<break time="350ms"/>
+				និងសារសួរសុខទុក្ខថ្ងៃកំណើត និងថ្ងៃបុណ្យទាន។
+			</s>
+			<s>
+				<break time="600ms"/>
+				ទាំងអស់ស្វ័យប្រវត្តិ។
+				<break time="450ms"/>
+				មិនចាំបាច់មានប្រព័ន្ធថ្មី។
+				<break time="450ms"/>
+				ចំណាយប្រតិបត្តិការទាប។
+			</s>
+			<s>
+				<break time="600ms"/>
+				សំខាន់បំផុត,
+				<prosody rate="medium" pitch="+3%"><emphasis level="strong">សារនីមួយៗត្រូវបានកែសម្រួលឲ្យសមស្របតាមភ្នាក់ងារម្នាក់ៗ</emphasis></prosody>។
+			</s>
+			<s>
+				<break time="600ms"/>
+				លទ្ធផលគឺ សកម្មភាពមានភាពស្ថិតស្ថេរល្អជាងមុន,
+				ការរក្សាទុកដំណាក់កាលដំបូងប្រសើរឡើង,
+				ROI លើការជ្រើសរើស និងការបណ្តុះបណ្តាលកាន់តែខ្លាំង,
+				និង APE កើនឡើងយ៉ាងមានន័យ
+				<break time="450ms"/>
+				ដោយមិនចាំបាច់បន្ថែមកម្លាំងមនុស្ស។
+			</s>
+			<s>
+				<break time="600ms"/>
+				CeMoCA មិនបានជំនួសប្រព័ន្ធដែលអ្នកមានស្រាប់ទេ។
+				<break time="450ms"/>
+				វាជួយឲ្យប្រព័ន្ធទាំងនោះដំណើរការបានមានប្រសិទ្ធភាព។
+			</s>
+			<s>
+				<break time="600ms"/>
+				សរុបមក,
+				CeMoCA ជួយឲ្យក្រុមហ៊ុនធានារ៉ាប់រង បង្កើតប្រព័ន្ធអេកូស៊ីស្ទឹមលក់ដែលរឹងមាំជាងមុន
+				ដោយផ្អែកលើសកម្មភាព,
+				នាំមកនូវលទ្ធផលកាន់តែស្ថិតស្ថេរ និងការរក្សាទុកកាន់តែប្រសើរ។
+			</s>
+		</p>
 
-        ធានាជាជំនួញមនុស្ស។
-        <break time="300ms"/>
-        ការគ្រប់គ្រងភ្នាក់ងារត្រូវការទាំងវិទ្យាសាស្ត្រ និងការតភ្ជាប់មនុស្ស៖
-        ទិន្នន័យ និង AI ព្រមទាំងការសរសើរ ការលើកទឹកចិត្ត និង coaching ទាន់ពេល។
-        <break time="400ms"/>
-        ជំនឿនេះបាននាំឱ្យខ្ញុំរួមបង្កើត <sub alias="ស៊ី-ម៉ូ-កា">CeMoCA</sub>។
-        <break time="650ms"/>
-
-        <sub alias="ស៊ី-ម៉ូ-កា">CeMoCA</sub> តំណាងឱ្យ Celebrate, Motivate, Coach, និង Active។
-        <break time="500ms"/>
-
-        សូមអរគុណចំពោះពេលវេលារបស់អ្នក។ ខ្ញុំទន្ទឹងរង់ចាំឱកាសក្នុងការបន្តការសន្ទនា។
-      </lang>
-    </amazon:domain>
-  </amazon:effect>
+		<p>
+			<s>
+				យើងជឿថា CeMoCA គឺជាគំនិតផ្លាស់ប្តូរដែលអនុវត្តបានសម្រាប់ផែនការសកម្មភាពឆ្នាំ 2026,
+				<break time="500ms"/>
+				ហើយជាសញ្ញាច្បាស់លាស់ទៅកាន់កម្លាំងភ្នាក់ងាររបស់អ្នក
+				ថាក្រុមហ៊ុនកំពុងផ្លាស់ប្តូររបៀបគាំទ្រការជោគជ័យរបស់ភ្នាក់ងារ។
+			</s>
+			<s>
+				<break time="1100ms"/>
+				<prosody rate="medium" pitch="+6%">សូមអរគុណ។</prosody>
+				<break time="750ms"/>
+				<prosody rate="medium" pitch="+6%">ខ្ញុំទន្ទឹងរង់ចាំបន្តការពិភាក្សាជាមួយអ្នក។</prosody>
+			</s>
+		</p>
+		</prosody>
+		</amazon:domain>
+	</amazon:effect>
 </speak>

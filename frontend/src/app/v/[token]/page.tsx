@@ -1,8 +1,10 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useRef, useState, useEffect } from "react";
 import { useParams } from "next/navigation";
 import { videoReportAPI } from "@/lib/api";
+import ReactPlayer from "react-player/lazy";
+import { Download, SkipBack, SkipForward } from "lucide-react";
 
 interface VideoData {
   id: number;
@@ -17,6 +19,8 @@ interface VideoData {
 export default function VideoViewPage() {
   const params = useParams();
   const token = params.token as string;
+
+  const playerRef = useRef<any>(null);
   
   const [videoData, setVideoData] = useState<VideoData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -91,15 +95,68 @@ export default function VideoViewPage() {
 
   // Video ready - full screen video
   if (videoData?.videoUrl) {
+    const seekBySeconds = (deltaSeconds: number) => {
+      const player = playerRef.current;
+      if (!player?.getCurrentTime || !player?.seekTo) {
+        return;
+      }
+      const current = Number(player.getCurrentTime() ?? 0);
+      const next = Math.max(0, current + deltaSeconds);
+      player.seekTo(next, "seconds");
+    };
+
     return (
       <div className="fixed inset-0 bg-black">
-        <video
-          src={videoData.videoUrl}
-          controls
-          autoPlay
-          playsInline
-          className="w-full h-full object-contain"
-        />
+        <div className="absolute top-4 right-4 z-10 flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => seekBySeconds(-10)}
+            className="inline-flex items-center gap-2 rounded-lg bg-white/10 px-3 py-2 text-sm text-white backdrop-blur hover:bg-white/20"
+            aria-label="Back 10 seconds"
+          >
+            <SkipBack className="h-4 w-4" />
+            Back
+          </button>
+          <button
+            type="button"
+            onClick={() => seekBySeconds(10)}
+            className="inline-flex items-center gap-2 rounded-lg bg-white/10 px-3 py-2 text-sm text-white backdrop-blur hover:bg-white/20"
+            aria-label="Next 10 seconds"
+          >
+            <SkipForward className="h-4 w-4" />
+            Next
+          </button>
+          <a
+            href={videoData.videoUrl}
+            target="_blank"
+            rel="noreferrer"
+            download
+            className="inline-flex items-center gap-2 rounded-lg bg-white px-3 py-2 text-sm font-medium text-black hover:bg-gray-200"
+            aria-label="Download video"
+          >
+            <Download className="h-4 w-4" />
+            Download
+          </a>
+        </div>
+
+        <div className="w-full h-full">
+          <ReactPlayer
+            ref={playerRef}
+            url={videoData.videoUrl}
+            playing
+            controls
+            width="100%"
+            height="100%"
+            playsinline
+            config={{
+              file: {
+                attributes: {
+                  className: "w-full h-full object-contain",
+                },
+              },
+            }}
+          />
+        </div>
       </div>
     );
   }
