@@ -479,6 +479,10 @@ public class DIDService {
     }
 
     public Map<String, Object> getConsentForAvatarKey(String avatarKey) {
+        return ensureStableConsentForAvatarKey(avatarKey);
+    }
+
+    public Map<String, Object> ensureStableConsentForAvatarKey(String avatarKey) {
         Map<String, Object> out = new LinkedHashMap<>();
         String key = avatarKey == null ? "" : avatarKey.trim();
         out.put("avatarKey", key);
@@ -498,46 +502,201 @@ public class DIDService {
 
         out.put("presenterId", presenterId);
 
-        String consentId = null;
-        if (presenterId.startsWith("avt_")) {
-            consentId = fetchExpressAvatarConsentIdById(presenterId);
+        Optional<DIDAvatar> existing = Optional.empty();
+        try {
+            existing = avatarRepository.findByPresenterId(presenterId);
+            if (existing.isEmpty()) {
+                try {
+                    refreshPresenters();
+                } catch (Exception ignored) {
+                }
+                existing = avatarRepository.findByPresenterId(presenterId);
+            }
+        } catch (Exception ignored) {
         }
 
-        if (consentId == null || consentId.isBlank()) {
-            Map<String, Object> created = createConsent(null);
-            if (created == null) {
-                out.put("ok", false);
-                out.put("error", "Consent id not found for avatar");
+        DIDAvatar avatar;
+        if (existing.isPresent()) {
+            avatar = existing.get();
+        } else {
+            avatar = DIDAvatar.builder()
+                    .presenterId(presenterId)
+                    .presenterName(key.isBlank() ? presenterId : key)
+                    .avatarType("express")
+                    .isActive(true)
+                    .build();
+        }
+
+        String storedConsentId = avatar.getConsentId();
+        if (storedConsentId != null && !storedConsentId.trim().isBlank()) {
+            out.put("consentId", storedConsentId.trim());
+            String storedText = avatar.getConsentText();
+            if (storedText != null && !storedText.trim().isBlank()) {
+                out.put("consentText", storedText);
+                out.put("ok", true);
                 return out;
             }
-            if (!created.containsKey("avatarKey")) {
-                created.put("avatarKey", key);
+
+            Map<String, Object> consent = getConsent(storedConsentId.trim());
+            Object ok = consent.get("ok");
+            boolean okBool = ok instanceof Boolean && (Boolean) ok;
+            out.put("ok", okBool);
+            if (consent.containsKey("consentText")) {
+                String ct = consent.get("consentText") == null ? "" : String.valueOf(consent.get("consentText"));
+                if (!ct.isBlank()) {
+                    out.put("consentText", ct);
+                    try {
+                        avatar.setConsentText(ct);
+                        avatarRepository.save(avatar);
+                    } catch (Exception ignored) {
+                    }
+                }
             }
-            if (!created.containsKey("presenterId")) {
-                created.put("presenterId", presenterId);
+            if (consent.containsKey("status")) {
+                out.put("status", consent.get("status"));
             }
-            created.put("note", "generated_new_consent");
-            return created;
+            if (consent.containsKey("body")) {
+                out.put("body", consent.get("body"));
+            }
+            if (consent.containsKey("error")) {
+                out.put("error", consent.get("error"));
+            }
+            return out;
         }
 
-        out.put("consentId", consentId);
+        Map<String, Object> created = createConsent(null);
+        if (created == null) {
+            out.put("ok", false);
+            out.put("error", "Failed to create consent");
+            return out;
+        }
 
-        Map<String, Object> consent = getConsent(consentId);
-        Object ok = consent.get("ok");
-        out.put("ok", ok instanceof Boolean ? ok : Boolean.FALSE);
-        if (consent.containsKey("consentText")) {
-            out.put("consentText", consent.get("consentText"));
+        String newConsentId = extractConsentIdFromCreate(created);
+        if (newConsentId == null || newConsentId.isBlank()) {
+            out.put("ok", false);
+            out.put("error", "Consent created but id missing");
+            out.put("raw", created.get("raw"));
+            return out;
         }
-        if (consent.containsKey("status")) {
-            out.put("status", consent.get("status"));
+
+        String consentText = created.get("consentText") == null ? "" : String.valueOf(created.get("consentText"));
+        try {
+            avatar.setConsentId(newConsentId.trim());
+            if (!consentText.isBlank()) {
+                avatar.setConsentText(consentText);
+            }
+            avatarRepository.save(avatar);
+        } catch (Exception ignored) {
         }
-        if (consent.containsKey("body")) {
-            out.put("body", consent.get("body"));
-        }
-        if (consent.containsKey("error")) {
-            out.put("error", consent.get("error"));
+
+        out.put("ok", true);
+        out.put("consentId", newConsentId.trim());
+        if (!consentText.isBlank()) {
+            out.put("consentText", consentText);
         }
         return out;
+    }
+
+    public List<Map<String, Object>> listAvatarConsentStatus(String search) {
+        String q = search == null ? "" : search.trim().toLowerCase(Locale.ROOT);
+        List<DIDAvatar> avatars;
+        try {
+            avatars = avatarRepository.findByIsActiveTrue();
+        } catch (Exception e) {
+            avatars = new ArrayList<>();
+        }
+
+        return avatars.stream()
+                .filter(a -> a != null)
+                .filter(a -> {
+                    if (q.isBlank()) return true;
+                    String name = a.getPresenterName() == null ? "" : a.getPresenterName();
+                    String pid = a.getPresenterId() == null ? "" : a.getPresenterId();
+                    return name.toLowerCase(Locale.ROOT).contains(q) || pid.toLowerCase(Locale.ROOT).contains(q);
+                })
+                .sorted((a, b) -> {
+                    String an = a.getPresenterName() == null ? "" : a.getPresenterName();
+                    String bn = b.getPresenterName() == null ? "" : b.getPresenterName();
+                    return an.compareToIgnoreCase(bn);
+                })
+                .map(a -> {
+                    Map<String, Object> m = new LinkedHashMap<>();
+                    String presenterId = a.getPresenterId() == null ? "" : a.getPresenterId();
+                    String presenterName = a.getPresenterName() == null ? "" : a.getPresenterName();
+                    m.put("presenterId", presenterId);
+                    m.put("presenterName", presenterName);
+                    m.put("avatarType", a.getAvatarType());
+
+                    String consentId = a.getConsentId() == null ? "" : a.getConsentId().trim();
+                    boolean hasConsent = !consentId.isBlank();
+                    m.put("hasConsent", hasConsent);
+                    if (hasConsent) {
+                        m.put("consentId", consentId);
+                    }
+
+                    String consentText = a.getConsentText() == null ? "" : a.getConsentText();
+                    if (!consentText.trim().isBlank()) {
+                        m.put("consentText", consentText);
+                    } else if (hasConsent) {
+                        try {
+                            Map<String, Object> fetched = getConsent(consentId);
+                            Object ok = fetched.get("ok");
+                            boolean okBool = ok instanceof Boolean && (Boolean) ok;
+                            if (okBool && fetched.get("consentText") != null) {
+                                String ct = String.valueOf(fetched.get("consentText"));
+                                if (ct != null && !ct.isBlank()) {
+                                    m.put("consentText", ct);
+                                    try {
+                                        a.setConsentText(ct);
+                                        avatarRepository.save(a);
+                                    } catch (Exception ignored) {
+                                    }
+                                }
+                            }
+                        } catch (Exception ignored) {
+                        }
+                    }
+
+                    boolean hasConsentAudio = false;
+                    try {
+                        String normalizedKey = AvatarAudioService.normalizeKey(presenterName);
+                        if (normalizedKey != null && !normalizedKey.isBlank()) {
+                            hasConsentAudio = consentAudioRepository.existsByNormalizedKey(normalizedKey);
+                        }
+                    } catch (Exception ignored) {
+                    }
+                    m.put("hasConsentAudio", hasConsentAudio);
+                    return m;
+                })
+                .toList();
+    }
+
+    private String extractConsentIdFromCreate(Map<String, Object> created) {
+        if (created == null) {
+            return null;
+        }
+        Object rawObj = created.get("raw");
+        if (rawObj instanceof Map) {
+            Map<?, ?> raw = (Map<?, ?>) rawObj;
+            Object id = raw.get("id");
+            if (id == null) {
+                id = raw.get("consent_id");
+            }
+            if (id != null) {
+                String s = String.valueOf(id);
+                if (!s.isBlank()) {
+                    return s;
+                }
+            }
+        }
+        Object id2 = created.get("id");
+        if (id2 != null) {
+            String s = String.valueOf(id2);
+            if (!s.isBlank()) {
+                return s;
+            }
+        }
+        return null;
     }
 
     private String extractConsentText(JsonNode root) {

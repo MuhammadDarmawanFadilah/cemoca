@@ -9,7 +9,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import { useToast } from "@/hooks/use-toast-simple";
-import { consentManagementAPI, type ConsentAudio, type PagedResponse } from "@/lib/api";
+import { consentManagementAPI, type AvatarConsentStatus, type ConsentAudio, type PagedResponse } from "@/lib/api";
 import { Key, Plus, Search, Trash2, Pencil } from "lucide-react";
 
 export default function ConsentManagementPage() {
@@ -28,6 +28,11 @@ export default function ConsentManagementPage() {
   const [avatarName, setAvatarName] = useState<string>("");
   const [file, setFile] = useState<File | null>(null);
   const [saving, setSaving] = useState<boolean>(false);
+
+  const [avatarStatuses, setAvatarStatuses] = useState<AvatarConsentStatus[]>([]);
+  const [avatarsLoading, setAvatarsLoading] = useState<boolean>(true);
+  const [avatarsSearch, setAvatarsSearch] = useState<string>("");
+  const [ensuring, setEnsuring] = useState<Record<string, boolean>>({});
 
   const stats = useMemo(() => [{ label: "Total", value: items.length }], [items.length]);
 
@@ -52,10 +57,31 @@ export default function ConsentManagementPage() {
     }
   };
 
+  const fetchAvatars = async () => {
+    try {
+      setAvatarsLoading(true);
+      const res = await consentManagementAPI.listAvatars({ search: avatarsSearch.trim() || undefined });
+      setAvatarStatuses(res || []);
+    } catch (e: any) {
+      toast({
+        title: "Error",
+        description: e?.message || "Failed to load avatars",
+        variant: "destructive",
+      });
+    } finally {
+      setAvatarsLoading(false);
+    }
+  };
+
   useEffect(() => {
     fetchData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, size]);
+
+  useEffect(() => {
+    fetchAvatars();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     const t = setTimeout(() => {
@@ -65,6 +91,14 @@ export default function ConsentManagementPage() {
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [search]);
+
+  useEffect(() => {
+    const t = setTimeout(() => {
+      fetchAvatars();
+    }, 400);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [avatarsSearch]);
 
   const openCreate = () => {
     setEditing(null);
@@ -128,6 +162,26 @@ export default function ConsentManagementPage() {
     }
   };
 
+  const onEnsureConsent = async (avatarKey: string) => {
+    const k = avatarKey.trim();
+    if (!k) return;
+
+    try {
+      setEnsuring((p) => ({ ...p, [k]: true }));
+      await consentManagementAPI.ensureAvatarConsent(k);
+      toast({ title: "Success", description: "Consent created and locked for this avatar" });
+      await fetchAvatars();
+    } catch (e: any) {
+      toast({
+        title: "Error",
+        description: e?.message || "Failed to ensure consent",
+        variant: "destructive",
+      });
+    } finally {
+      setEnsuring((p) => ({ ...p, [k]: false }));
+    }
+  };
+
   return (
     <div className="space-y-6">
       <AdminPageHeader
@@ -140,6 +194,89 @@ export default function ConsentManagementPage() {
       />
 
       <div className="px-4 sm:px-6 lg:px-8 space-y-4">
+        <Card>
+          <CardContent className="p-4 space-y-3">
+            <div className="flex flex-col md:flex-row gap-3 md:items-center md:justify-between">
+              <div className="relative w-full md:max-w-md">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  value={avatarsSearch}
+                  onChange={(e) => setAvatarsSearch(e.target.value)}
+                  placeholder="Search avatars (name / presenterId)..."
+                  className="pl-9"
+                />
+              </div>
+
+              <div className="flex gap-2">
+                <Button variant="outline" onClick={() => fetchAvatars()} disabled={avatarsLoading}>
+                  Refresh Avatars
+                </Button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="p-0">
+            {avatarsLoading ? (
+              <div className="p-8 flex items-center justify-center">
+                <LoadingSpinner />
+              </div>
+            ) : (
+              <div className="w-full overflow-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Avatar</TableHead>
+                      <TableHead>Presenter ID</TableHead>
+                      <TableHead>Consent</TableHead>
+                      <TableHead>Consent Audio</TableHead>
+                      <TableHead>Consent Text</TableHead>
+                      <TableHead className="text-right">Action</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {avatarStatuses.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={6} className="text-center py-10 text-muted-foreground">
+                          No avatars found
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      avatarStatuses.map((row) => {
+                        const key = row.presenterName || row.presenterId;
+                        const busy = !!ensuring[key];
+                        const canEnsure = !row.hasConsent;
+                        return (
+                          <TableRow key={row.presenterId}>
+                            <TableCell className="font-medium">{row.presenterName}</TableCell>
+                            <TableCell className="max-w-[280px] truncate">{row.presenterId}</TableCell>
+                            <TableCell>{row.hasConsent ? "YES" : "NO"}</TableCell>
+                            <TableCell>{row.hasConsentAudio ? "YES" : "NO"}</TableCell>
+                            <TableCell className="max-w-[520px]">
+                              <div className="truncate">{row.consentText || ""}</div>
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <Button
+                                size="sm"
+                                variant={canEnsure ? "default" : "outline"}
+                                disabled={!canEnsure || busy}
+                                onClick={() => onEnsureConsent(key)}
+                              >
+                                {busy ? "Creating..." : canEnsure ? "Create Consent" : "Locked"}
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
         <Card>
           <CardContent className="p-4">
             <div className="flex flex-col md:flex-row gap-3 md:items-center md:justify-between">

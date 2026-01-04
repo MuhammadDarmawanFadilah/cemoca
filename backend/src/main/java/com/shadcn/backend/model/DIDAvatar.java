@@ -36,6 +36,12 @@ public class DIDAvatar {
 
     @Column(name = "voice_type")
     private String voiceType;
+
+    @Column(name = "consent_id")
+    private String consentId;
+
+    @Column(name = "consent_text", length = 4000)
+    private String consentText;
     
     @Column(name = "gender")
     private String gender;

@@ -1,6 +1,7 @@
 package com.shadcn.backend.controller;
 
 import com.shadcn.backend.dto.ConsentAudioResponse;
+import com.shadcn.backend.service.DIDService;
 import com.shadcn.backend.service.ConsentAudioService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -18,6 +19,7 @@ import org.springframework.web.multipart.MultipartFile;
 public class ConsentAudioController {
 
     private final ConsentAudioService service;
+    private final DIDService didService;
 
     @GetMapping
     @PreAuthorize("hasRole('ADMIN') or hasRole('MODERATOR')")
@@ -56,5 +58,19 @@ public class ConsentAudioController {
     public ResponseEntity<Void> delete(@PathVariable Long id) {
         service.delete(id);
         return ResponseEntity.noContent().build();
+    }
+
+    @GetMapping("/avatars")
+    @PreAuthorize("hasRole('ADMIN') or hasRole('MODERATOR')")
+    public ResponseEntity<Object> listAvatarConsentStatus(
+            @RequestParam(required = false) String search
+    ) {
+        return ResponseEntity.ok(didService.listAvatarConsentStatus(search));
+    }
+
+    @PostMapping("/avatars/{avatarKey}/ensure-consent")
+    @PreAuthorize("hasRole('ADMIN') or hasRole('MODERATOR')")
+    public ResponseEntity<Object> ensureAvatarConsent(@PathVariable String avatarKey) {
+        return ResponseEntity.ok(didService.ensureStableConsentForAvatarKey(avatarKey));
     }
 }

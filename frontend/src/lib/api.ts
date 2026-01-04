@@ -541,6 +541,16 @@ export interface ConsentAudio {
   updatedAt: string;
 }
 
+export interface AvatarConsentStatus {
+  presenterId: string;
+  presenterName: string;
+  avatarType?: string | null;
+  hasConsent: boolean;
+  consentId?: string;
+  consentText?: string;
+  hasConsentAudio: boolean;
+}
+
 export interface VideoBackground {
   id: number;
   backgroundName: string;
@@ -674,6 +684,16 @@ export const consentManagementAPI = {
   },
 
   delete: (id: number): Promise<void> => apiCall<void>(`/admin/consent-management/${id}`, { method: 'DELETE' }),
+
+  listAvatars: (params: { search?: string } = {}): Promise<AvatarConsentStatus[]> => {
+    const search = params.search ? `?search=${encodeURIComponent(params.search)}` : '';
+    return apiCall<AvatarConsentStatus[]>(`/admin/consent-management/avatars${search}`);
+  },
+
+  ensureAvatarConsent: (avatarKey: string): Promise<any> =>
+    apiCall<any>(`/admin/consent-management/avatars/${encodeURIComponent(avatarKey)}/ensure-consent`, {
+      method: 'POST',
+    }),
 };
 
 export const backgroundManagementAPI = {
