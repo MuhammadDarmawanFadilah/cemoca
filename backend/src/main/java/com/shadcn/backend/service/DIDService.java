@@ -45,7 +45,6 @@ public class DIDService {
     private final ObjectMapper objectMapper;
     private final DIDAvatarRepository avatarRepository;
     private final AvatarAudioRepository avatarAudioRepository;
-    private final AmazonPollyTtsService amazonPollyTtsService;
     private final Map<String, DIDPresenter> presenterCache = new ConcurrentHashMap<>();
 
     private final Map<String, String> clonedVoiceIdCache = new ConcurrentHashMap<>();
@@ -163,11 +162,10 @@ public class DIDService {
         }
     }
 
-    public DIDService(ObjectMapper objectMapper, DIDAvatarRepository avatarRepository, AvatarAudioRepository avatarAudioRepository, AmazonPollyTtsService amazonPollyTtsService) {
+    public DIDService(ObjectMapper objectMapper, DIDAvatarRepository avatarRepository, AvatarAudioRepository avatarAudioRepository) {
         this.objectMapper = objectMapper;
         this.avatarRepository = avatarRepository;
         this.avatarAudioRepository = avatarAudioRepository;
-        this.amazonPollyTtsService = amazonPollyTtsService;
         this.webClient = WebClient.builder()
                 .baseUrl("https://api.d-id.com")
                 .defaultHeader(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
@@ -936,6 +934,39 @@ public class DIDService {
             return input;
         }
     }
+
+    private String xmlEscapeForSsml(String input) {
+        if (input == null || input.isEmpty()) {
+            return input;
+        }
+        String s = input;
+        s = s.replace("&", "&amp;");
+        s = s.replace("<", "&lt;");
+        s = s.replace(">", "&gt;");
+        s = s.replace("\"", "&quot;");
+        s = s.replace("'", "&apos;");
+        return s;
+    }
+
+    private String wrapPlainTextToSsml(String input) {
+        if (input == null) {
+            return null;
+        }
+        String t = input.trim();
+        if (t.isEmpty()) {
+            return t;
+        }
+
+        t = t.replace("\r\n", "\n").replace("\r", "\n");
+        t = xmlEscapeForSsml(t);
+
+        t = t.replaceAll("\\n\\s*\\n+", "<break time=\"1400ms\"/>");
+        t = t.replaceAll("\\n", "<break time=\"900ms\"/>");
+        t = t.replaceAll("([.!?])\\s+", "$1<break time=\"900ms\"/> ");
+        t = t.replaceAll("(:)\\s+", "$1<break time=\"700ms\"/> ");
+
+        return "<speak><prosody rate=\"90%\">" + t + "</prosody></speak>";
+    }
     
     /**
      * Get avatars from database
@@ -1258,7 +1289,9 @@ public class DIDService {
         }
 
         String trimmedAvatarId = avatarId.trim();
-
+        if (strictAudioManagementVoice && audioUrl != null && !audioUrl.isBlank()) {
+            throw new RuntimeException("audio_url is disabled in strict mode; must use D-ID Amazon provider");
+        }
         boolean hasAudioManagementSample = false;
         try {
             hasAudioManagementSample = strictAudioManagementVoice && hasAudioManagementSampleForPresenter(trimmedAvatarId);
@@ -1266,20 +1299,11 @@ public class DIDService {
             // Best-effort
         }
 
-        // Strict mode: require Audio Management entry and use Amazon Polly (SSML) + audio_url for D-ID.
+        // Strict mode: require Audio Management entry and use D-ID Amazon provider (no direct AWS calls).
         if (strictAudioManagementVoice) {
             if (!hasAudioManagementSample) {
                 throw new RuntimeException("Audio Management voice is required for avatarId=" + trimmedAvatarId);
             }
-
-            String pollyVoiceId = pickAmazonVoiceIdForPresenter(trimmedAvatarId);
-            byte[] mp3 = amazonPollyTtsService.synthesizeToMp3(script, pollyVoiceId);
-            if (mp3 == null || mp3.length == 0) {
-                throw new RuntimeException("Amazon Polly TTS returned empty audio for avatarId=" + trimmedAvatarId);
-            }
-
-            audioUrl = uploadAudio(mp3, "polly-" + trimmedAvatarId + "-" + System.currentTimeMillis() + ".mp3")
-                    .orElseThrow(() -> new RuntimeException("Failed to upload Amazon Polly audio to D-ID for avatarId=" + trimmedAvatarId));
         } else {
             // Non-strict: best-effort local-sample voice cloning.
             ensureLocalSampleVoiceIfAvailable(trimmedAvatarId);
@@ -1916,36 +1940,22 @@ public class DIDService {
                 if (usingAudio) {
                     scriptObj.put("type", "audio");
                     scriptObj.put("audio_url", audioUrl);
-                    logger.info("Scene {} using audio_url (Amazon Polly)", avatarId);
                 } else {
                     scriptObj.put("type", "text");
-                    boolean canUseSsml = isSsmlInput(script);
+                    boolean originalSsml = isSsmlInput(script);
+                    boolean canUseSsml = strictAudioManagementVoice || originalSsml;
                     if (canUseSsml) {
                         scriptObj.put("ssml", true);
                     }
 
                     Map<String, Object> provider;
-                    if (strictAudioManagementVoice && canUseSsml) {
-                        String ssmlVoiceId = voiceId;
-                        if (ssmlVoiceId == null || ssmlVoiceId.isBlank()) {
-                            try {
-                                DIDPresenter cachedAvatar = presenterCache.get(avatarId);
-                                if (cachedAvatar != null && cachedAvatar.getVoice_id() != null && !cachedAvatar.getVoice_id().isBlank()) {
-                                    ssmlVoiceId = cachedAvatar.getVoice_id().trim();
-                                }
-                            } catch (Exception ignored) {
-                                // ignore
-                            }
-                        }
-                        if (ssmlVoiceId == null || ssmlVoiceId.isBlank()) {
-                            ssmlVoiceId = fetchExpressAvatarVoiceIdById(avatarId);
-                        }
-                        if (ssmlVoiceId == null || ssmlVoiceId.isBlank()) {
-                            throw new RuntimeException("SSML requires Express Avatar voice_id; missing for avatarId=" + avatarId);
+                    if (strictAudioManagementVoice) {
+                        if (!hasAudioManagementSampleForPresenter(avatarId)) {
+                            throw new RuntimeException("Audio Management voice is required for avatarId=" + avatarId);
                         }
                         provider = new HashMap<>();
-                        provider.put("type", "elevenlabs");
-                        provider.put("voice_id", ssmlVoiceId.trim());
+                        provider.put("type", "amazon");
+                        provider.put("voice_id", pickAmazonVoiceIdForPresenter(avatarId));
                         provider = sanitizeProviderForScenes(provider);
                     } else {
                         provider = sanitizeProviderForScenes(resolveProviderForPresenter(avatarId));
@@ -1960,14 +1970,17 @@ public class DIDService {
                         String logVoiceId = String.valueOf(provider.get("voice_id"));
                         logger.info("Scene {} using {} voice: voice_id={}", avatarId, logVoiceType, logVoiceId);
                     } else {
-                        logger.info("Scene {} using avatar's native voice (no audio-management sample)", avatarId);
+                        logger.info("Scene {} using avatar's native voice", avatarId);
                     }
 
                     String scriptInput = script;
+                    if (strictAudioManagementVoice && !originalSsml) {
+                        scriptInput = wrapPlainTextToSsml(scriptInput);
+                    }
                     if (ssmlAllowed) {
                         scriptInput = providerType != null && providerType.equalsIgnoreCase("amazon")
-                                ? sanitizeSsmlForAmazonProvider(script)
-                                : sanitizeSsmlForDidProvider(script);
+                                ? sanitizeSsmlForAmazonProvider(scriptInput)
+                                : sanitizeSsmlForDidProvider(scriptInput);
                         if (strictAudioManagementVoice) {
                             String si = scriptInput == null ? "" : scriptInput;
                             logger.info(
@@ -1981,7 +1994,7 @@ public class DIDService {
                                 si.length()
                             );
                         }
-                    } else if (canUseSsml) {
+                    } else if (originalSsml) {
                         scriptInput = stripKnownSsmlTagsToPlainText(script);
                     }
                     scriptObj.put("input", scriptInput);
@@ -2005,31 +2018,6 @@ public class DIDService {
                     if (requestBody.containsKey("background") && (wce.getStatusCode().is4xxClientError() || isBackgroundRelatedError(wce))) {
                         logger.warn("Scenes background rejected (status={}). Retrying without background.", wce.getStatusCode().value());
                         requestBody.remove("background");
-                        response = postScene(requestBody);
-                    } else if (audioUrl != null && !audioUrl.isBlank() && wce.getStatusCode().is4xxClientError()) {
-                        logger.warn("Scenes audio rejected (status={}). Retrying with text script.", wce.getStatusCode().value());
-                        Map<String, Object> textScript = new HashMap<>();
-                        textScript.put("type", "text");
-                        boolean canUseSsml = isSsmlInput(script);
-
-                        Map<String, Object> provider = resolveProviderForPresenter(avatarId);
-                        provider = sanitizeProviderForScenes(provider);
-                        String providerType = provider == null ? null : String.valueOf(provider.get("type"));
-                        boolean ssmlAllowed = canUseSsml;
-
-                        String scriptInput = script;
-                        if (ssmlAllowed) {
-                            scriptInput = providerType != null && providerType.equalsIgnoreCase("amazon")
-                                    ? sanitizeSsmlForAmazonProvider(script)
-                                    : sanitizeSsmlForDidProvider(script);
-                        } else if (canUseSsml) {
-                            scriptInput = stripKnownSsmlTagsToPlainText(script);
-                        }
-                        textScript.put("input", scriptInput);
-                        if (provider != null) {
-                            textScript.put("provider", provider);
-                        }
-                        requestBody.put("script", textScript);
                         response = postScene(requestBody);
                     } else if (!usingAudio && isSsmlInput(script) && wce.getStatusCode().is4xxClientError()) {
                         if (strictAudioManagementVoice) {
@@ -2179,57 +2167,34 @@ public class DIDService {
                 if (usingAudio) {
                     scriptObj.put("type", "audio");
                     scriptObj.put("audio_url", audioUrl);
-                    logger.info("Clips {} using audio_url (Amazon Polly)", presenterId);
                 } else {
                     scriptObj.put("type", "text");
-                    boolean canUseSsml = isSsmlInput(script);
+                    boolean originalSsml = isSsmlInput(script);
+                    boolean canUseSsml = strictAudioManagementVoice || originalSsml;
                     if (canUseSsml) {
                         scriptObj.put("ssml", true);
                     }
 
-                    if (strictAudioManagementVoice && canUseSsml) {
-                        String ssmlVoiceId = null;
-                        try {
-                            Optional<DIDAvatar> dbAvatar = avatarRepository.findByPresenterId(presenterId);
-                            if (dbAvatar.isPresent() && dbAvatar.get().getVoiceId() != null && !dbAvatar.get().getVoiceId().isBlank()) {
-                                ssmlVoiceId = dbAvatar.get().getVoiceId().trim();
-                            }
-                        } catch (Exception ignored) {
-                            // ignore
+                    if (strictAudioManagementVoice) {
+                        if (!hasAudioManagementSampleForPresenter(presenterId)) {
+                            throw new RuntimeException("Audio Management voice is required for presenterId=" + presenterId);
                         }
-
-                        if (ssmlVoiceId == null || ssmlVoiceId.isBlank()) {
-                            try {
-                                DIDPresenter cached = presenterCache.get(presenterId);
-                                if (cached != null && cached.getVoice_id() != null && !cached.getVoice_id().isBlank()) {
-                                    ssmlVoiceId = cached.getVoice_id().trim();
-                                }
-                            } catch (Exception ignored) {
-                                // ignore
-                            }
-                        }
-
-                        if (ssmlVoiceId == null || ssmlVoiceId.isBlank()) {
-                            ssmlVoiceId = fetchExpressAvatarVoiceIdById(presenterId);
-                        }
-
-                        if (ssmlVoiceId == null || ssmlVoiceId.isBlank()) {
-                            throw new RuntimeException("SSML requires Express Avatar voice_id; missing for presenterId=" + presenterId);
-                        }
-
-                        Map<String, Object> ssmlProvider = new HashMap<>();
-                        ssmlProvider.put("type", "elevenlabs");
-                        ssmlProvider.put("voice_id", ssmlVoiceId.trim());
-                        provider = ssmlProvider;
+                        Map<String, Object> amazonProvider = new HashMap<>();
+                        amazonProvider.put("type", "amazon");
+                        amazonProvider.put("voice_id", pickAmazonVoiceIdForPresenter(presenterId));
+                        provider = amazonProvider;
                     }
 
                     String providerType = provider == null ? null : String.valueOf(provider.get("type"));
                     boolean ssmlAllowed = canUseSsml;
                     String scriptInput = script;
+                    if (strictAudioManagementVoice && !originalSsml) {
+                        scriptInput = wrapPlainTextToSsml(scriptInput);
+                    }
                     if (ssmlAllowed) {
                         scriptInput = providerType != null && providerType.equalsIgnoreCase("amazon")
-                                ? sanitizeSsmlForAmazonProvider(script)
-                                : sanitizeSsmlForDidProvider(script);
+                                ? sanitizeSsmlForAmazonProvider(scriptInput)
+                                : sanitizeSsmlForDidProvider(scriptInput);
                         if (strictAudioManagementVoice) {
                             String si = scriptInput == null ? "" : scriptInput;
                             logger.info(
@@ -2243,7 +2208,7 @@ public class DIDService {
                                 si.length()
                             );
                         }
-                    } else if (canUseSsml) {
+                    } else if (originalSsml) {
                         scriptInput = stripKnownSsmlTagsToPlainText(script);
                     }
                     scriptObj.put("input", scriptInput);
@@ -2263,7 +2228,7 @@ public class DIDService {
                     String voiceId = String.valueOf(provider.get("voice_id"));
                     logger.info("Clip {} using {} voice: voice_id={}", presenterId, voiceType, voiceId);
                 } else {
-                    logger.info("Clip {} using presenter's native voice (no audio-management sample)", presenterId);
+                    logger.info("Clip {} using presenter's native voice", presenterId);
                 }
                 requestBodyWithProvider.put("script", scriptWithProvider);
 

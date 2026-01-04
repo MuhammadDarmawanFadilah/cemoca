@@ -262,6 +262,26 @@ public class VideoReportService {
         this.videoBackgroundRepository = videoBackgroundRepository;
     }
 
+    private String resolveMessageTemplate(VideoReport report) {
+        if (report == null) {
+            return getDefaultMessageTemplate();
+        }
+        String t = report.getMessageTemplate();
+        if (t == null || t.isBlank()) {
+            return getDefaultMessageTemplate();
+        }
+        return t;
+    }
+
+    private String personalizeMessage(String template, VideoReportItem item) {
+        String t = template == null ? "" : template;
+        if (item == null) {
+            return t;
+        }
+        String name = item.getName() == null ? "" : item.getName();
+        return t.replace(":name", name);
+    }
+
     private void startVideoGenerationAsync(Long reportId) {
         try {
             VideoReportService proxied = selfProvider.getIfAvailable();
@@ -320,8 +340,17 @@ public class VideoReportService {
     public VideoReport createVideoReport(VideoReportRequest request, User user) {
         VideoReport report = new VideoReport();
         report.setReportName(request.getReportName());
-        report.setMessageTemplate(request.getMessageTemplate());
-        report.setWaMessageTemplate(request.getWaMessageTemplate());
+        String messageTemplate = request.getMessageTemplate();
+        if (messageTemplate == null || messageTemplate.isBlank()) {
+            messageTemplate = getDefaultMessageTemplate();
+        }
+        report.setMessageTemplate(messageTemplate);
+
+        String waMessageTemplate = request.getWaMessageTemplate();
+        if (waMessageTemplate == null || waMessageTemplate.isBlank()) {
+            waMessageTemplate = getDefaultWaMessageTemplate();
+        }
+        report.setWaMessageTemplate(waMessageTemplate);
         report.setUseBackground(Boolean.TRUE.equals(request.getUseBackground()));
         report.setBackgroundName(request.getBackgroundName());
         report.setStatus("PENDING");
@@ -346,8 +375,7 @@ public class VideoReportService {
             item.setPhone(itemRequest.getPhone());
             item.setAvatar(itemRequest.getAvatar());
 
-            String personalizedMessage = request.getMessageTemplate()
-                    .replace(":name", itemRequest.getName());
+            String personalizedMessage = personalizeMessage(messageTemplate, item);
             item.setPersonalizedMessage(personalizedMessage);
             item.setStatus("PENDING");
             item.setWaStatus(isPreview ? "DISABLED" : "PENDING");
@@ -375,6 +403,8 @@ public class VideoReportService {
             logger.error("Video report not found: {}", reportId);
             return;
         }
+
+        final String messageTemplate = resolveMessageTemplate(report);
 
         try {
             // Warm avatar cache once; resolveExpressPresenterId should then be O(1) per item.
@@ -427,7 +457,7 @@ public class VideoReportService {
             // Submit ALL items at once; D-ID handles the real rendering load.
             List<CompletableFuture<Void>> futures = pendingItems.stream()
                 .map(item -> CompletableFuture
-                    .supplyAsync(() -> processVideoItem(item, backgroundUrl), finalExecutor)
+                    .supplyAsync(() -> processVideoItem(item, backgroundUrl, messageTemplate), finalExecutor)
                     .thenAccept(updated -> {
                         int processedNow = processedInThisRun.incrementAndGet();
                         if ("FAILED".equals(updated.getStatus())) {
@@ -491,7 +521,7 @@ public class VideoReportService {
     /**
      * Process a single video item (called in parallel)
      */
-    private VideoReportItem processVideoItem(VideoReportItem item, String backgroundUrl) {
+    private VideoReportItem processVideoItem(VideoReportItem item, String backgroundUrl, String messageTemplate) {
         try {
             String presenterId = didService.resolveExpressPresenterId(item.getAvatar());
             if (presenterId == null || presenterId.isBlank()) {
@@ -500,11 +530,13 @@ public class VideoReportService {
                 videoReportItemRepository.save(item);
                 return item;
             }
+
+            String script = personalizeMessage(messageTemplate, item);
             
             // Create clip via D-ID
             Map<String, Object> result = didService.createClip(
                     presenterId,
-                    item.getPersonalizedMessage(),
+                    script,
                     backgroundUrl,
                     null
             );
@@ -545,6 +577,8 @@ public class VideoReportService {
         final String backgroundUrl = buildPublicBackgroundUrl(
             Boolean.TRUE.equals(report.getUseBackground()) ? report.getBackgroundName() : null
         );
+
+        final String messageTemplate = resolveMessageTemplate(report);
         
         try {
             // Reset item status
@@ -567,7 +601,7 @@ public class VideoReportService {
             // Create clip via D-ID
             Map<String, Object> result = didService.createClip(
                     presenterId,
-                    item.getPersonalizedMessage(),
+                    personalizeMessage(messageTemplate, item),
                     backgroundUrl,
                     null
             );
