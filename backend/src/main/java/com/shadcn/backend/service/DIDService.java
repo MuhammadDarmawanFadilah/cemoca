@@ -504,9 +504,20 @@ public class DIDService {
         }
 
         if (consentId == null || consentId.isBlank()) {
-            out.put("ok", false);
-            out.put("error", "Consent id not found for avatar");
-            return out;
+            Map<String, Object> created = createConsent(null);
+            if (created == null) {
+                out.put("ok", false);
+                out.put("error", "Consent id not found for avatar");
+                return out;
+            }
+            if (!created.containsKey("avatarKey")) {
+                created.put("avatarKey", key);
+            }
+            if (!created.containsKey("presenterId")) {
+                created.put("presenterId", presenterId);
+            }
+            created.put("note", "generated_new_consent");
+            return created;
         }
 
         out.put("consentId", consentId);
