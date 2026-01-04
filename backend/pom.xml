@@ -19,6 +19,7 @@
         <maven.compiler.source>25</maven.compiler.source>
         <maven.compiler.target>25</maven.compiler.target>
         <lombok.version>1.18.42</lombok.version>
+        <aws.sdk.version>2.29.52</aws.sdk.version>
     </properties>
 
     <dependencies>
@@ -119,6 +120,13 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-webflux</artifactId>
+        </dependency>
+
+        <!-- AWS SDK (Polly TTS) -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>polly</artifactId>
+            <version>${aws.sdk.version}</version>
         </dependency>
         
         <!-- OpenPDF for PDF generation (free, LGPL license) -->

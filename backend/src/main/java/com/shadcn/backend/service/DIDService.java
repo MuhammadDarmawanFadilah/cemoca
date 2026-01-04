@@ -45,6 +45,7 @@ public class DIDService {
     private final ObjectMapper objectMapper;
     private final DIDAvatarRepository avatarRepository;
     private final AvatarAudioRepository avatarAudioRepository;
+    private final AmazonPollyTtsService amazonPollyTtsService;
     private final Map<String, DIDPresenter> presenterCache = new ConcurrentHashMap<>();
 
     private final Map<String, String> clonedVoiceIdCache = new ConcurrentHashMap<>();
@@ -162,10 +163,11 @@ public class DIDService {
         }
     }
 
-    public DIDService(ObjectMapper objectMapper, DIDAvatarRepository avatarRepository, AvatarAudioRepository avatarAudioRepository) {
+    public DIDService(ObjectMapper objectMapper, DIDAvatarRepository avatarRepository, AvatarAudioRepository avatarAudioRepository, AmazonPollyTtsService amazonPollyTtsService) {
         this.objectMapper = objectMapper;
         this.avatarRepository = avatarRepository;
         this.avatarAudioRepository = avatarAudioRepository;
+        this.amazonPollyTtsService = amazonPollyTtsService;
         this.webClient = WebClient.builder()
                 .baseUrl("https://api.d-id.com")
                 .defaultHeader(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
@@ -1264,12 +1266,24 @@ public class DIDService {
             // Best-effort
         }
 
-        // Voice policy: prefer local-sample cloned voice when available; otherwise use presenter default voice.
-        // Do not use audio_url.
-        audioUrl = null;
+        // Strict mode: require Audio Management entry and use Amazon Polly (SSML) + audio_url for D-ID.
+        if (strictAudioManagementVoice) {
+            if (!hasAudioManagementSample) {
+                throw new RuntimeException("Audio Management voice is required for avatarId=" + trimmedAvatarId);
+            }
 
-        // Best-effort: prefer deterministic uploaded samples from Audio Management when available
-        ensureLocalSampleVoiceIfAvailable(trimmedAvatarId);
+            String pollyVoiceId = pickAmazonVoiceIdForPresenter(trimmedAvatarId);
+            byte[] mp3 = amazonPollyTtsService.synthesizeToMp3(script, pollyVoiceId);
+            if (mp3 == null || mp3.length == 0) {
+                throw new RuntimeException("Amazon Polly TTS returned empty audio for avatarId=" + trimmedAvatarId);
+            }
+
+            audioUrl = uploadAudio(mp3, "polly-" + trimmedAvatarId + "-" + System.currentTimeMillis() + ".mp3")
+                    .orElseThrow(() -> new RuntimeException("Failed to upload Amazon Polly audio to D-ID for avatarId=" + trimmedAvatarId));
+        } else {
+            // Non-strict: best-effort local-sample voice cloning.
+            ensureLocalSampleVoiceIfAvailable(trimmedAvatarId);
+        }
 
         // If explicitly targeting an Express Avatar, never fall back to another avatar.
         if (trimmedAvatarId.startsWith("avt_")) {
@@ -1288,6 +1302,10 @@ public class DIDService {
 
         Map<String, Object> clips = createClipsVideo(trimmedAvatarId, script, backgroundUrl, audioUrl);
         if (Boolean.TRUE.equals(clips.get("success"))) {
+            return clips;
+        }
+
+        if (strictAudioManagementVoice) {
             return clips;
         }
 
@@ -1894,10 +1912,11 @@ public class DIDService {
                 }
                 
                 Map<String, Object> scriptObj = new HashMap<>();
-                boolean usingAudio = false;
+                boolean usingAudio = audioUrl != null && !audioUrl.isBlank();
                 if (usingAudio) {
                     scriptObj.put("type", "audio");
                     scriptObj.put("audio_url", audioUrl);
+                    logger.info("Scene {} using audio_url (Amazon Polly)", avatarId);
                 } else {
                     scriptObj.put("type", "text");
                     boolean canUseSsml = isSsmlInput(script);
@@ -2126,7 +2145,7 @@ public class DIDService {
                 }
                 
                 Map<String, Object> scriptObj = new HashMap<>();
-                boolean usingAudio = false;
+                boolean usingAudio = audioUrl != null && !audioUrl.isBlank();
                 Map<String, Object> provider = usingAudio ? null : resolveClipsVoiceProvider(presenterId);
                 if (!usingAudio && provider == null) {
                     String nativeVoiceId = null;
@@ -2160,6 +2179,7 @@ public class DIDService {
                 if (usingAudio) {
                     scriptObj.put("type", "audio");
                     scriptObj.put("audio_url", audioUrl);
+                    logger.info("Clips {} using audio_url (Amazon Polly)", presenterId);
                 } else {
                     scriptObj.put("type", "text");
                     boolean canUseSsml = isSsmlInput(script);
