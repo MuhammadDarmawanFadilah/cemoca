@@ -1944,9 +1944,6 @@ public class DIDService {
                     scriptObj.put("type", "text");
                     boolean originalSsml = isSsmlInput(script);
                     boolean canUseSsml = strictAudioManagementVoice || originalSsml;
-                    if (canUseSsml) {
-                        scriptObj.put("ssml", true);
-                    }
 
                     Map<String, Object> provider;
                     if (strictAudioManagementVoice) {
@@ -1962,7 +1959,8 @@ public class DIDService {
                     }
 
                     String providerType = provider == null ? null : String.valueOf(provider.get("type"));
-                    boolean ssmlAllowed = canUseSsml;
+                    boolean providerIsAmazon = providerType != null && providerType.equalsIgnoreCase("amazon");
+                    boolean ssmlAllowed = canUseSsml && !providerIsAmazon;
                     
                     // Log the voice configuration being used
                     if (provider != null) {
@@ -1974,10 +1972,15 @@ public class DIDService {
                     }
 
                     String scriptInput = script;
-                    if (strictAudioManagementVoice && !originalSsml) {
+                    if (providerIsAmazon) {
+                        if (scriptInput != null && scriptInput.indexOf('<') >= 0) {
+                            scriptInput = stripKnownSsmlTagsToPlainText(convertSsmlBreakTagsToPunctuation(scriptInput));
+                        }
+                    } else if (strictAudioManagementVoice && !originalSsml) {
                         scriptInput = wrapPlainTextToSsml(scriptInput);
                     }
                     if (ssmlAllowed) {
+                        scriptObj.put("ssml", true);
                         scriptInput = providerType != null && providerType.equalsIgnoreCase("amazon")
                                 ? sanitizeSsmlForAmazonProvider(scriptInput)
                                 : sanitizeSsmlForDidProvider(scriptInput);
@@ -1995,7 +1998,7 @@ public class DIDService {
                             );
                         }
                     } else if (originalSsml) {
-                        scriptInput = stripKnownSsmlTagsToPlainText(script);
+                        scriptInput = stripKnownSsmlTagsToPlainText(convertSsmlBreakTagsToPunctuation(script));
                     }
                     scriptObj.put("input", scriptInput);
                     if (provider != null) {
@@ -2171,9 +2174,6 @@ public class DIDService {
                     scriptObj.put("type", "text");
                     boolean originalSsml = isSsmlInput(script);
                     boolean canUseSsml = strictAudioManagementVoice || originalSsml;
-                    if (canUseSsml) {
-                        scriptObj.put("ssml", true);
-                    }
 
                     if (strictAudioManagementVoice) {
                         if (!hasAudioManagementSampleForPresenter(presenterId)) {
@@ -2186,12 +2186,18 @@ public class DIDService {
                     }
 
                     String providerType = provider == null ? null : String.valueOf(provider.get("type"));
-                    boolean ssmlAllowed = canUseSsml;
+                    boolean providerIsAmazon = providerType != null && providerType.equalsIgnoreCase("amazon");
+                    boolean ssmlAllowed = canUseSsml && !providerIsAmazon;
                     String scriptInput = script;
-                    if (strictAudioManagementVoice && !originalSsml) {
+                    if (providerIsAmazon) {
+                        if (scriptInput != null && scriptInput.indexOf('<') >= 0) {
+                            scriptInput = stripKnownSsmlTagsToPlainText(convertSsmlBreakTagsToPunctuation(scriptInput));
+                        }
+                    } else if (strictAudioManagementVoice && !originalSsml) {
                         scriptInput = wrapPlainTextToSsml(scriptInput);
                     }
                     if (ssmlAllowed) {
+                        scriptObj.put("ssml", true);
                         scriptInput = providerType != null && providerType.equalsIgnoreCase("amazon")
                                 ? sanitizeSsmlForAmazonProvider(scriptInput)
                                 : sanitizeSsmlForDidProvider(scriptInput);
@@ -2209,7 +2215,7 @@ public class DIDService {
                             );
                         }
                     } else if (originalSsml) {
-                        scriptInput = stripKnownSsmlTagsToPlainText(script);
+                        scriptInput = stripKnownSsmlTagsToPlainText(convertSsmlBreakTagsToPunctuation(script));
                     }
                     scriptObj.put("input", scriptInput);
                 }
@@ -2532,9 +2538,13 @@ public class DIDService {
                 String attrs = m.group(1);
                 long ms = parseSsmlBreakTimeMs(attrs);
                 String repl;
-                if (ms >= 800) {
+                if (ms >= 2400) {
+                    repl = ". . . ";
+                } else if (ms >= 1600) {
+                    repl = ". . ";
+                } else if (ms >= 900) {
                     repl = ". ";
-                } else if (ms >= 350) {
+                } else if (ms >= 450) {
                     repl = ", ";
                 } else {
                     repl = " ";
