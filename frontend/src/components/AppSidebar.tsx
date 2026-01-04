@@ -219,6 +219,11 @@ const AppSidebar = () => {
       icon: Music,
     },
     {
+      title: "Consent Management",
+      url: "/admin/consent-management",
+      icon: Key,
+    },
+    {
       title: "Background Management",
       url: "/admin/background-management",
       icon: ImageIcon,

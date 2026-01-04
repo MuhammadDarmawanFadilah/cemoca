@@ -529,6 +529,18 @@ export interface AvatarAudio {
   updatedAt: string;
 }
 
+export interface ConsentAudio {
+  id: number;
+  avatarName: string;
+  normalizedKey: string;
+  originalFilename: string;
+  storedFilename: string;
+  mimeType: string;
+  fileSize: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface VideoBackground {
   id: number;
   backgroundName: string;
@@ -601,6 +613,67 @@ export const audioManagementAPI = {
 
   delete: (id: number): Promise<void> =>
     apiCall<void>(`/admin/audio-management/${id}`, { method: 'DELETE' }),
+};
+
+export const consentManagementAPI = {
+  list: (params: { search?: string; page?: number; size?: number } = {}): Promise<PagedResponse<ConsentAudio>> => {
+    const search = params.search ? `&search=${encodeURIComponent(params.search)}` : '';
+    const page = typeof params.page === 'number' ? params.page : 0;
+    const size = typeof params.size === 'number' ? params.size : 25;
+    return apiCall<PagedResponse<ConsentAudio>>(`/admin/consent-management?page=${page}&size=${size}${search}`);
+  },
+
+  create: async (avatarName: string, file: File): Promise<ConsentAudio> => {
+    const formData = new FormData();
+    formData.append('avatarName', avatarName);
+    formData.append('file', file);
+    const token = localStorage.getItem('auth_token');
+
+    const response = await fetch(`${API_BASE_URL}/admin/consent-management`, {
+      method: 'POST',
+      body: formData,
+      mode: 'cors',
+      credentials: 'omit',
+      headers: {
+        ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+      },
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(errorText || `HTTP ${response.status}`);
+    }
+    return await response.json();
+  },
+
+  update: async (id: number, avatarName?: string, file?: File): Promise<ConsentAudio> => {
+    const formData = new FormData();
+    if (typeof avatarName === 'string') {
+      formData.append('avatarName', avatarName);
+    }
+    if (file) {
+      formData.append('file', file);
+    }
+    const token = localStorage.getItem('auth_token');
+
+    const response = await fetch(`${API_BASE_URL}/admin/consent-management/${id}`, {
+      method: 'PUT',
+      body: formData,
+      mode: 'cors',
+      credentials: 'omit',
+      headers: {
+        ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+      },
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(errorText || `HTTP ${response.status}`);
+    }
+    return await response.json();
+  },
+
+  delete: (id: number): Promise<void> => apiCall<void>(`/admin/consent-management/${id}`, { method: 'DELETE' }),
 };
 
 export const backgroundManagementAPI = {

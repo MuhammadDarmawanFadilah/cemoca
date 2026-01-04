@@ -1,8 +1,7 @@
 package com.shadcn.backend.service;
 
-import com.shadcn.backend.dto.AvatarAudioResponse;
-import com.shadcn.backend.model.AvatarAudio;
-import com.shadcn.backend.repository.AvatarAudioRepository;
+import com.shadcn.backend.dto.ConsentAudioResponse;
+import com.shadcn.backend.model.ConsentAudio;
 import com.shadcn.backend.repository.ConsentAudioRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
@@ -23,22 +22,18 @@ import java.util.Locale;
 
 @Service
 @RequiredArgsConstructor
-public class AvatarAudioService {
+public class ConsentAudioService {
 
-    private final AvatarAudioRepository repository;
+    private final ConsentAudioRepository repository;
     private final DIDService didService;
-    private final ConsentAudioRepository consentAudioRepository;
 
-    @Value("${app.audio.upload-dir:${user.home}/cemoca/uploads/audio}")
+    @Value("${app.consent.upload-dir:${user.home}/cemoca/uploads/consent}")
     private String uploadDir;
 
     @Value("${did.tts.strict-audio-management:true}")
     private boolean strictAudioManagementVoice;
 
-    @Value("${did.tts.strict-audio-management.require-consent:true}")
-    private boolean requireConsentAudio;
-
-    public Page<AvatarAudioResponse> findAll(String search, int page, int size) {
+    public Page<ConsentAudioResponse> findAll(String search, int page, int size) {
         Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "updatedAt"));
         String q = search == null ? "" : search.trim();
         if (q.isBlank()) {
@@ -49,18 +44,11 @@ public class AvatarAudioService {
     }
 
     @Transactional
-    public AvatarAudioResponse create(String avatarName, MultipartFile file) throws IOException {
+    public ConsentAudioResponse create(String avatarName, MultipartFile file) throws IOException {
         String name = validateAvatarName(avatarName);
         validateFile(file);
 
-        if (strictAudioManagementVoice && requireConsentAudio) {
-            String key = normalizeKey(name);
-            if (!consentAudioRepository.existsByNormalizedKey(key)) {
-                throw new IllegalArgumentException("Consent audio is required for avatarName='" + name + "'");
-            }
-        }
-
-        String normalizedKey = normalizeKey(name);
+        String normalizedKey = AvatarAudioService.normalizeKey(name);
 
         String storedFilename = buildStoredFilename(normalizedKey, file);
         Path dir = Paths.get(uploadDir);
@@ -68,7 +56,7 @@ public class AvatarAudioService {
         Path target = dir.resolve(storedFilename);
         Files.copy(file.getInputStream(), target);
 
-        AvatarAudio entity = AvatarAudio.builder()
+        ConsentAudio entity = ConsentAudio.builder()
                 .avatarName(name)
                 .normalizedKey(normalizedKey)
                 .originalFilename(safeFilename(file.getOriginalFilename()))
@@ -78,7 +66,7 @@ public class AvatarAudioService {
                 .filePath(target.toAbsolutePath().toString())
                 .build();
 
-        AvatarAudio saved = repository.save(entity);
+        ConsentAudio saved = repository.save(entity);
 
         if (strictAudioManagementVoice) {
             try {
@@ -95,7 +83,7 @@ public class AvatarAudioService {
             } catch (Exception e) {
                 deleteFileQuietly(saved.getFilePath());
                 repository.delete(saved);
-                throw new IllegalArgumentException("Audio Management validation failed for avatarName='" + name + "'", e);
+                throw new IllegalArgumentException("Consent Management validation failed for avatarName='" + name + "'", e);
             }
         }
 
@@ -103,21 +91,14 @@ public class AvatarAudioService {
     }
 
     @Transactional
-    public AvatarAudioResponse update(Long id, String avatarName, MultipartFile file) throws IOException {
-        AvatarAudio existing = repository.findById(id)
-                .orElseThrow(() -> new IllegalArgumentException("Avatar audio not found"));
+    public ConsentAudioResponse update(Long id, String avatarName, MultipartFile file) throws IOException {
+        ConsentAudio existing = repository.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("Consent audio not found"));
 
         if (avatarName != null && !avatarName.trim().isBlank()) {
             String name = validateAvatarName(avatarName);
             existing.setAvatarName(name);
-            existing.setNormalizedKey(normalizeKey(name));
-
-            if (strictAudioManagementVoice && requireConsentAudio) {
-                String key = existing.getNormalizedKey();
-                if (key == null || key.isBlank() || !consentAudioRepository.existsByNormalizedKey(key)) {
-                    throw new IllegalArgumentException("Consent audio is required for avatarName='" + name + "'");
-                }
-            }
+            existing.setNormalizedKey(AvatarAudioService.normalizeKey(name));
         }
 
         if (file != null && !file.isEmpty()) {
@@ -137,22 +118,16 @@ public class AvatarAudioService {
             existing.setFilePath(target.toAbsolutePath().toString());
         }
 
-        AvatarAudio saved = repository.save(existing);
+        ConsentAudio saved = repository.save(existing);
         return toResponse(saved);
     }
 
     @Transactional
     public void delete(Long id) {
-        AvatarAudio existing = repository.findById(id)
-                .orElseThrow(() -> new IllegalArgumentException("Avatar audio not found"));
+        ConsentAudio existing = repository.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("Consent audio not found"));
         deleteFileQuietly(existing.getFilePath());
         repository.delete(existing);
-    }
-
-    public static String normalizeKey(String input) {
-        if (input == null) return "";
-        String trimmed = input.trim().toLowerCase(Locale.ROOT);
-        return trimmed.replaceAll("\\s+", "");
     }
 
     private String validateAvatarName(String avatarName) {
@@ -214,8 +189,8 @@ public class AvatarAudioService {
         }
     }
 
-    private AvatarAudioResponse toResponse(AvatarAudio a) {
-        return AvatarAudioResponse.builder()
+    private ConsentAudioResponse toResponse(ConsentAudio a) {
+        return ConsentAudioResponse.builder()
                 .id(a.getId())
                 .avatarName(a.getAvatarName())
                 .normalizedKey(a.getNormalizedKey())
