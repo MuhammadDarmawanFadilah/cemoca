@@ -25,9 +25,13 @@ import java.util.Locale;
 public class AvatarAudioService {
 
     private final AvatarAudioRepository repository;
+    private final DIDService didService;
 
     @Value("${app.audio.upload-dir:${user.home}/cemoca/uploads/audio}")
     private String uploadDir;
+
+    @Value("${did.tts.strict-audio-management:true}")
+    private boolean strictAudioManagementVoice;
 
     public Page<AvatarAudioResponse> findAll(String search, int page, int size) {
         Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "updatedAt"));
@@ -63,6 +67,33 @@ public class AvatarAudioService {
                 .build();
 
         AvatarAudio saved = repository.save(entity);
+
+        if (strictAudioManagementVoice) {
+            try {
+                String presenterId = didService.resolveExpressPresenterId(name);
+                if (presenterId == null || presenterId.isBlank()) {
+                    deleteFileQuietly(saved.getFilePath());
+                    repository.delete(saved);
+                    throw new IllegalArgumentException("Avatar not found in D-ID Express Avatars for avatarName='" + name + "'");
+                }
+
+                boolean ok = didService.ensureClonedVoiceIdFromLocalSample(presenterId, name).isPresent();
+                if (!ok) {
+                    deleteFileQuietly(saved.getFilePath());
+                    repository.delete(saved);
+                    throw new IllegalArgumentException("Audio Management sample rejected by D-ID voice cloning for avatarName='" + name + "'");
+                }
+            } catch (RuntimeException re) {
+                deleteFileQuietly(saved.getFilePath());
+                repository.delete(saved);
+                throw re;
+            } catch (Exception e) {
+                deleteFileQuietly(saved.getFilePath());
+                repository.delete(saved);
+                throw new IllegalArgumentException("Audio Management sample rejected by D-ID voice cloning for avatarName='" + name + "'", e);
+            }
+        }
+
         return toResponse(saved);
     }
 

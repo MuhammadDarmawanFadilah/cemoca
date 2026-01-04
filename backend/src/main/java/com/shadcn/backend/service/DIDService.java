@@ -50,6 +50,8 @@ public class DIDService {
     private final Map<String, String> clonedVoiceIdCache = new ConcurrentHashMap<>();
     private final Set<String> clonedVoiceNoSample = ConcurrentHashMap.newKeySet();
 
+    private final Map<String, String> voiceCloneLastErrorByPresenterId = new ConcurrentHashMap<>();
+
     private final Map<String, Object> voiceCloneLocks = new ConcurrentHashMap<>();
 
     @Value("${app.did.clips.webhook:}")
@@ -771,6 +773,9 @@ public class DIDService {
                         if (!pid.isBlank()) {
                             markVoiceCloneSkip(pid, cloneSkipOnTransientErrorMinutes);
                         }
+                        if (!pid.isBlank()) {
+                            voiceCloneLastErrorByPresenterId.put(pid, "no voice_id in response");
+                        }
                         return Optional.empty();
                     }
 
@@ -788,6 +793,9 @@ public class DIDService {
                         type = "amazon";
                     }
                     logger.info("D-ID create cloned voice success: presenterId={} voiceId={} type={} language={}", pid, id, type, lang);
+                    if (!pid.isBlank()) {
+                        voiceCloneLastErrorByPresenterId.remove(pid);
+                    }
                     return Optional.of(new VoiceInfo(id, type));
                 } catch (WebClientResponseException wce) {
                     String body = truncate(wce.getResponseBodyAsString(), 1500);
@@ -814,6 +822,12 @@ public class DIDService {
                             body
                     );
 
+                    if (!pid.isBlank()) {
+                        String safeKind = kind == null ? "" : kind.trim();
+                        String safeBody = body == null ? "" : body.trim();
+                        voiceCloneLastErrorByPresenterId.put(pid, "status=" + status + " kind=" + safeKind + " body=" + truncate(safeBody, 200));
+                    }
+
                     boolean isValidationConsent = kind != null && kind.toLowerCase(Locale.ROOT).contains("consent");
                     if (isValidationConsent) {
                         if (!pid.isBlank()) {
@@ -838,6 +852,9 @@ public class DIDService {
                             truncate(e.getMessage(), 300),
                             e
                     );
+                    if (!pid.isBlank()) {
+                        voiceCloneLastErrorByPresenterId.put(pid, "error=" + truncate(e.getMessage(), 300));
+                    }
                     if (attempt < maxAttempts) {
                         continue;
                     }
@@ -851,6 +868,10 @@ public class DIDService {
             return Optional.empty();
         } catch (Exception e) {
             logger.error("D-ID create cloned voice failed: {}", truncate(e.getMessage(), 300), e);
+            String pid = presenterId == null ? "" : presenterId.trim();
+            if (!pid.isBlank()) {
+                voiceCloneLastErrorByPresenterId.put(pid, "error=" + truncate(e.getMessage(), 300));
+            }
             return Optional.empty();
         }
     }
@@ -1622,7 +1643,9 @@ public class DIDService {
                 }
 
                 if (failOnCloneError) {
-                    throw new RuntimeException("Audio-management sample exists but voice cloning failed for presenterId=" + pid);
+                    String last = voiceCloneLastErrorByPresenterId.get(pid);
+                    String suffix = (last == null || last.isBlank()) ? "" : (" (" + last + ")");
+                    throw new RuntimeException("Audio-management sample exists but voice cloning failed for presenterId=" + pid + suffix);
                 }
 
                 // Fall back to Express Avatar's native voice; do NOT substitute any other default voice.
@@ -2012,7 +2035,11 @@ public class DIDService {
 
                     String scriptInput = script;
                     if (providerIsAmazon) {
-                        if (scriptInput != null && scriptInput.indexOf('<') >= 0) {
+                        if (originalSsml) {
+                            // For Amazon (Polly), do NOT set ssml=true (D-ID blocks it), but allow SSML markup in input.
+                            scriptInput = sanitizeSsmlForAmazonProvider(scriptInput);
+                        } else if (scriptInput != null && scriptInput.indexOf('<') >= 0) {
+                            // Defensive: strip unknown markup if any.
                             scriptInput = stripKnownSsmlTagsToPlainText(convertSsmlBreakTagsToPunctuation(scriptInput));
                         }
                     } else if (strictAudioManagementVoice && !originalSsml) {
@@ -2036,7 +2063,7 @@ public class DIDService {
                                 si.length()
                             );
                         }
-                    } else if (originalSsml) {
+                    } else if (originalSsml && !providerIsAmazon) {
                         scriptInput = stripKnownSsmlTagsToPlainText(convertSsmlBreakTagsToPunctuation(script));
                     }
                     scriptObj.put("input", scriptInput);
@@ -2223,7 +2250,10 @@ public class DIDService {
                     boolean ssmlAllowed = canUseSsml && !providerIsAmazon;
                     String scriptInput = script;
                     if (providerIsAmazon) {
-                        if (scriptInput != null && scriptInput.indexOf('<') >= 0) {
+                        if (originalSsml) {
+                            // For Amazon (Polly), do NOT set ssml=true (D-ID blocks it), but allow SSML markup in input.
+                            scriptInput = sanitizeSsmlForAmazonProvider(scriptInput);
+                        } else if (scriptInput != null && scriptInput.indexOf('<') >= 0) {
                             scriptInput = stripKnownSsmlTagsToPlainText(convertSsmlBreakTagsToPunctuation(scriptInput));
                         }
                     } else if (strictAudioManagementVoice && !originalSsml) {
@@ -2247,7 +2277,7 @@ public class DIDService {
                                 si.length()
                             );
                         }
-                    } else if (originalSsml) {
+                    } else if (originalSsml && !providerIsAmazon) {
                         scriptInput = stripKnownSsmlTagsToPlainText(convertSsmlBreakTagsToPunctuation(script));
                     }
                     scriptObj.put("input", scriptInput);
