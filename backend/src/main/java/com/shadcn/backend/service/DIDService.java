@@ -1290,7 +1290,7 @@ public class DIDService {
 
         String trimmedAvatarId = avatarId.trim();
         if (strictAudioManagementVoice && audioUrl != null && !audioUrl.isBlank()) {
-            throw new RuntimeException("audio_url is disabled in strict mode; must use D-ID Amazon provider");
+            throw new RuntimeException("audio_url is disabled in strict mode; must use Audio Management voice or avatar native voice");
         }
         boolean hasAudioManagementSample = false;
         try {
@@ -1995,18 +1995,7 @@ public class DIDService {
                     boolean originalSsml = isSsmlInput(script);
                     boolean canUseSsml = strictAudioManagementVoice || originalSsml;
 
-                    Map<String, Object> provider;
-                    if (strictAudioManagementVoice) {
-                        if (!hasAudioManagementSampleForPresenter(avatarId)) {
-                            throw new RuntimeException("Audio Management voice is required for avatarId=" + avatarId);
-                        }
-                        provider = new HashMap<>();
-                        provider.put("type", "amazon");
-                        provider.put("voice_id", pickAmazonVoiceIdForPresenter(avatarId));
-                        provider = sanitizeProviderForScenes(provider);
-                    } else {
-                        provider = sanitizeProviderForScenes(resolveProviderForPresenter(avatarId));
-                    }
+                    Map<String, Object> provider = sanitizeProviderForScenes(resolveProviderForPresenter(avatarId));
 
                     String providerType = provider == null ? null : String.valueOf(provider.get("type"));
                     boolean providerIsAmazon = providerType != null && providerType.equalsIgnoreCase("amazon");
@@ -2226,13 +2215,7 @@ public class DIDService {
                     boolean canUseSsml = strictAudioManagementVoice || originalSsml;
 
                     if (strictAudioManagementVoice) {
-                        if (!hasAudioManagementSampleForPresenter(presenterId)) {
-                            throw new RuntimeException("Audio Management voice is required for presenterId=" + presenterId);
-                        }
-                        Map<String, Object> amazonProvider = new HashMap<>();
-                        amazonProvider.put("type", "amazon");
-                        amazonProvider.put("voice_id", pickAmazonVoiceIdForPresenter(presenterId));
-                        provider = amazonProvider;
+                        provider = resolveProviderForPresenter(presenterId);
                     }
 
                     String providerType = provider == null ? null : String.valueOf(provider.get("type"));
