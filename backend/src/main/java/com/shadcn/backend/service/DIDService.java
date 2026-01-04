@@ -478,6 +478,57 @@ public class DIDService {
         }
     }
 
+    public Map<String, Object> getConsentForAvatarKey(String avatarKey) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        String key = avatarKey == null ? "" : avatarKey.trim();
+        out.put("avatarKey", key);
+
+        String presenterId;
+        try {
+            presenterId = resolveExpressPresenterId(key);
+        } catch (Exception e) {
+            presenterId = null;
+        }
+
+        if (presenterId == null || presenterId.isBlank()) {
+            out.put("ok", false);
+            out.put("error", "Avatar not found");
+            return out;
+        }
+
+        out.put("presenterId", presenterId);
+
+        String consentId = null;
+        if (presenterId.startsWith("avt_")) {
+            consentId = fetchExpressAvatarConsentIdById(presenterId);
+        }
+
+        if (consentId == null || consentId.isBlank()) {
+            out.put("ok", false);
+            out.put("error", "Consent id not found for avatar");
+            return out;
+        }
+
+        out.put("consentId", consentId);
+
+        Map<String, Object> consent = getConsent(consentId);
+        Object ok = consent.get("ok");
+        out.put("ok", ok instanceof Boolean ? ok : Boolean.FALSE);
+        if (consent.containsKey("consentText")) {
+            out.put("consentText", consent.get("consentText"));
+        }
+        if (consent.containsKey("status")) {
+            out.put("status", consent.get("status"));
+        }
+        if (consent.containsKey("body")) {
+            out.put("body", consent.get("body"));
+        }
+        if (consent.containsKey("error")) {
+            out.put("error", consent.get("error"));
+        }
+        return out;
+    }
+
     private String extractConsentText(JsonNode root) {
         if (root == null) {
             return null;
@@ -3134,6 +3185,55 @@ public class DIDService {
             );
         } catch (Exception e) {
             logger.error("Error fetching Express Avatar by id: {}", e.getMessage());
+        }
+
+        return null;
+    }
+
+    private String fetchExpressAvatarConsentIdById(String avatarId) {
+        try {
+            String response = webClient.get()
+                    .uri("/scenes/avatars/{id}", avatarId)
+                    .header(HttpHeaders.AUTHORIZATION, getAuthHeader())
+                    .retrieve()
+                    .bodyToMono(String.class)
+                    .timeout(READ_TIMEOUT)
+                    .block();
+
+            if (response == null || response.isBlank()) {
+                return null;
+            }
+
+            JsonNode root = objectMapper.readTree(response);
+            String consentId = null;
+
+            if (root.hasNonNull("consent_id")) {
+                consentId = root.get("consent_id").asText();
+            } else if (root.has("consent") && root.get("consent").isObject()) {
+                JsonNode consent = root.get("consent");
+                if (consent.hasNonNull("id")) {
+                    consentId = consent.get("id").asText();
+                } else if (consent.hasNonNull("consent_id")) {
+                    consentId = consent.get("consent_id").asText();
+                }
+            }
+
+            if (consentId == null || consentId.isBlank()) {
+                return null;
+            }
+
+            return consentId;
+        } catch (WebClientResponseException wce) {
+            if (wce.getStatusCode().value() == 404) {
+                return null;
+            }
+            logger.warn(
+                    "Failed to fetch Express Avatar consent id (status={}): {}",
+                    wce.getStatusCode().value(),
+                    truncate(wce.getResponseBodyAsString(), 800)
+            );
+        } catch (Exception e) {
+            logger.warn("Failed to fetch Express Avatar consent id: {}", truncate(e.getMessage(), 300));
         }
 
         return null;

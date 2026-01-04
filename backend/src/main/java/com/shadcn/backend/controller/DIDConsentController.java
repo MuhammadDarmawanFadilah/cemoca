@@ -4,7 +4,6 @@ import com.shadcn.backend.service.DIDService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.HashMap;
 import java.util.Map;
 
 @RestController
@@ -35,19 +34,14 @@ public class DIDConsentController {
 
     @GetMapping("/for-avatar/{avatarKey}")
     public ResponseEntity<Map<String, Object>> getConsentTextForAvatar(@PathVariable String avatarKey) {
-        Map<String, Object> out = new HashMap<>(didService.createConsent(null));
-        out.put("avatarKey", avatarKey);
-        return ResponseEntity.ok(out);
+        return ResponseEntity.ok(didService.getConsentForAvatarKey(avatarKey));
     }
 
     @GetMapping("/for-avatar/{avatarKey}/text")
     public ResponseEntity<String> getConsentTextForAvatarOnly(@PathVariable String avatarKey) {
-        Map<String, Object> created = didService.createConsent(null);
-        Object t = created.get("consentText");
+        Map<String, Object> out = didService.getConsentForAvatarKey(avatarKey);
+        Object t = out.get("consentText");
         String text = t == null ? "" : String.valueOf(t);
-        if (text.isBlank()) {
-            return ResponseEntity.ok("");
-        }
         return ResponseEntity.ok(text);
     }
 }
