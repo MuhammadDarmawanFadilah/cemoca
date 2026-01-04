@@ -64,13 +64,13 @@ echo "✅ Environment configuration ready"
 
 # Step 4: Install dependencies
 echo "📦 Installing dependencies..."
-sudo pnpm install
+pnpm install
 echo "✅ Dependencies installed"
 
 # Step 5: Build application
 echo "🔨 Building application..."
-sudo rm -rf .next
-sudo pnpm build
+rm -rf .next
+pnpm build
 echo "✅ Application built"
 
 # Step 6: Start frontend service
