@@ -500,8 +500,6 @@ public class VideoReportService {
                 videoReportItemRepository.save(item);
                 return item;
             }
-
-            didService.ensureClonedVoiceIdFromLocalSample(presenterId, item.getAvatar());
             
             // Create clip via D-ID
             Map<String, Object> result = didService.createClip(
@@ -565,8 +563,6 @@ public class VideoReportService {
                 checkAndUpdateReportStatus(reportId);
                 return item;
             }
-
-            didService.ensureClonedVoiceIdFromLocalSample(presenterId, item.getAvatar());
             
             // Create clip via D-ID
             Map<String, Object> result = didService.createClip(

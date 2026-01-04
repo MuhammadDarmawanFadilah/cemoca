@@ -28,6 +28,9 @@ import java.util.regex.Pattern;
 public class AmazonPollyTtsService {
     private static final Logger logger = LoggerFactory.getLogger(AmazonPollyTtsService.class);
 
+    private static final String SSML_XMLNS = "http://www.w3.org/2001/10/synthesis";
+    private static final String AMAZON_SSML_XMLNS = "http://www.amazon.com/ssml";
+
     private static final int MAX_CHARS_PER_REQUEST = 2500;
 
     private static final Pattern P_BLOCK = Pattern.compile(
@@ -74,6 +77,10 @@ public class AmazonPollyTtsService {
         String safeChunk = chunk == null ? "" : chunk.trim();
         boolean isSsml = safeChunk.toLowerCase(Locale.ROOT).contains("<speak");
 
+        if (isSsml) {
+            safeChunk = normalizeSpeakNamespaces(safeChunk);
+        }
+
         TextType textType = isSsml ? TextType.SSML : TextType.TEXT;
 
         List<Engine> enginesToTry = new ArrayList<>();
@@ -101,7 +108,9 @@ public class AmazonPollyTtsService {
                     }
                 }
             } catch (Exception e) {
-                last = new RuntimeException("Polly synth failed engine=" + engine.toString(), e);
+                String msg = e.getMessage() == null ? "" : e.getMessage();
+                logger.warn("[POLLY] Synthesize failed engine={} msg={}", engine.toString(), msg);
+                last = new RuntimeException("Polly synth failed engine=" + engine.toString() + ": " + msg, e);
             }
         }
 
@@ -110,6 +119,10 @@ public class AmazonPollyTtsService {
 
     private List<String> splitIntoPollyChunks(String input, int maxChars) {
         String trimmed = input.trim();
+
+        if (trimmed.toLowerCase(Locale.ROOT).contains("<speak")) {
+            trimmed = normalizeSpeakNamespaces(trimmed);
+        }
 
         if (!trimmed.toLowerCase(Locale.ROOT).contains("<speak")) {
             return splitPlainText(trimmed, maxChars);
@@ -211,11 +224,48 @@ public class AmazonPollyTtsService {
     private static String wrapWithSpeakIfNeeded(String inner, String originalSsml) {
         String o = originalSsml == null ? "" : originalSsml.trim();
         if (o.toLowerCase(Locale.ROOT).contains("<speak")) {
-            int speakOpen = o.toLowerCase(Locale.ROOT).indexOf("<speak");
-            int speakOpenEnd = o.indexOf('>', speakOpen);
-            String speakOpenTag = speakOpenEnd > 0 ? o.substring(speakOpen, speakOpenEnd + 1) : "<speak>";
+            String normalized = normalizeSpeakNamespaces(o);
+            int speakOpen = normalized.toLowerCase(Locale.ROOT).indexOf("<speak");
+            int speakOpenEnd = normalized.indexOf('>', speakOpen);
+            String speakOpenTag = speakOpenEnd > 0 ? normalized.substring(speakOpen, speakOpenEnd + 1) : "<speak xmlns=\"" + SSML_XMLNS + "\">";
             return speakOpenTag + "\n" + inner + "\n</speak>";
         }
-        return "<speak>\n" + inner + "\n</speak>";
+        return "<speak xmlns=\"" + SSML_XMLNS + "\">\n" + inner + "\n</speak>";
+    }
+
+    private static String normalizeSpeakNamespaces(String ssml) {
+        String s = ssml == null ? "" : ssml.trim();
+        if (s.isEmpty()) {
+            return s;
+        }
+
+        String lower = s.toLowerCase(Locale.ROOT);
+        int speakOpen = lower.indexOf("<speak");
+        if (speakOpen < 0) {
+            return s;
+        }
+
+        int speakEnd = s.indexOf('>', speakOpen);
+        if (speakEnd < 0) {
+            return s;
+        }
+
+        String openTag = s.substring(speakOpen, speakEnd + 1);
+        String openLower = openTag.toLowerCase(Locale.ROOT);
+
+        boolean needsAmazon = lower.contains("<amazon:");
+
+        StringBuilder updated = new StringBuilder(openTag.substring(0, openTag.length() - 1));
+
+        if (!openLower.contains("xmlns=")) {
+            updated.append(" xmlns=\"").append(SSML_XMLNS).append("\"");
+        }
+        if (needsAmazon && !openLower.contains("xmlns:amazon=")) {
+            updated.append(" xmlns:amazon=\"").append(AMAZON_SSML_XMLNS).append("\"");
+        }
+
+        updated.append(">");
+
+        return s.substring(0, speakOpen) + updated + s.substring(speakEnd + 1);
     }
 }
