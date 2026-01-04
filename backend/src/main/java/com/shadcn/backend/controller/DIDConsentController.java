@@ -17,19 +17,10 @@ public class DIDConsentController {
         this.didService = didService;
     }
 
-    @PostMapping
-    public ResponseEntity<Map<String, Object>> createConsent(@RequestBody(required = false) Map<String, Object> body) {
-        return ResponseEntity.ok(didService.createConsent(body));
-    }
 
     @GetMapping("/{id}")
     public ResponseEntity<Map<String, Object>> getConsent(@PathVariable String id) {
         return ResponseEntity.ok(didService.getConsent(id));
-    }
-
-    @PostMapping("/new")
-    public ResponseEntity<Map<String, Object>> createConsentDefault() {
-        return ResponseEntity.ok(didService.createConsent(null));
     }
 
     @GetMapping("/for-avatar/{avatarKey}")
