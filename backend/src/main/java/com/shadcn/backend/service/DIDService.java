@@ -599,6 +599,12 @@ public class DIDService {
 
     public List<Map<String, Object>> listAvatarConsentStatus(String search) {
         String q = search == null ? "" : search.trim().toLowerCase(Locale.ROOT);
+
+        try {
+            getExpressAvatars(true);
+        } catch (Exception ignored) {
+        }
+
         List<DIDAvatar> avatars;
         try {
             avatars = avatarRepository.findByIsActiveTrue();
@@ -608,6 +614,17 @@ public class DIDService {
 
         return avatars.stream()
                 .filter(a -> a != null)
+                .filter(a -> {
+                    String t = a.getAvatarType() == null ? "" : a.getAvatarType().trim().toLowerCase(Locale.ROOT);
+                    if (!t.equals("express")) {
+                        return true;
+                    }
+                    String pid = a.getPresenterId() == null ? "" : a.getPresenterId().trim();
+                    if (pid.isBlank()) {
+                        return false;
+                    }
+                    return expressIds.contains(pid);
+                })
                 .filter(a -> {
                     if (q.isBlank()) return true;
                     String name = a.getPresenterName() == null ? "" : a.getPresenterName();

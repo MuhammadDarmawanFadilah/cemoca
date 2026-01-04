@@ -10,7 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import { useToast } from "@/hooks/use-toast-simple";
 import { consentManagementAPI, type AvatarConsentStatus, type ConsentAudio, type PagedResponse } from "@/lib/api";
-import { Key, Plus, Search, Trash2, Pencil } from "lucide-react";
+import { Key, Plus, Search, Trash2, Pencil, Eye } from "lucide-react";
 
 export default function ConsentManagementPage() {
   const { toast } = useToast();
@@ -33,6 +33,10 @@ export default function ConsentManagementPage() {
   const [avatarsLoading, setAvatarsLoading] = useState<boolean>(true);
   const [avatarsSearch, setAvatarsSearch] = useState<string>("");
   const [ensuring, setEnsuring] = useState<Record<string, boolean>>({});
+
+  const [detailOpen, setDetailOpen] = useState<boolean>(false);
+  const [detailTitle, setDetailTitle] = useState<string>("");
+  const [detailText, setDetailText] = useState<string>("");
 
   const stats = useMemo(() => [{ label: "Total", value: items.length }], [items.length]);
 
@@ -182,6 +186,12 @@ export default function ConsentManagementPage() {
     }
   };
 
+  const openDetail = (title: string, text: string) => {
+    setDetailTitle(title);
+    setDetailText(text || "");
+    setDetailOpen(true);
+  };
+
   return (
     <div className="space-y-6">
       <AdminPageHeader
@@ -247,6 +257,7 @@ export default function ConsentManagementPage() {
                         const key = row.presenterName || row.presenterId;
                         const busy = !!ensuring[key];
                         const canEnsure = !row.hasConsent;
+                        const hasText = !!(row.consentText && row.consentText.trim().length > 0);
                         return (
                           <TableRow key={row.presenterId}>
                             <TableCell className="font-medium">{row.presenterName}</TableCell>
@@ -257,14 +268,24 @@ export default function ConsentManagementPage() {
                               <div className="truncate">{row.consentText || ""}</div>
                             </TableCell>
                             <TableCell className="text-right">
-                              <Button
-                                size="sm"
-                                variant={canEnsure ? "default" : "outline"}
-                                disabled={!canEnsure || busy}
-                                onClick={() => onEnsureConsent(key)}
-                              >
-                                {busy ? "Creating..." : canEnsure ? "Create Consent" : "Locked"}
-                              </Button>
+                              <div className="flex justify-end gap-2">
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  disabled={!hasText}
+                                  onClick={() => openDetail(`${row.presenterName} (${row.presenterId})`, row.consentText || "")}
+                                >
+                                  <Eye className="h-4 w-4" />
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant={canEnsure ? "default" : "outline"}
+                                  disabled={!canEnsure || busy}
+                                  onClick={() => onEnsureConsent(key)}
+                                >
+                                  {busy ? "Creating..." : canEnsure ? "Create Consent" : "Locked"}
+                                </Button>
+                              </div>
                             </TableCell>
                           </TableRow>
                         );
@@ -276,6 +297,21 @@ export default function ConsentManagementPage() {
             )}
           </CardContent>
         </Card>
+
+        <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>Consent Detail</DialogTitle>
+              <DialogDescription>{detailTitle}</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-2">
+              <div className="text-sm font-medium">Full Consent Text</div>
+              <div className="rounded-md border bg-background p-3">
+                <div className="whitespace-pre-wrap text-sm leading-relaxed">{detailText}</div>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
 
         <Card>
           <CardContent className="p-4">
