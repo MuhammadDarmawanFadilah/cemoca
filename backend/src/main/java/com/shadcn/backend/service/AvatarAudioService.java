@@ -76,13 +76,6 @@ public class AvatarAudioService {
                     repository.delete(saved);
                     throw new IllegalArgumentException("Avatar not found in D-ID Express Avatars for avatarName='" + name + "'");
                 }
-
-                boolean ok = didService.ensureClonedVoiceIdFromLocalSample(presenterId, name).isPresent();
-                if (!ok) {
-                    deleteFileQuietly(saved.getFilePath());
-                    repository.delete(saved);
-                    throw new IllegalArgumentException("Audio Management sample rejected by D-ID voice cloning for avatarName='" + name + "'");
-                }
             } catch (RuntimeException re) {
                 deleteFileQuietly(saved.getFilePath());
                 repository.delete(saved);
@@ -90,7 +83,7 @@ public class AvatarAudioService {
             } catch (Exception e) {
                 deleteFileQuietly(saved.getFilePath());
                 repository.delete(saved);
-                throw new IllegalArgumentException("Audio Management sample rejected by D-ID voice cloning for avatarName='" + name + "'", e);
+                throw new IllegalArgumentException("Audio Management validation failed for avatarName='" + name + "'", e);
             }
         }
 
