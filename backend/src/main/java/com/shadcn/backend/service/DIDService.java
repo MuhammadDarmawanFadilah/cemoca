@@ -197,7 +197,7 @@ public class DIDService {
             return false;
         }
         String t = providerType.trim().toLowerCase(java.util.Locale.ROOT);
-        return t.equals("microsoft") || t.equals("elevenlabs");
+        return t.equals("microsoft") || t.equals("elevenlabs") || t.equals("amazon");
     }
 
     private RuntimeException strictVoiceSetupRequired(String presenterId, String details) {
@@ -2448,6 +2448,56 @@ public class DIDService {
                 if (cachedId != null && !cachedId.isBlank()) {
                     return cachedId;
                 }
+
+                // Fuzzy match: prefer avatars that already have a consent_id stored (stable) and shortest matching name.
+                // This avoids creating new consents for near-duplicate avatar names like "gilbertsit", "gilbertsitc", "gilbertsitsix".
+                String bestId = null;
+                int bestScore = Integer.MIN_VALUE;
+                int bestNameLen = Integer.MAX_VALUE;
+                for (Map.Entry<String, String> e : expressIdByNormalizedName.entrySet()) {
+                    String nameKey = e.getKey() == null ? "" : e.getKey().trim();
+                    String id = e.getValue() == null ? "" : e.getValue().trim();
+                    if (nameKey.isBlank() || id.isBlank()) {
+                        continue;
+                    }
+
+                    int score = 0;
+                    if (nameKey.equals(target)) {
+                        score += 1000;
+                    } else if (nameKey.startsWith(target) || target.startsWith(nameKey)) {
+                        score += 500;
+                    } else if (nameKey.contains(target) || target.contains(nameKey)) {
+                        score += 200;
+                    } else {
+                        continue;
+                    }
+
+                    boolean hasConsent = false;
+                    try {
+                        Optional<DIDAvatar> db = avatarRepository.findByPresenterId(id);
+                        if (db.isPresent()) {
+                            String cid = db.get().getConsentId();
+                            hasConsent = cid != null && !cid.trim().isBlank();
+                        }
+                    } catch (Exception ignored) {
+                        hasConsent = false;
+                    }
+                    if (hasConsent) {
+                        score += 300;
+                    }
+
+                    int nlen = nameKey.length();
+                    if (score > bestScore || (score == bestScore && nlen < bestNameLen)
+                            || (score == bestScore && nlen == bestNameLen && bestId != null && id.compareTo(bestId) < 0)) {
+                        bestScore = score;
+                        bestNameLen = nlen;
+                        bestId = id;
+                    }
+                }
+
+                if (bestId != null && !bestId.isBlank()) {
+                    return bestId;
+                }
             }
         } catch (Exception ignored) {
         }
@@ -2608,13 +2658,13 @@ public class DIDService {
                     }
 
                     if (originalSsml) {
-                        scriptInput = providerIsAmazon
-                                ? sanitizeSsmlForAmazonProvider(scriptInput)
-                                : sanitizeSsmlForDidProvider(scriptInput);
+                        scriptInput = sanitizeSsmlForDidProvider(scriptInput);
+                        if (providerIsAmazon) {
+                            scriptInput = sanitizeSsmlForAmazonProvider(scriptInput);
+                        }
                     }
 
                     // Only set the explicit ssml flag for providers documented to support it in D-ID.
-                    // For Amazon, we keep SSML tags in the input without the ssml flag.
                     if (ssmlAllowedFlag) {
                         scriptObj.put("ssml", true);
                         if (strictAudioManagementVoice) {
@@ -2893,22 +2943,32 @@ public class DIDService {
                         Map<String, Object> textScriptObj = new HashMap<>();
                         textScriptObj.put("type", "text");
                         Map<String, Object> fallbackProvider = resolveClipsVoiceProvider(presenterId);
-                        boolean canUseSsml = isSsmlInput(script);
-                        if (canUseSsml) {
-                            textScriptObj.put("ssml", true);
-                        }
                         String fallbackProviderType = fallbackProvider == null ? null : String.valueOf(fallbackProvider.get("type"));
-                        boolean ssmlAllowed = canUseSsml;
+                        boolean providerIsAmazon = fallbackProviderType != null && fallbackProviderType.equalsIgnoreCase("amazon");
+
+                        boolean originalSsml = isSsmlInput(script);
+                        boolean canUseSsml = strictAudioManagementVoice || originalSsml;
+                        boolean ssmlAllowedFlag = canUseSsml && providerSupportsSsmlFlag(fallbackProviderType);
+
                         String scriptInput = script;
-                        if (ssmlAllowed) {
-                            scriptInput = fallbackProviderType != null && fallbackProviderType.equalsIgnoreCase("amazon")
-                                    ? sanitizeSsmlForAmazonProvider(script)
-                                    : sanitizeSsmlForDidProvider(script);
-                        } else if (canUseSsml) {
-                            scriptInput = stripKnownSsmlTagsToPlainText(script);
+                        if (strictAudioManagementVoice && !originalSsml) {
+                            scriptInput = wrapPlainTextToSsml(scriptInput);
+                            originalSsml = isSsmlInput(scriptInput);
                         }
+
+                        if (originalSsml) {
+                            scriptInput = providerIsAmazon
+                                    ? sanitizeSsmlForAmazonProvider(scriptInput)
+                                    : sanitizeSsmlForDidProvider(scriptInput);
+                        }
+
+                        if (ssmlAllowedFlag) {
+                            textScriptObj.put("ssml", true);
+                        } else if (originalSsml && !providerIsAmazon && !providerSupportsSsmlFlag(fallbackProviderType)) {
+                            scriptInput = stripKnownSsmlTagsToPlainText(convertSsmlBreakTagsToPunctuation(scriptInput));
+                        }
+
                         textScriptObj.put("input", scriptInput);
-                        // no 'ssml' flag; SSML is inferred from <speak> input
 
                         Map<String, Object> textBody = new HashMap<>(requestBody);
                         Map<String, Object> textBodyNoProvider = new HashMap<>(requestBody);
@@ -3569,9 +3629,9 @@ public class DIDService {
         // Voice selection priority
         if (strictAudioManagementVoice) {
             result.put("priority", List.of(
-                Map.of("order", 1, "type", "elevenlabs", "description", "SSML uses ElevenLabs provider with Express Avatar voice_id (SSML supported by D-ID)"),
-                Map.of("order", 2, "type", "amazon", "description", "Non-SSML uses Amazon provider (voice_id Joanna/Matthew)"),
-                Map.of("order", 3, "type", "audio-management-required", "description", "Audio-management entry is required; system fails loudly if missing")
+                Map.of("order", 1, "type", "audio-management-voice", "description", "Audio-management voice (cloned) is required; system ensures/uses a stable custom voice_id"),
+                Map.of("order", 2, "type", "ssml", "description", "SSML is enabled for providers including amazon/microsoft/elevenlabs; amazon:effect/domain are stripped"),
+                Map.of("order", 3, "type", "no-fallback", "description", "No fallback to other presenters; prevents voice drift")
             ));
         } else {
             result.put("priority", List.of(
