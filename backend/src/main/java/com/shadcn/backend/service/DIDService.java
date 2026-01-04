@@ -20,6 +20,8 @@ import org.springframework.web.reactive.function.BodyInserters;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
 
+import java.util.Collections;
+
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.time.Duration;
@@ -357,6 +359,170 @@ public class DIDService {
         out.put("clipsPresenters", clips);
 
         return out;
+    }
+
+    public Map<String, Object> createConsent(Map<String, Object> body) {
+        try {
+            Map<String, Object> requestBody = (body == null) ? Collections.emptyMap() : body;
+            String response = webClient.post()
+                    .uri("/consents")
+                    .header(HttpHeaders.AUTHORIZATION, getAuthHeader())
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .accept(MediaType.APPLICATION_JSON)
+                    .bodyValue(requestBody)
+                    .retrieve()
+                    .bodyToMono(String.class)
+                    .timeout(READ_TIMEOUT)
+                    .block();
+
+            Map<String, Object> out = new LinkedHashMap<>();
+            if (response == null || response.isBlank()) {
+                out.put("ok", false);
+                out.put("error", "Empty response");
+                return out;
+            }
+
+            JsonNode root = objectMapper.readTree(response);
+            out.put("ok", true);
+            out.put("raw", objectMapper.convertValue(root, Map.class));
+            String consentText = extractConsentText(root);
+            if (consentText != null && !consentText.isBlank()) {
+                out.put("consentText", consentText);
+            }
+            return out;
+        } catch (WebClientResponseException wce) {
+            Map<String, Object> out = new LinkedHashMap<>();
+            out.put("ok", false);
+            out.put("status", wce.getStatusCode().value());
+            out.put("body", truncate(wce.getResponseBodyAsString(), 2000));
+            return out;
+        } catch (Exception e) {
+            Map<String, Object> out = new LinkedHashMap<>();
+            out.put("ok", false);
+            out.put("error", truncate(String.valueOf(e.getMessage()), 500));
+            return out;
+        }
+    }
+
+    public Map<String, Object> getConsent(String id) {
+        try {
+            String safeId = (id == null) ? "" : id.trim();
+            String response = webClient.get()
+                    .uri("/consents/{id}", safeId)
+                    .header(HttpHeaders.AUTHORIZATION, getAuthHeader())
+                    .accept(MediaType.APPLICATION_JSON)
+                    .retrieve()
+                    .bodyToMono(String.class)
+                    .timeout(READ_TIMEOUT)
+                    .block();
+
+            Map<String, Object> out = new LinkedHashMap<>();
+            if (response == null || response.isBlank()) {
+                out.put("ok", false);
+                out.put("error", "Empty response");
+                return out;
+            }
+
+            JsonNode root = objectMapper.readTree(response);
+            out.put("ok", true);
+            out.put("raw", objectMapper.convertValue(root, Map.class));
+            String consentText = extractConsentText(root);
+            if (consentText != null && !consentText.isBlank()) {
+                out.put("consentText", consentText);
+            }
+            return out;
+        } catch (WebClientResponseException wce) {
+            Map<String, Object> out = new LinkedHashMap<>();
+            out.put("ok", false);
+            out.put("status", wce.getStatusCode().value());
+            out.put("body", truncate(wce.getResponseBodyAsString(), 2000));
+            return out;
+        } catch (Exception e) {
+            Map<String, Object> out = new LinkedHashMap<>();
+            out.put("ok", false);
+            out.put("error", truncate(String.valueOf(e.getMessage()), 500));
+            return out;
+        }
+    }
+
+    private String extractConsentText(JsonNode root) {
+        if (root == null) {
+            return null;
+        }
+
+        String direct = extractConsentTextDirect(root);
+        if (direct != null && !direct.isBlank()) {
+            return direct;
+        }
+
+        return extractConsentTextRecursive(root, 0, 4);
+    }
+
+    private String extractConsentTextDirect(JsonNode node) {
+        if (node == null || !node.isObject()) {
+            return null;
+        }
+
+        String[] keys = new String[] {
+                "consent_text",
+                "consentText",
+                "text",
+                "script",
+                "content",
+                "instructions",
+                "description"
+        };
+        for (String k : keys) {
+            if (node.hasNonNull(k) && node.get(k).isTextual()) {
+                String v = node.get(k).asText();
+                if (v != null && !v.isBlank()) {
+                    return v;
+                }
+            }
+        }
+        return null;
+    }
+
+    private String extractConsentTextRecursive(JsonNode node, int depth, int maxDepth) {
+        if (node == null || depth > maxDepth) {
+            return null;
+        }
+
+        if (node.isObject()) {
+            java.util.Iterator<Map.Entry<String, JsonNode>> it = node.fields();
+            while (it.hasNext()) {
+                Map.Entry<String, JsonNode> e = it.next();
+                String key = e.getKey() == null ? "" : e.getKey();
+                JsonNode v = e.getValue();
+
+                if (v != null && v.isTextual()) {
+                    String s = v.asText();
+                    String lk = key.toLowerCase(java.util.Locale.ROOT);
+                    if (!s.isBlank() && (lk.contains("consent") || lk.contains("text") || lk.contains("script"))) {
+                        return s;
+                    }
+                }
+
+                String direct = extractConsentTextDirect(v);
+                if (direct != null && !direct.isBlank()) {
+                    return direct;
+                }
+
+                String nested = extractConsentTextRecursive(v, depth + 1, maxDepth);
+                if (nested != null && !nested.isBlank()) {
+                    return nested;
+                }
+            }
+        } else if (node.isArray()) {
+            for (JsonNode child : node) {
+                String nested = extractConsentTextRecursive(child, depth + 1, maxDepth);
+                if (nested != null && !nested.isBlank()) {
+                    return nested;
+                }
+            }
+        }
+
+        return null;
     }
 
     private List<DIDPresenter> fetchAndCacheCustomPresenters() {
@@ -1598,12 +1764,13 @@ public class DIDService {
                 throw new RuntimeException("Audio-management voice is required for presenterId=" + pid);
             }
 
-            // Strict rule: ONLY use (a) a voice derived from Audio Management (custom/cloned) or
+            // Strict rule: ONLY use (a) a voice already derived from Audio Management (custom/cloned) or
             // (b) the Express Avatar's native voice (provider=null). Never force a generic/default voice.
+            // NOTE: We intentionally DO NOT attempt to create/clone a voice here, because cloning may
+            // require a consent-specific recording and can cause hard failures (e.g. ConsentTextSimilarityError).
             try {
                 Optional<DIDAvatar> db = avatarRepository.findByPresenterId(pid);
                 DIDAvatar a = db.orElse(null);
-                String presenterName = a == null ? null : a.getPresenterName();
 
                 // If a custom/cloned voice was already saved, prefer it.
                 if (a != null) {
@@ -1620,43 +1787,12 @@ public class DIDService {
                     }
                 }
 
-                // Ensure a cloned/custom voice exists from the Audio Management sample.
-                String cloneName = (presenterName == null || presenterName.isBlank()) ? pid : presenterName.trim();
-                Optional<String> ensuredVoiceId = ensureClonedVoiceIdFromLocalSample(pid, cloneName);
-                if (ensuredVoiceId.isPresent() && !ensuredVoiceId.get().isBlank()) {
-                    String ensuredType = "d-id";
-                    try {
-                        Optional<DIDAvatar> refreshed = avatarRepository.findByPresenterId(pid);
-                        if (refreshed.isPresent() && refreshed.get().getVoiceType() != null
-                                && refreshed.get().getVoiceType().trim().toLowerCase(Locale.ROOT).startsWith(CUSTOM_VOICE_PREFIX)) {
-                            ensuredType = normalizeCustomProviderTypeOrDefault(refreshed.get().getVoiceType());
-                        }
-                    } catch (Exception ignored) {
-                        // ignore
-                    }
-
-                    Map<String, Object> provider = new HashMap<>();
-                    provider.put("type", ensuredType);
-                    provider.put("voice_id", ensuredVoiceId.get().trim());
-                    logger.info("Using audio-management voice (ensured) for presenter {}: type={} voice_id={}", pid, ensuredType, ensuredVoiceId.get().trim());
-                    return provider;
-                }
-
-                if (failOnCloneError) {
-                    String last = voiceCloneLastErrorByPresenterId.get(pid);
-                    String suffix = (last == null || last.isBlank()) ? "" : (" (" + last + ")");
-                    throw new RuntimeException("Audio-management sample exists but voice cloning failed for presenterId=" + pid + suffix);
-                }
-
                 // Fall back to Express Avatar's native voice; do NOT substitute any other default voice.
-                logger.info("Audio-management required but cloning unavailable for presenter {}. Using avatar native voice.", pid);
+                logger.info("Audio-management required for presenter {}. Using avatar native voice (no cloning).", pid);
                 return null;
             } catch (RuntimeException re) {
                 throw re;
             } catch (Exception e) {
-                if (failOnCloneError) {
-                    throw new RuntimeException(e);
-                }
                 logger.warn("Strict voice resolution error for presenter {}: {}. Using avatar native voice.", pid, e.getMessage());
                 return null;
             }
