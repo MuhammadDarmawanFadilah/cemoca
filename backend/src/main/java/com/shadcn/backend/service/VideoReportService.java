@@ -1832,9 +1832,19 @@ public class VideoReportService {
         boolean hasFinishedItems = (doneCount + failedCount) > 0;
         
         if (allItemsFinished && hasFinishedItems) {
-            report.setStatus("COMPLETED");
-            report.setCompletedAt(LocalDateTime.now());
-            logger.info("[VIDEO STATUS] Report {} marked as COMPLETED. WA blast will be triggered automatically.", reportId);
+            String nextStatus = failedCount > 0 ? "FAILED" : "COMPLETED";
+            String previousStatus = report.getStatus();
+
+            report.setStatus(nextStatus);
+            if (!java.util.Objects.equals(previousStatus, nextStatus)) {
+                report.setCompletedAt(LocalDateTime.now());
+            }
+
+            if ("COMPLETED".equals(nextStatus)) {
+                logger.info("[VIDEO STATUS] Report {} marked as COMPLETED. WA blast will be triggered automatically.", reportId);
+            } else {
+                logger.warn("[VIDEO STATUS] Report {} marked as FAILED (failedCount={}). WA blast will not be triggered automatically.", reportId, failedCount);
+            }
         }
         
         videoReportRepository.save(report);
