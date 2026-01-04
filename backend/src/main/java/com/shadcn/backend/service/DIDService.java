@@ -1029,7 +1029,45 @@ public class DIDService {
                 return Optional.empty();
             }
 
-            Optional<VoiceInfo> created = createClonedVoice(sample.get(), avatarName.trim(), pid);
+            String consentId = null;
+            try {
+                consentId = avatar.getConsentId();
+            } catch (Exception ignored) {
+                consentId = null;
+            }
+
+            if (consentId == null || consentId.trim().isBlank()) {
+                try {
+                    String fetched = fetchExpressAvatarConsentIdById(pid);
+                    if (fetched != null && !fetched.trim().isBlank()) {
+                        consentId = fetched.trim();
+                        try {
+                            avatar.setConsentId(consentId);
+                            avatarRepository.save(avatar);
+                        } catch (Exception ignored) {
+                            // ignore
+                        }
+                    }
+                } catch (Exception ignored) {
+                    // ignore
+                }
+            }
+
+            if (consentId == null || consentId.trim().isBlank()) {
+                try {
+                    Map<String, Object> ensured = ensureStableConsentForAvatarKey(avatarName.trim());
+                    Object ok = ensured.get("ok");
+                    boolean okBool = ok instanceof Boolean && (Boolean) ok;
+                    Object cid = ensured.get("consentId");
+                    if (okBool && cid != null && !String.valueOf(cid).trim().isBlank()) {
+                        consentId = String.valueOf(cid).trim();
+                    }
+                } catch (Exception ignored) {
+                    // ignore
+                }
+            }
+
+            Optional<VoiceInfo> created = createClonedVoice(sample.get(), avatarName.trim(), pid, consentId);
             Optional<String> voiceId = created.map(v -> v.voiceId);
             created.ifPresent(v -> {
                 avatar.setVoiceId(v.voiceId);
@@ -1238,7 +1276,7 @@ public class DIDService {
         }
     }
 
-    private Optional<VoiceInfo> createClonedVoice(ByteArrayResource file, String name, String presenterId) {
+    private Optional<VoiceInfo> createClonedVoice(ByteArrayResource file, String name, String presenterId, String consentId) {
         try {
             String pid = presenterId == null ? "" : presenterId.trim();
             if (!pid.isBlank() && shouldSkipVoiceClone(pid)) {
@@ -1254,6 +1292,9 @@ public class DIDService {
                     lang = "english";
                 }
                 form.add("language", lang);
+                if (consentId != null && !consentId.trim().isBlank()) {
+                    form.add("consent_id", consentId.trim());
+                }
                 form.add("file", file);
 
                 try {
