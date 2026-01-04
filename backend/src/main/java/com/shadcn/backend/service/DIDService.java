@@ -363,7 +363,21 @@ public class DIDService {
 
     public Map<String, Object> createConsent(Map<String, Object> body) {
         try {
-            Map<String, Object> requestBody = (body == null) ? Collections.emptyMap() : body;
+            Map<String, Object> requestBody = new LinkedHashMap<>();
+            if (body != null && !body.isEmpty()) {
+                requestBody.putAll(body);
+            }
+
+            // D-ID consents API requires language.
+            if (!requestBody.containsKey("language") || requestBody.get("language") == null
+                    || String.valueOf(requestBody.get("language")).trim().isBlank()) {
+                String lang = cloneVoiceLanguage == null ? "" : cloneVoiceLanguage.trim();
+                if (lang.isBlank()) {
+                    lang = "english";
+                }
+                requestBody.put("language", lang);
+            }
+
             String response = webClient.post()
                     .uri("/consents")
                     .header(HttpHeaders.AUTHORIZATION, getAuthHeader())
