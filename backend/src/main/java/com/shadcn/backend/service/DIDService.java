@@ -1577,12 +1577,66 @@ public class DIDService {
                 throw new RuntimeException("Audio-management voice is required for presenterId=" + pid);
             }
 
-            String voiceId = pickAmazonVoiceIdForPresenter(pid);
-            Map<String, Object> provider = new HashMap<>();
-            provider.put("type", "amazon");
-            provider.put("voice_id", voiceId);
-            logger.info("Using Amazon Polly voice for presenter {}: voice_id={}", pid, voiceId);
-            return provider;
+            // Strict rule: ONLY use (a) a voice derived from Audio Management (custom/cloned) or
+            // (b) the Express Avatar's native voice (provider=null). Never force a generic/default voice.
+            try {
+                Optional<DIDAvatar> db = avatarRepository.findByPresenterId(pid);
+                DIDAvatar a = db.orElse(null);
+                String presenterName = a == null ? null : a.getPresenterName();
+
+                // If a custom/cloned voice was already saved, prefer it.
+                if (a != null) {
+                    String voiceId = a.getVoiceId();
+                    String rawType = a.getVoiceType();
+                    if (voiceId != null && !voiceId.isBlank() && rawType != null && !rawType.isBlank()
+                            && rawType.trim().toLowerCase(Locale.ROOT).startsWith(CUSTOM_VOICE_PREFIX)) {
+                        String providerType = normalizeCustomProviderTypeOrDefault(rawType);
+                        Map<String, Object> provider = new HashMap<>();
+                        provider.put("type", providerType);
+                        provider.put("voice_id", voiceId.trim());
+                        logger.info("Using audio-management voice for presenter {}: type={} voice_id={}", pid, providerType, voiceId.trim());
+                        return provider;
+                    }
+                }
+
+                // Ensure a cloned/custom voice exists from the Audio Management sample.
+                String cloneName = (presenterName == null || presenterName.isBlank()) ? pid : presenterName.trim();
+                Optional<String> ensuredVoiceId = ensureClonedVoiceIdFromLocalSample(pid, cloneName);
+                if (ensuredVoiceId.isPresent() && !ensuredVoiceId.get().isBlank()) {
+                    String ensuredType = "d-id";
+                    try {
+                        Optional<DIDAvatar> refreshed = avatarRepository.findByPresenterId(pid);
+                        if (refreshed.isPresent() && refreshed.get().getVoiceType() != null
+                                && refreshed.get().getVoiceType().trim().toLowerCase(Locale.ROOT).startsWith(CUSTOM_VOICE_PREFIX)) {
+                            ensuredType = normalizeCustomProviderTypeOrDefault(refreshed.get().getVoiceType());
+                        }
+                    } catch (Exception ignored) {
+                        // ignore
+                    }
+
+                    Map<String, Object> provider = new HashMap<>();
+                    provider.put("type", ensuredType);
+                    provider.put("voice_id", ensuredVoiceId.get().trim());
+                    logger.info("Using audio-management voice (ensured) for presenter {}: type={} voice_id={}", pid, ensuredType, ensuredVoiceId.get().trim());
+                    return provider;
+                }
+
+                if (failOnCloneError) {
+                    throw new RuntimeException("Audio-management sample exists but voice cloning failed for presenterId=" + pid);
+                }
+
+                // Fall back to Express Avatar's native voice; do NOT substitute any other default voice.
+                logger.info("Audio-management required but cloning unavailable for presenter {}. Using avatar native voice.", pid);
+                return null;
+            } catch (RuntimeException re) {
+                throw re;
+            } catch (Exception e) {
+                if (failOnCloneError) {
+                    throw new RuntimeException(e);
+                }
+                logger.warn("Strict voice resolution error for presenter {}: {}. Using avatar native voice.", pid, e.getMessage());
+                return null;
+            }
         }
 
         try {
@@ -1820,13 +1874,9 @@ public class DIDService {
             return scene;
         }
 
-        // If audio-management exists for this presenter, never fall back to another presenter_id.
-        try {
-            if (strictAudioManagementVoice && hasAudioManagementSampleForPresenter(avatarId)) {
-                return scene;
-            }
-        } catch (Exception ignored) {
-            // ignore
+        // Strict mode: never fall back to another presenter_id (prevents voice drift / overlapping flows).
+        if (strictAudioManagementVoice) {
+            return scene;
         }
 
         Object errObj = scene.get("error");
