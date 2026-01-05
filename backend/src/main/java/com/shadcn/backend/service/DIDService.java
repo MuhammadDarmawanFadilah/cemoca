@@ -1649,9 +1649,9 @@ public class DIDService {
                 "(?is)</?\\s*amazon:domain\\b[^>]*>"
             );
 
-            private static final java.util.regex.Pattern SSML_BREAK_TIME_MS = java.util.regex.Pattern.compile(
-                    "(?i)time\\s*=\\s*\\\"\\s*(\\d+(?:\\.\\d+)?)\\s*ms\\s*\\\""
-            );
+                private static final java.util.regex.Pattern SSML_BREAK_TIME = java.util.regex.Pattern.compile(
+                    "(?i)time\\s*=\\s*\\\"\\s*(\\d+(?:\\.\\d+)?)\\s*(ms|s)\\s*\\\""
+                );
 
     private static final java.util.regex.Pattern MULTI_WHITESPACE = java.util.regex.Pattern.compile("\\s+");
 
@@ -1686,6 +1686,7 @@ public class DIDService {
         }
         String s = SSML_AMAZON_EFFECT_STRIP.matcher(input).replaceAll("");
         s = SSML_AMAZON_DOMAIN_STRIP.matcher(s).replaceAll("");
+        s = s.replaceAll("(?i)\\bunchanged\\s*:\\s*", "the same. ");
         s = normalizeSsmlBreakTimeUnits(s);
         return s;
     }
@@ -1694,7 +1695,7 @@ public class DIDService {
         if (input == null || input.isBlank()) {
             return input;
         }
-        java.util.regex.Matcher m = SSML_BREAK_TIME_MS.matcher(input);
+        java.util.regex.Matcher m = SSML_BREAK_TIME.matcher(input);
         if (!m.find()) {
             return input;
         }
@@ -1702,10 +1703,13 @@ public class DIDService {
         m.reset();
         StringBuffer sb = new StringBuffer();
         while (m.find()) {
-            String msStr = m.group(1);
+            String valueStr = m.group(1);
+            String unit = m.group(2);
             String replacement = m.group(0);
             try {
-                double ms = Double.parseDouble(msStr);
+                double v = Double.parseDouble(valueStr);
+                double ms = "s".equalsIgnoreCase(unit) ? (v * 1000.0) : v;
+                ms = normalizeBreakMs(ms);
                 double seconds = ms / 1000.0;
 
                 String sec = String.format(java.util.Locale.ROOT, "%.3f", seconds);
@@ -1718,6 +1722,19 @@ public class DIDService {
         }
         m.appendTail(sb);
         return sb.toString();
+    }
+
+    private double normalizeBreakMs(double ms) {
+        if (Double.isNaN(ms) || Double.isInfinite(ms) || ms <= 0) {
+            return ms;
+        }
+
+        if (ms < 350.0) {
+            return ms;
+        }
+
+        double scaled = ms * 0.55;
+        return Math.max(250.0, Math.min(1000.0, scaled));
     }
 
     private String sanitizeSsmlForAmazonProvider(String input) {
@@ -1763,12 +1780,12 @@ public class DIDService {
         t = t.replace("\r\n", "\n").replace("\r", "\n");
         t = xmlEscapeForSsml(t);
 
-        t = t.replaceAll("\\n\\s*\\n+", "<break time=\"1400ms\"/>");
-        t = t.replaceAll("\\n", "<break time=\"900ms\"/>");
-        t = t.replaceAll("([.!?])\\s+", "$1<break time=\"900ms\"/> ");
-        t = t.replaceAll("(:)\\s+", "$1<break time=\"700ms\"/> ");
+        t = t.replaceAll("\\n\\s*\\n+", "<break time=\"800ms\"/>");
+        t = t.replaceAll("\\n", "<break time=\"500ms\"/>");
+        t = t.replaceAll("([.!?])\\s+", "$1<break time=\"550ms\"/> ");
+        t = t.replaceAll("(:)\\s+", "$1<break time=\"400ms\"/> ");
 
-        return "<speak><prosody rate=\"90%\">" + t + "</prosody></speak>";
+        return "<speak><prosody rate=\"95%\">" + t + "</prosody></speak>";
     }
     
     /**
