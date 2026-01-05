@@ -1746,10 +1746,13 @@ public class DIDService {
         }
 
         try {
-            return input.replaceAll(
+            String s = input.replaceAll(
                     "(?is)</?\\s*(?!speak\\b|break\\b|p\\b|s\\b|w\\b|prosody\\b|emphasis\\b|amazon:effect\\b|amazon:domain\\b|say-as\\b|sub\\b|lang\\b|phoneme\\b)[a-zA-Z0-9:_-]+\\b[^>]*>",
                     ""
             );
+            s = s.replaceAll("(?i)\\bunchanged\\s*:\\s*", "the same. ");
+            s = normalizeSsmlBreakTimeUnits(s);
+            return s;
         } catch (Exception e) {
             return input;
         }
