@@ -1649,6 +1649,10 @@ public class DIDService {
                 "(?is)</?\\s*amazon:domain\\b[^>]*>"
             );
 
+            private static final java.util.regex.Pattern SSML_BREAK_TIME_MS = java.util.regex.Pattern.compile(
+                    "(?i)time\\s*=\\s*\\\"\\s*(\\d+(?:\\.\\d+)?)\\s*ms\\s*\\\""
+            );
+
     private static final java.util.regex.Pattern MULTI_WHITESPACE = java.util.regex.Pattern.compile("\\s+");
 
     private boolean isSsmlInput(String script) {
@@ -1682,7 +1686,38 @@ public class DIDService {
         }
         String s = SSML_AMAZON_EFFECT_STRIP.matcher(input).replaceAll("");
         s = SSML_AMAZON_DOMAIN_STRIP.matcher(s).replaceAll("");
+        s = normalizeSsmlBreakTimeUnits(s);
         return s;
+    }
+
+    private String normalizeSsmlBreakTimeUnits(String input) {
+        if (input == null || input.isBlank()) {
+            return input;
+        }
+        java.util.regex.Matcher m = SSML_BREAK_TIME_MS.matcher(input);
+        if (!m.find()) {
+            return input;
+        }
+
+        m.reset();
+        StringBuffer sb = new StringBuffer();
+        while (m.find()) {
+            String msStr = m.group(1);
+            String replacement = m.group(0);
+            try {
+                double ms = Double.parseDouble(msStr);
+                double seconds = ms / 1000.0;
+
+                String sec = String.format(java.util.Locale.ROOT, "%.3f", seconds);
+                sec = sec.replaceAll("0+$", "").replaceAll("\\.$", "");
+                replacement = "time=\"" + sec + "s\"";
+            } catch (Exception ignored) {
+                // keep original
+            }
+            m.appendReplacement(sb, java.util.regex.Matcher.quoteReplacement(replacement));
+        }
+        m.appendTail(sb);
+        return sb.toString();
     }
 
     private String sanitizeSsmlForAmazonProvider(String input) {
