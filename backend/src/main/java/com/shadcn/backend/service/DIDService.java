@@ -2263,6 +2263,35 @@ public class DIDService {
         return v;
     }
 
+    private String inferProviderTypeFromVoiceId(String voiceId, String providerType) {
+        if (voiceId == null || voiceId.isBlank()) {
+            return providerType;
+        }
+        if (providerType == null || providerType.isBlank()) {
+            return providerType;
+        }
+
+        String t = providerType.trim().toLowerCase(Locale.ROOT);
+        if (!t.equals("amazon")) {
+            return providerType;
+        }
+
+        String id = voiceId.trim();
+        if (amazonVoiceIdFemale != null && !amazonVoiceIdFemale.isBlank() && id.equalsIgnoreCase(amazonVoiceIdFemale.trim())) {
+            return providerType;
+        }
+        if (amazonVoiceIdMale != null && !amazonVoiceIdMale.isBlank() && id.equalsIgnoreCase(amazonVoiceIdMale.trim())) {
+            return providerType;
+        }
+
+        // Heuristic: ElevenLabs voice IDs are typically base62-ish strings (e.g. 18-28 chars) and not a Polly voice name.
+        if (id.length() >= 16 && id.length() <= 32 && id.matches("^[A-Za-z0-9]+$")) {
+            return "elevenlabs";
+        }
+
+        return providerType;
+    }
+
     private Map<String, Object> resolveProviderForPresenter(String presenterId) {
         if (presenterId == null || presenterId.isBlank()) {
             return null;
@@ -2289,7 +2318,7 @@ public class DIDService {
                     String rawType = a.getVoiceType();
                     if (voiceId != null && !voiceId.isBlank() && rawType != null && !rawType.isBlank()
                             && rawType.trim().toLowerCase(Locale.ROOT).startsWith(CUSTOM_VOICE_PREFIX)) {
-                        String providerType = normalizeCustomProviderTypeOrDefault(rawType);
+                        String providerType = inferProviderTypeFromVoiceId(voiceId, normalizeCustomProviderTypeOrDefault(rawType));
                         Map<String, Object> provider = new HashMap<>();
                         provider.put("type", providerType);
                         provider.put("voice_id", voiceId.trim());
@@ -2332,9 +2361,11 @@ public class DIDService {
                 }
 
                 Map<String, Object> provider = new HashMap<>();
-                provider.put("type", ensuredType);
-                provider.put("voice_id", ensuredVoiceId.get().trim());
-                logger.info("Strict voice ensured for presenter {}: type={} voice_id={}", pid, ensuredType, ensuredVoiceId.get().trim());
+                String ensuredVoiceIdTrimmed = ensuredVoiceId.get().trim();
+                String inferredType = inferProviderTypeFromVoiceId(ensuredVoiceIdTrimmed, ensuredType);
+                provider.put("type", inferredType);
+                provider.put("voice_id", ensuredVoiceIdTrimmed);
+                logger.info("Strict voice ensured for presenter {}: type={} voice_id={}", pid, inferredType, ensuredVoiceIdTrimmed);
                 return provider;
             } catch (RuntimeException re) {
                 throw re;
@@ -2358,7 +2389,7 @@ public class DIDService {
                 String rawType = a.getVoiceType();
                 if (voiceId != null && !voiceId.isBlank() && rawType != null && !rawType.isBlank()
                         && rawType.trim().toLowerCase(Locale.ROOT).startsWith(CUSTOM_VOICE_PREFIX)) {
-                    String providerType = normalizeCustomProviderTypeOrDefault(rawType);
+                    String providerType = inferProviderTypeFromVoiceId(voiceId, normalizeCustomProviderTypeOrDefault(rawType));
                     Map<String, Object> provider = new HashMap<>();
                     provider.put("type", providerType);
                     provider.put("voice_id", voiceId.trim());
@@ -2383,9 +2414,11 @@ public class DIDService {
                             // ignore
                         }
                         Map<String, Object> provider = new HashMap<>();
-                        provider.put("type", ensuredType);
-                        provider.put("voice_id", ensuredVoiceId.get().trim());
-                        logger.info("Using audio-management voice (ensured) for presenter {}: type={} voice_id={}", pid, ensuredType, ensuredVoiceId.get().trim());
+                        String ensuredVoiceIdTrimmed = ensuredVoiceId.get().trim();
+                        String inferredType = inferProviderTypeFromVoiceId(ensuredVoiceIdTrimmed, ensuredType);
+                        provider.put("type", inferredType);
+                        provider.put("voice_id", ensuredVoiceIdTrimmed);
+                        logger.info("Using audio-management voice (ensured) for presenter {}: type={} voice_id={}", pid, inferredType, ensuredVoiceIdTrimmed);
                         return provider;
                     }
 
@@ -2430,6 +2463,13 @@ public class DIDService {
         // /scenes does NOT accept provider.type = d-id (union validation error).
         if (t.equals("d-id") || t.equals("did")) {
             return null;
+        }
+
+        // /scenes schema uses microsoft/elevenlabs/etc; map amazon -> microsoft while keeping the same voice_id.
+        if (t.equals("amazon")) {
+            Map<String, Object> out = new HashMap<>(provider);
+            out.put("type", "microsoft");
+            return out;
         }
 
         return provider;
