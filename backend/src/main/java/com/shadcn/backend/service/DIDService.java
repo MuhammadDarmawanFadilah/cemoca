@@ -482,6 +482,95 @@ public class DIDService {
         return ensureStableConsentForAvatarKey(avatarKey);
     }
 
+    public Map<String, Object> resetConsentForAvatarKey(String avatarKey, String newConsentText) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        String key = avatarKey == null ? "" : avatarKey.trim();
+        out.put("avatarKey", key);
+
+        String desired = newConsentText == null ? "" : newConsentText.trim();
+        if (desired.isBlank()) {
+            out.put("ok", false);
+            out.put("error", "consentText is required");
+            return out;
+        }
+        out.put("requestedConsentText", desired);
+
+        String presenterId;
+        try {
+            presenterId = resolveExpressPresenterId(key);
+        } catch (Exception e) {
+            presenterId = null;
+        }
+
+        if (presenterId == null || presenterId.isBlank()) {
+            out.put("ok", false);
+            out.put("error", "Avatar not found");
+            return out;
+        }
+        out.put("presenterId", presenterId);
+
+        Optional<DIDAvatar> existing = Optional.empty();
+        try {
+            existing = avatarRepository.findByPresenterId(presenterId);
+        } catch (Exception ignored) {
+        }
+
+        DIDAvatar avatar;
+        if (existing.isPresent()) {
+            avatar = existing.get();
+        } else {
+            avatar = DIDAvatar.builder()
+                    .presenterId(presenterId)
+                    .presenterName(key.isBlank() ? presenterId : key)
+                    .avatarType("express")
+                    .isActive(true)
+                    .build();
+        }
+
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("consent", desired);
+        Map<String, Object> created = createConsent(body);
+        if (created == null) {
+            out.put("ok", false);
+            out.put("error", "Failed to create consent");
+            return out;
+        }
+
+        Object ok = created.get("ok");
+        boolean okBool = ok instanceof Boolean && (Boolean) ok;
+        if (!okBool) {
+            out.putAll(created);
+            return out;
+        }
+
+        String newConsentId = extractConsentIdFromCreate(created);
+        if (newConsentId == null || newConsentId.isBlank()) {
+            out.put("ok", false);
+            out.put("error", "Consent created but id missing");
+            out.put("raw", created.get("raw"));
+            return out;
+        }
+
+        String consentText = created.get("consentText") == null ? "" : String.valueOf(created.get("consentText"));
+        if (consentText.isBlank()) {
+            consentText = desired;
+        }
+
+        try {
+            avatar.setConsentId(newConsentId.trim());
+            avatar.setConsentText(consentText);
+            avatar.setVoiceId(null);
+            avatar.setVoiceType(null);
+            avatarRepository.save(avatar);
+        } catch (Exception ignored) {
+        }
+
+        out.put("ok", true);
+        out.put("consentId", newConsentId.trim());
+        out.put("consentText", consentText);
+        return out;
+    }
+
     public Map<String, Object> ensureStableConsentForAvatarKey(String avatarKey) {
         Map<String, Object> out = new LinkedHashMap<>();
         String key = avatarKey == null ? "" : avatarKey.trim();

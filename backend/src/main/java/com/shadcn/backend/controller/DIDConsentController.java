@@ -17,6 +17,10 @@ public class DIDConsentController {
         this.didService = didService;
     }
 
+    public static class ResetConsentRequest {
+        public String consentText;
+    }
+
 
     @GetMapping("/{id}")
     public ResponseEntity<Map<String, Object>> getConsent(@PathVariable String id) {
@@ -34,5 +38,14 @@ public class DIDConsentController {
         Object t = out.get("consentText");
         String text = t == null ? "" : String.valueOf(t);
         return ResponseEntity.ok(text);
+    }
+
+    @PostMapping("/for-avatar/{avatarKey}/reset")
+    public ResponseEntity<Map<String, Object>> resetConsentForAvatar(
+            @PathVariable String avatarKey,
+            @RequestBody ResetConsentRequest request
+    ) {
+        String text = request == null ? null : request.consentText;
+        return ResponseEntity.ok(didService.resetConsentForAvatarKey(avatarKey, text));
     }
 }
