@@ -25,17 +25,35 @@ public class DIDAvatarController {
     @PostMapping("/for-avatar/{avatarKey}/voice")
     public ResponseEntity<Map<String, Object>> setVoiceForAvatar(
             @PathVariable String avatarKey,
-            @RequestBody SetVoiceRequest request,
+            @RequestBody(required = false) SetVoiceRequest request,
+            @RequestParam(name = "voiceId", required = false) String voiceIdParam,
+            @RequestParam(name = "voiceType", required = false) String voiceTypeParam,
             HttpServletRequest httpRequest
     ) {
         String remote = httpRequest == null ? null : httpRequest.getRemoteAddr();
         boolean localhost = remote != null && (remote.equals("127.0.0.1") || remote.equals("::1"));
+
+        String xff = httpRequest == null ? null : httpRequest.getHeader("X-Forwarded-For");
+        if (xff != null && !xff.trim().isBlank()) {
+            String first = xff.split(",")[0].trim();
+            boolean forwardedLocal = first.equals("127.0.0.1") || first.equals("::1");
+            if (!forwardedLocal) {
+                localhost = false;
+            }
+        }
+
         if (!localhost) {
             return ResponseEntity.status(403).body(Map.of("ok", false, "error", "Forbidden"));
         }
 
         String voiceId = request == null ? null : request.voiceId;
         String voiceType = request == null ? null : request.voiceType;
+        if (voiceId == null || voiceId.isBlank()) {
+            voiceId = voiceIdParam;
+        }
+        if (voiceType == null || voiceType.isBlank()) {
+            voiceType = voiceTypeParam;
+        }
         return ResponseEntity.ok(didService.setCustomVoiceForAvatarKey(avatarKey, voiceId, voiceType));
     }
 }
