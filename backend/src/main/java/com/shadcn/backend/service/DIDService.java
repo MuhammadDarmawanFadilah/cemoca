@@ -624,6 +624,76 @@ public class DIDService {
         return out;
     }
 
+    public Map<String, Object> setCustomVoiceForAvatarKey(String avatarKey, String voiceId, String voiceType) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        String key = avatarKey == null ? "" : avatarKey.trim();
+        out.put("avatarKey", key);
+
+        String vid = voiceId == null ? "" : voiceId.trim();
+        if (vid.isBlank()) {
+            out.put("ok", false);
+            out.put("error", "voiceId is required");
+            return out;
+        }
+
+        String vtype = voiceType == null ? "" : voiceType.trim();
+        if (vtype.isBlank()) {
+            vtype = "custom:amazon";
+        } else if (!vtype.toLowerCase(Locale.ROOT).startsWith(CUSTOM_VOICE_PREFIX)) {
+            vtype = CUSTOM_VOICE_PREFIX + vtype;
+        }
+
+        String presenterId;
+        try {
+            presenterId = resolveExpressPresenterId(key);
+        } catch (Exception e) {
+            presenterId = null;
+        }
+
+        if (presenterId == null || presenterId.isBlank()) {
+            out.put("ok", false);
+            out.put("error", "Avatar not found");
+            return out;
+        }
+        out.put("presenterId", presenterId);
+
+        DIDAvatar avatar = null;
+        try {
+            avatar = avatarRepository.findByPresenterId(presenterId).orElse(null);
+        } catch (Exception ignored) {
+        }
+        if (avatar == null) {
+            avatar = DIDAvatar.builder()
+                    .presenterId(presenterId)
+                    .presenterName(key.isBlank() ? presenterId : key)
+                    .avatarType("express")
+                    .isActive(true)
+                    .build();
+        }
+
+        try {
+            avatar.setVoiceId(vid);
+            avatar.setVoiceType(vtype);
+            avatarRepository.save(avatar);
+        } catch (Exception e) {
+            out.put("ok", false);
+            out.put("error", truncate(String.valueOf(e.getMessage()), 500));
+            return out;
+        }
+
+        try {
+            clonedVoiceIdCache.remove(presenterId.trim());
+            voiceCloneLastErrorByPresenterId.remove(presenterId.trim());
+            voiceCloneSkipUntilMsByPresenterId.remove(presenterId.trim());
+        } catch (Exception ignored) {
+        }
+
+        out.put("ok", true);
+        out.put("voiceId", vid);
+        out.put("voiceType", vtype);
+        return out;
+    }
+
     public Map<String, Object> ensureStableConsentForAvatarKey(String avatarKey) {
         Map<String, Object> out = new LinkedHashMap<>();
         String key = avatarKey == null ? "" : avatarKey.trim();
