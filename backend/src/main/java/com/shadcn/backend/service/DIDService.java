@@ -479,95 +479,67 @@ public class DIDService {
     }
 
     public Map<String, Object> getConsentForAvatarKey(String avatarKey) {
-        return ensureStableConsentForAvatarKey(avatarKey);
+        String key = avatarKey == null ? "" : avatarKey.trim();
+
+        if (!key.isBlank()) {
+            try {
+                List<DIDAvatar> matches = avatarRepository.findExpressByPresenterNameTrimmedIgnoreCase(key);
+                if (matches != null && !matches.isEmpty()) {
+                    DIDAvatar best = null;
+                    for (DIDAvatar a : matches) {
+                        if (a == null) {
+                            continue;
+                        }
+                        String cid = a.getConsentId() == null ? "" : a.getConsentId().trim();
+                        if (!cid.isBlank()) {
+                            best = a;
+                            break;
+                        }
+                    }
+                    if (best == null) {
+                        best = matches.get(0);
+                    }
+
+                    Map<String, Object> out = new LinkedHashMap<>();
+                    out.put("ok", true);
+                    out.put("avatarKey", key);
+                    out.put("presenterId", best.getPresenterId());
+                    if (best.getConsentId() != null && !best.getConsentId().trim().isBlank()) {
+                        out.put("consentId", best.getConsentId().trim());
+                    }
+                    if (best.getConsentText() != null && !best.getConsentText().trim().isBlank()) {
+                        out.put("consentText", best.getConsentText());
+                    }
+
+                    if (!out.containsKey("consentText") && out.containsKey("consentId")) {
+                        try {
+                            Map<String, Object> consent = getConsent(String.valueOf(out.get("consentId")));
+                            if (Boolean.TRUE.equals(consent.get("ok")) && consent.get("consentText") != null) {
+                                String ct = String.valueOf(consent.get("consentText")).trim();
+                                if (!ct.isBlank()) {
+                                    out.put("consentText", ct);
+                                }
+                            }
+                        } catch (Exception ignored) {
+                        }
+                    }
+
+                    if (out.containsKey("consentId")) {
+                        return out;
+                    }
+                }
+            } catch (Exception ignored) {
+            }
+        }
+
+        return ensureStableConsentForAvatarKey(key);
     }
 
     public Map<String, Object> resetConsentForAvatarKey(String avatarKey, String newConsentText) {
         Map<String, Object> out = new LinkedHashMap<>();
-        String key = avatarKey == null ? "" : avatarKey.trim();
-        out.put("avatarKey", key);
-
-        String desired = newConsentText == null ? "" : newConsentText.trim();
-        if (desired.isBlank()) {
-            out.put("ok", false);
-            out.put("error", "consentText is required");
-            return out;
-        }
-        out.put("requestedConsentText", desired);
-
-        String presenterId;
-        try {
-            presenterId = resolveExpressPresenterId(key);
-        } catch (Exception e) {
-            presenterId = null;
-        }
-
-        if (presenterId == null || presenterId.isBlank()) {
-            out.put("ok", false);
-            out.put("error", "Avatar not found");
-            return out;
-        }
-        out.put("presenterId", presenterId);
-
-        Optional<DIDAvatar> existing = Optional.empty();
-        try {
-            existing = avatarRepository.findByPresenterId(presenterId);
-        } catch (Exception ignored) {
-        }
-
-        DIDAvatar avatar;
-        if (existing.isPresent()) {
-            avatar = existing.get();
-        } else {
-            avatar = DIDAvatar.builder()
-                    .presenterId(presenterId)
-                    .presenterName(key.isBlank() ? presenterId : key)
-                    .avatarType("express")
-                    .isActive(true)
-                    .build();
-        }
-
-        Map<String, Object> body = new LinkedHashMap<>();
-        body.put("consent", desired);
-        Map<String, Object> created = createConsent(body);
-        if (created == null) {
-            out.put("ok", false);
-            out.put("error", "Failed to create consent");
-            return out;
-        }
-
-        Object ok = created.get("ok");
-        boolean okBool = ok instanceof Boolean && (Boolean) ok;
-        if (!okBool) {
-            out.putAll(created);
-            return out;
-        }
-
-        String newConsentId = extractConsentIdFromCreate(created);
-        if (newConsentId == null || newConsentId.isBlank()) {
-            out.put("ok", false);
-            out.put("error", "Consent created but id missing");
-            out.put("raw", created.get("raw"));
-            return out;
-        }
-
-        String consentText = created.get("consentText") == null ? "" : String.valueOf(created.get("consentText"));
-        if (consentText.isBlank()) {
-            consentText = desired;
-        }
-
-        try {
-            avatar.setConsentId(newConsentId.trim());
-            avatar.setConsentText(consentText);
-            avatar.setVoiceId(null);
-            avatar.setVoiceType(null);
-            avatarRepository.save(avatar);
-        } catch (Exception ignored) {
-        }
-
-        out.put("ok", true);
-        out.put("consentId", newConsentId.trim());
-        out.put("consentText", consentText);
+        out.put("ok", false);
+        out.put("error", "Consent is locked and cannot be reset");
+        out.putAll(getConsentForAvatarKey(avatarKey));
         return out;
     }
 
@@ -2521,6 +2493,31 @@ public class DIDService {
                 // fall through
             }
             return getExpressAvatarById(trimmed).map(DIDAvatar::getPresenterId).orElse(null);
+        }
+
+        try {
+            List<DIDAvatar> db = avatarRepository.findExpressByPresenterNameTrimmedIgnoreCase(trimmed);
+            if (db != null && !db.isEmpty()) {
+                for (DIDAvatar a : db) {
+                    if (a == null) {
+                        continue;
+                    }
+                    String pid = a.getPresenterId() == null ? "" : a.getPresenterId().trim();
+                    String cid = a.getConsentId() == null ? "" : a.getConsentId().trim();
+                    if (!pid.isBlank() && !cid.isBlank()) {
+                        return pid;
+                    }
+                }
+
+                DIDAvatar first = db.get(0);
+                if (first != null) {
+                    String pid = first.getPresenterId() == null ? "" : first.getPresenterId().trim();
+                    if (!pid.isBlank()) {
+                        return pid;
+                    }
+                }
+            }
+        } catch (Exception ignored) {
         }
 
         String target = normalizePresenterNameForMatch(trimmed);
