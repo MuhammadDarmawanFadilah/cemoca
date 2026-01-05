@@ -5,6 +5,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.net.InetAddress;
 import java.util.Map;
 
 @RestController
@@ -22,6 +23,17 @@ public class DIDAvatarController {
         public String voiceType;
     }
 
+    private boolean isLoopback(String addr) {
+        if (addr == null || addr.isBlank()) {
+            return false;
+        }
+        try {
+            return InetAddress.getByName(addr.trim()).isLoopbackAddress();
+        } catch (Exception ignored) {
+            return false;
+        }
+    }
+
     @PostMapping("/for-avatar/{avatarKey}/voice")
     public ResponseEntity<Map<String, Object>> setVoiceForAvatar(
             @PathVariable String avatarKey,
@@ -31,12 +43,12 @@ public class DIDAvatarController {
             HttpServletRequest httpRequest
     ) {
         String remote = httpRequest == null ? null : httpRequest.getRemoteAddr();
-        boolean localhost = remote != null && (remote.equals("127.0.0.1") || remote.equals("::1"));
+        boolean localhost = isLoopback(remote);
 
         String xff = httpRequest == null ? null : httpRequest.getHeader("X-Forwarded-For");
         if (xff != null && !xff.trim().isBlank()) {
             String first = xff.split(",")[0].trim();
-            boolean forwardedLocal = first.equals("127.0.0.1") || first.equals("::1");
+            boolean forwardedLocal = isLoopback(first);
             if (!forwardedLocal) {
                 localhost = false;
             }
