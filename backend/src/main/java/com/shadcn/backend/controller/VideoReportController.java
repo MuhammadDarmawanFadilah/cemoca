@@ -931,6 +931,38 @@ public class VideoReportController {
         return response;
     }
 
+    private Long[] resolveTokenToIds(String token) {
+        if (token == null || token.isBlank()) {
+            return null;
+        }
+        try {
+            java.util.List<Long[]> candidates = VideoLinkEncryptor.decryptVideoLinkShortCandidates(token);
+            if (candidates != null && !candidates.isEmpty()) {
+                for (Long[] ids : candidates) {
+                    if (ids == null || ids.length < 2) {
+                        continue;
+                    }
+                    VideoReportItem item = videoReportItemRepository.findByIdAndVideoReportId(ids[1], ids[0]);
+                    if (item != null) {
+                        return ids;
+                    }
+                }
+            }
+        } catch (Exception ignore) {
+        }
+
+        Long[] ids = VideoLinkEncryptor.decryptVideoLink(token);
+        if (ids == null || ids.length < 2) {
+            return null;
+        }
+        try {
+            VideoReportItem item = videoReportItemRepository.findByIdAndVideoReportId(ids[1], ids[0]);
+            return item == null ? null : ids;
+        } catch (Exception ignore) {
+            return null;
+        }
+    }
+
     /**
      * Generate encrypted shareable link for a video item
      */
@@ -963,8 +995,7 @@ public class VideoReportController {
      */
     @GetMapping("/view/{token}")
     public ResponseEntity<Map<String, Object>> getVideoByToken(@PathVariable String token, HttpServletRequest request) {
-        // Decrypt token
-        Long[] ids = VideoLinkEncryptor.decryptVideoLink(token);
+        Long[] ids = resolveTokenToIds(token);
         if (ids == null || ids.length < 2) {
             Map<String, Object> error = new HashMap<>();
             error.put("error", "Link tidak valid atau sudah kadaluarsa");
@@ -1023,7 +1054,7 @@ public class VideoReportController {
         Long reportId;
         Long itemId;
         try {
-            Long[] ids = VideoLinkEncryptor.decryptVideoLink(token);
+            Long[] ids = resolveTokenToIds(token);
             if (ids == null || ids.length < 2) {
                 response.setStatus(HttpStatus.BAD_REQUEST.value());
                 return;

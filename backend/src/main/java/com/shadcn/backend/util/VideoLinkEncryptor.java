@@ -9,6 +9,8 @@ import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
 import java.util.Base64;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * Utility class for encrypting and decrypting video link tokens
@@ -34,7 +36,68 @@ public class VideoLinkEncryptor {
             return null;
         }
 
-        return "r" + toBase62(reportId) + "i" + toBase62(itemId);
+        // New short token format (unambiguous): r{reportBase62}-{itemBase62}
+        return "r" + toBase62(reportId) + "-" + toBase62(itemId);
+    }
+
+    /**
+     * Returns all possible (reportId,itemId) pairs that can map to a legacy short token.
+     * Legacy format was: r{reportBase62}i{itemBase62}
+     * This is ambiguous because base62 can contain 'i'.
+     */
+    public static List<Long[]> decryptVideoLinkShortCandidates(String token) {
+        List<Long[]> out = new ArrayList<>();
+        if (token == null) {
+            return out;
+        }
+        String t = token.trim();
+        if (t.isEmpty() || !t.startsWith("r") || t.length() < 4) {
+            return out;
+        }
+
+        // New format: r{reportBase62}-{itemBase62}
+        int dashPos = t.indexOf('-');
+        if (dashPos > 1 && dashPos < t.length() - 1) {
+            String rPart = t.substring(1, dashPos);
+            String iPart = t.substring(dashPos + 1);
+            try {
+                long reportId = fromBase62(rPart);
+                long itemId = fromBase62(iPart);
+                String reconstructed = "r" + toBase62(reportId) + "-" + toBase62(itemId);
+                if (reconstructed.equals(t)) {
+                    out.add(new Long[] { reportId, itemId });
+                }
+            } catch (Exception ignored) {
+            }
+            return out;
+        }
+
+        // Legacy format: r{reportBase62}i{itemBase62} (ambiguous)
+        if (t.contains("i")) {
+            for (int iPos = 2; iPos <= t.length() - 2; iPos++) {
+                if (t.charAt(iPos) != 'i') {
+                    continue;
+                }
+
+                String rPart = t.substring(1, iPos);
+                String iPart = t.substring(iPos + 1);
+                if (rPart.isBlank() || iPart.isBlank()) {
+                    continue;
+                }
+
+                try {
+                    long reportId = fromBase62(rPart);
+                    long itemId = fromBase62(iPart);
+                    String reconstructed = "r" + toBase62(reportId) + "i" + toBase62(itemId);
+                    if (reconstructed.equals(t)) {
+                        out.add(new Long[] { reportId, itemId });
+                    }
+                } catch (Exception ignored) {
+                    // try next split
+                }
+            }
+        }
+        return out;
     }
 
     private static String toBase62(long value) {
@@ -114,32 +177,9 @@ public class VideoLinkEncryptor {
         try {
             if (token != null) {
                 String t = token.trim();
-                if (t.startsWith("r") && t.contains("i") && t.length() >= 4) {
-                    // Token format: r{reportBase62}i{itemBase62}.
-                    // Base62 parts can include 'i', so we must try all possible delimiter positions.
-                    for (int iPos = 2; iPos <= t.length() - 2; iPos++) {
-                        if (t.charAt(iPos) != 'i') {
-                            continue;
-                        }
-
-                        String rPart = t.substring(1, iPos);
-                        String iPart = t.substring(iPos + 1);
-                        if (rPart.isBlank() || iPart.isBlank()) {
-                            continue;
-                        }
-
-                        try {
-                            long reportId = fromBase62(rPart);
-                            long itemId = fromBase62(iPart);
-
-                            String reconstructed = "r" + toBase62(reportId) + "i" + toBase62(itemId);
-                            if (reconstructed.equals(t)) {
-                                return new Long[] { reportId, itemId };
-                            }
-                        } catch (Exception ignored) {
-                            // try next split
-                        }
-                    }
+                List<Long[]> candidates = decryptVideoLinkShortCandidates(t);
+                if (candidates.size() == 1) {
+                    return candidates.get(0);
                 }
             }
 

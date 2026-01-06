@@ -1852,6 +1852,31 @@ public class VideoReportService {
             return;
         }
 
+        // Harden invariant: DONE must have a usable videoUrl. If not, treat as FAILED and block WA.
+        try {
+            List<VideoReportItem> doneItems = videoReportItemRepository.findByVideoReportIdAndStatus(reportId, "DONE");
+            if (doneItems != null && !doneItems.isEmpty()) {
+                for (VideoReportItem item : doneItems) {
+                    String url = item.getVideoUrl();
+                    if (url == null || url.isBlank()) {
+                        item.setStatus("FAILED");
+                        item.setVideoUrl(null);
+                        if (item.getErrorMessage() == null || item.getErrorMessage().isBlank()) {
+                            item.setErrorMessage("Video marked DONE but videoUrl is empty");
+                        }
+                        if (item.getWaStatus() == null || "PENDING".equals(item.getWaStatus()) || "PROCESSING".equals(item.getWaStatus())) {
+                            item.setWaStatus("FAILED");
+                            item.setWaMessageId(null);
+                            item.setWaSentAt(null);
+                            item.setWaErrorMessage("Video is not available (empty videoUrl); WA blocked");
+                        }
+                        videoReportItemRepository.save(item);
+                    }
+                }
+            }
+        } catch (Exception ignore) {
+        }
+
         int doneCount = videoReportItemRepository.countByVideoReportIdAndStatus(reportId, "DONE");
         int failedCount = videoReportItemRepository.countByVideoReportIdAndStatus(reportId, "FAILED");
         int processingCount = videoReportItemRepository.countByVideoReportIdAndStatus(reportId, "PROCESSING");
