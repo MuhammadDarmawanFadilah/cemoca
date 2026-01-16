@@ -8,7 +8,7 @@
 
 **Teknologi Stack**:
 - Backend: Java 21, Spring Boot 3.4.1, MySQL, Tomcat
-- Frontend: Next.js 15.3.0, Shadcn/ui, TailwindCSS
+- Frontend: Next.js 16.1.1, Shadcn/ui, TailwindCSS
 - External API: HeyGen (video generation), AWS Polly (TTS)
 - Support: Desktop/Mobile responsive, Dark/Light theme, PWA
 
@@ -29,6 +29,20 @@ bash /opt/CEMOCA/redeploy-backend.sh
 ```bash
 bash /opt/CEMOCA/redeploy-frontend.sh
 ```
+
+### Frontend Deploy (Recommended: Build Local)
+Frontend build on server bisa sangat lama/stuck. Gunakan build lokal lalu upload artifact.
+
+**Script Local Build + Deploy (Windows PowerShell)**:
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\deploy-frontend-local.ps1
+```
+
+**Apa yang dilakukan**:
+- Download `.env.prod` dari server (untuk build yang sesuai production)
+- `pnpm install` + `pnpm run build` di lokal
+- Pack `.next` + `public` → upload ke server
+- Restart `cemoca-frontend` + reload nginx
 
 ### Deployment dari Windows (PowerShell)
 ```powershell
@@ -86,11 +100,11 @@ sudo systemctl restart tomcat
 
 ## Fitur Utama Aplikasi
 
-### 1. D-ID Video Generation
-- **AI Avatar Videos**: Generate video dengan avatar realistis dan lip-sync
-- **Voice Cloning**: Clone suara dari audio sample untuk konsistensi suara
-- **SSML Support**: Text-to-speech dengan SSML tags untuk natural intonation
-- **Batch Processing**: Generate hingga 1000+ videos dengan avatar consistency
+### 1. HeyGen Video Generation
+- **AI Avatar Videos**: Generate video presentasi dengan avatar
+- **Avatar Listing**: Endpoint `/api/video-reports/avatars` mengambil daftar avatar dari HeyGen
+- **Status Tracking**: Monitor progress video generation
+- **Batch Processing**: Batch video generation untuk kebutuhan reporting
 
 ### 2. Audio Management
 - **Voice Sample Library**: Upload dan manage audio samples per avatar
@@ -109,25 +123,21 @@ sudo systemctl restart tomcat
 
 ## Konfigurasi Penting
 
-### D-ID Configuration (application.properties)
+### HeyGen Configuration (Production)
+Backend membaca HeyGen configuration dari environment variables:
 ```properties
-# D-ID API
-did.api.key=YOUR_API_KEY
-did.api.url=https://api.d-id.com
-
-# Voice Cloning Configuration
-did.tts.clone.language=english  # Language of voice SAMPLE, not script
-did.tts.strict-audio-management=true  # Enforce cloned voice, no fallback
-
-# Video Generation
-did.video.cache-enabled=true
-did.webhook.enabled=true
+heygen.api.base-url=${HEYGEN_API_BASE_URL:https://api.heygen.com}
+heygen.api.key=${HEYGEN_API_KEY:}
 ```
 
+**Catatan**:
+- Header yang dipakai HeyGen: `X-API-KEY`
+- API key harus server-side (jangan expose ke frontend)
+- Jika `HEYGEN_API_KEY` kosong di production, endpoint avatar akan gagal (HeyGen 401)
+
 ### Key Configuration Notes
-- `did.tts.clone.language`: Refers to language of uploaded audio sample (e.g., "english", "indonesian"), NOT the script text language
-- `did.tts.strict-audio-management=true`: Throws exception if audio sample exists but cloning fails (prevents voice drift)
-- SSML sanitization: Automatically strips `<amazon:effect>` tags incompatible with D-ID cloned voices
+- HeyGen API key harus ada di backend (environment variable `HEYGEN_API_KEY`).
+- Jangan expose HeyGen API key ke frontend.
 
 ### Database Configuration
 ```properties
@@ -148,11 +158,11 @@ backend/src/main/java/com/shadcn/backend/
 ├── controller/
 │   ├── AuthController.java          # Login & authentication
 │   ├── VideoReportController.java   # Video generation endpoints
-│   ├── DIDWebhookController.java    # D-ID callback handler
+│   ├── HeyGenWebhookController.java # HeyGen callback handler (if enabled)
 │   ├── AudioManagementController.java
 │   └── UserController.java
 ├── service/
-│   ├── DIDService.java              # D-ID API integration (CRITICAL)
+│   ├── HeyGenService.java           # HeyGen API integration (CRITICAL)
 │   ├── AudioManagementService.java  # Voice sample management
 │   ├── VideoReportService.java      # Video generation logic
 │   ├── LearningSchedulerService.java # Batch processing
@@ -194,14 +204,10 @@ frontend/src/
 
 ### Key Backend Services
 
-#### DIDService.java (MOST CRITICAL)
-Handles all D-ID API interactions:
-- `createScene()`: Create video with avatar and script
-- `createClipsVideo()`: Generate video clips
-- `getClipStatus()`: Poll video generation status
-- `ensureLocalSampleVoiceIfAvailable()`: Voice cloning logic
-- `sanitizeSsmlForDidProvider()`: SSML sanitization for D-ID compatibility
-- **Strict Voice Policy**: Enforces audio-management voice, prevents fallback
+#### HeyGenService.java (MOST CRITICAL)
+Handles all HeyGen API interactions:
+- `listAvatars()`: Fetch avatar list
+- Video generation + status polling
 
 #### AudioManagementService.java
 Manages voice samples:
@@ -214,7 +220,7 @@ Business logic for video generation:
 - Read CSV data files
 - Process batch video generation
 - Track video status
-- Handle D-ID webhooks
+- Handle HeyGen callbacks/webhooks (if enabled)
 
 #### LearningSchedulerService.java
 Automated batch processing:
@@ -286,13 +292,11 @@ cd frontend
 3. Fix in local code
 4. Commit, push, redeploy
 
-#### Update D-ID Configuration
-1. Edit `application-local.properties` or `application-prod.properties`
-2. Common settings:
-   - `did.api.key`: D-ID API key
-   - `did.tts.clone.language`: Voice sample language (english, indonesian, etc.)
-   - `did.tts.strict-audio-management`: Enable/disable strict voice mode
-3. Commit, push, redeploy backend
+#### Update HeyGen Configuration
+1. Set environment variables on production server:
+   - `HEYGEN_API_KEY`
+   - (Optional) `HEYGEN_API_BASE_URL`
+2. Restart backend (redeploy-backend.sh does this).
 
 #### Add Voice Sample
 1. Upload audio file via frontend (Audio Management page)
@@ -302,7 +306,7 @@ cd frontend
 ## Critical Files & Their Purpose
 
 ### Backend
-- **DIDService.java**: Core D-ID API integration (voice cloning, video generation)
+- **HeyGenService.java**: Core HeyGen API integration (avatar listing, video generation)
 - **application-local.properties**: Local development config
 - **application-prod.properties**: Production config
 - **pom.xml**: Maven dependencies
@@ -322,26 +326,11 @@ cd frontend
 
 ### Common Issues
 
-#### 1. Voice Generation Errors
-**Symptom**: "unsupported language" error
+#### 1. HeyGen Auth Errors
+**Symptom**: Avatar endpoint returns 400 and logs show HeyGen 401
 **Solution**:
-- Check `did.tts.clone.language` in application.properties
-- Must match audio sample language, not script language
-- Supported: english, spanish, italian, indonesian, etc.
-
-#### 2. Voice Drift/Inconsistency
-**Symptom**: Videos use different voices despite having audio sample
-**Solution**:
-- Ensure `did.tts.strict-audio-management=true`
-- Check audio sample exists in database (AvatarAudio entity)
-- Verify normalized key matches (e.g., "Gilbert Sit" → "gilbertsit")
-
-#### 3. SSML Tags Not Working
-**Symptom**: Amazon-specific SSML tags causing errors
-**Solution**:
-- System auto-strips `<amazon:effect>` tags via `sanitizeSsmlForDidProvider()`
-- Use standard SSML: `<break>`, `<prosody>`, `<emphasis>`
-- Avoid Amazon-only tags when using D-ID cloned voices
+- Pastikan `HEYGEN_API_KEY` terset di environment production.
+- Pastikan backend mengirim header `X-API-KEY`.
 
 #### 4. Deployment Fails
 **Symptom**: Redeploy script fails or hangs
@@ -350,6 +339,12 @@ cd frontend
 - Verify git push succeeded
 - Check Tomcat status: `sudo systemctl status tomcat`
 - Review logs: `sudo tail -f /opt/tomcat/logs/catalina.out`
+
+#### 6. Frontend build lama/stuck di server
+**Symptom**: `pnpm build` di server lama atau stuck
+**Solution**:
+- Gunakan local build + upload: `deploy-frontend-local.ps1`
+- Pastikan `.env.prod` ada di server: `/opt/cemoca/app/frontend/.env.prod`
 
 #### 5. Maven Build Errors
 **Symptom**: Compilation fails during redeploy
@@ -496,9 +491,8 @@ vi /opt/cemoca/app/backend/src/main/resources/application-prod.properties
 - **Just write "Success" when finished**
 
 ## Success Criteria
-- [x] D-ID video generation with avatar & voice cloning works
-- [x] Strict audio-management voice policy prevents voice drift
-- [x] SSML sanitization for D-ID compatibility
+- [x] HeyGen video generation works
+- [x] Avatar listing endpoint returns full list
 - [x] Batch video generation (1000+ videos) with consistent voice
 - [x] Audio management module for voice samples
 - [x] Video status tracking and webhooks
