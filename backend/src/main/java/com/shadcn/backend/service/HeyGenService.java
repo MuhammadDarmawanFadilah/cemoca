@@ -5,6 +5,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.time.Duration;
+import java.util.concurrent.CompletableFuture;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -24,6 +25,7 @@ import org.springframework.web.reactive.function.client.ExchangeStrategies;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
 import reactor.netty.http.client.HttpClient;
+import jakarta.annotation.PostConstruct;
 
 @Service
 public class HeyGenService {
@@ -53,6 +55,20 @@ public class HeyGenService {
 
     private volatile CachedValue<List<Map<String, Object>>> avatarCacheOwned;
     private volatile CachedValue<List<Map<String, Object>>> avatarCacheAll;
+
+    @PostConstruct
+    void prewarmAvatarCaches() {
+        if (apiKey == null || apiKey.isBlank()) {
+            return;
+        }
+
+        CompletableFuture.runAsync(() -> {
+            try {
+                listAvatarsInternal(true);
+            } catch (Exception ignore) {
+            }
+        });
+    }
 
     public HeyGenService(
             @Value("${heygen.api.base-url:https://api.heygen.com}") String baseUrl,
@@ -137,6 +153,21 @@ public class HeyGenService {
     }
 
     private List<Map<String, Object>> listAvatarsInternal(boolean includeAll) {
+        if (!includeAll) {
+            CachedValue<List<Map<String, Object>>> owned = avatarCacheOwned;
+            long now = System.currentTimeMillis();
+            if (owned != null && (now - owned.createdAtMs) < avatarCacheTtlMs && owned.value != null && !owned.value.isEmpty()) {
+                return deepCopyAvatarList(owned.value);
+            }
+
+            CachedValue<List<Map<String, Object>>> all = avatarCacheAll;
+            if (all != null && (now - all.createdAtMs) < avatarCacheTtlMs && all.value != null && !all.value.isEmpty()) {
+                List<Map<String, Object>> derived = filterOwnedAvatars(all.value);
+                avatarCacheOwned = new CachedValue<>(System.currentTimeMillis(), deepCopyAvatarList(derived));
+                return derived;
+            }
+        }
+
         CachedValue<List<Map<String, Object>>> cached = includeAll ? avatarCacheAll : avatarCacheOwned;
         long now = System.currentTimeMillis();
         if (cached != null && (now - cached.createdAtMs) < avatarCacheTtlMs && cached.value != null && !cached.value.isEmpty()) {
@@ -202,18 +233,15 @@ public class HeyGenService {
             }
         }
 
-            List<Map<String, Object>> filtered = includeAll ? result : filterOwnedAvatars(result);
-
-            CachedValue<List<Map<String, Object>>> newCache = new CachedValue<>(System.currentTimeMillis(), deepCopyAvatarList(filtered));
-            if (includeAll) {
-                avatarCacheAll = newCache;
-            } else {
-                avatarCacheOwned = newCache;
-            }
+            List<Map<String, Object>> ownedList = filterOwnedAvatars(result);
+            long cachedAtMs = System.currentTimeMillis();
+            avatarCacheAll = new CachedValue<>(cachedAtMs, deepCopyAvatarList(result));
+            avatarCacheOwned = new CachedValue<>(cachedAtMs, deepCopyAvatarList(ownedList));
 
             long tookMs = (System.nanoTime() - startNs) / 1_000_000L;
-            logger.info("[HEYGEN] listAvatars: {} items (includeAll={}) in {} ms", filtered.size(), includeAll, tookMs);
-            return filtered;
+            List<Map<String, Object>> out = includeAll ? result : ownedList;
+            logger.info("[HEYGEN] listAvatars: {} items (includeAll={}) in {} ms", out.size(), includeAll, tookMs);
+            return out;
         } catch (Exception e) {
             long tookMs = (System.nanoTime() - startNs) / 1_000_000L;
             logger.error("[HEYGEN] listAvatars failed after {} ms: {}", tookMs, e.toString());
