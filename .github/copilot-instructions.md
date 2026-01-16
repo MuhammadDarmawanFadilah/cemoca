@@ -7,7 +7,7 @@
 **Production URL**: https://cemoca.org  
 
 **Teknologi Stack**:
-- Backend: Java 21, Spring Boot 3.4.1, MySQL, Tomcat
+- Backend: Java 25, Spring Boot 4.0.1, MySQL, Tomcat
 - Frontend: Next.js 16.1.1, Shadcn/ui, TailwindCSS
 - External API: HeyGen (video generation), AWS Polly (TTS)
 - Support: Desktop/Mobile responsive, Dark/Light theme, PWA

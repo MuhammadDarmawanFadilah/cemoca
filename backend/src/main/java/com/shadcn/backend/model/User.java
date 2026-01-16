@@ -15,7 +15,7 @@ import org.hibernate.annotations.UpdateTimestamp;
 import java.time.LocalDateTime;
 
 /**
- * User entity with Java 21 features and optimized JPA configuration
+ * User entity with modern Java features and optimized JPA configuration
  */
 @Entity
 @Table(name = "users", indexes = {
