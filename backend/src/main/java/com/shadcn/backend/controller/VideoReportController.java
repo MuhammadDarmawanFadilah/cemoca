@@ -292,17 +292,9 @@ public class VideoReportController {
             @RequestParam(name = "avatarId", required = false) String avatarId,
             @RequestParam(name = "avatar_id", required = false) String avatarIdSnake
     ) {
-        String effectiveAvatarId = (avatarId != null && !avatarId.trim().isEmpty())
-                ? avatarId.trim()
-                : (avatarIdSnake != null && !avatarIdSnake.trim().isEmpty() ? avatarIdSnake.trim() : null);
-
-        List<Map<String, Object>> avatars;
-        if (effectiveAvatarId != null) {
-            Map<String, Object> one = heyGenService.getAvatarById(effectiveAvatarId);
-            avatars = (one == null) ? java.util.List.of() : java.util.List.of(one);
-        } else {
-            avatars = heyGenService.listAvatars();
-        }
+        // Always return the full avatar list. Some clients may pass avatarId, but the UI expects
+        // to be able to select from all available avatars.
+        List<Map<String, Object>> avatars = heyGenService.listAvatars();
         List<VideoAvatarOption> out = new java.util.ArrayList<>();
         if (avatars != null) {
             for (Map<String, Object> a : avatars) {

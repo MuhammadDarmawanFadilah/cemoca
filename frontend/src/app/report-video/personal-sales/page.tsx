@@ -24,8 +24,6 @@ import { useLanguage } from "@/contexts/LanguageContext";
 export default function PersonalSalesPage() {
   const { t } = useLanguage();
   const router = useRouter();
-
-  const ONLY_AVATAR_ID = "d14c75f06e33478b996f01084db971cc";
   const [viewMode, setViewMode] = useState<ViewMode>("history");
   const [step, setStep] = useState<Step>(1);
   const [loading, setLoading] = useState(false);
@@ -85,7 +83,7 @@ export default function PersonalSalesPage() {
       setLoadingBackgrounds(true);
       const [templateRes, presentersList, backgroundsList] = await Promise.all([
         videoReportAPI.getDefaultTemplate(),
-        videoReportAPI.getPresenters({ avatarId: ONLY_AVATAR_ID }),
+        videoReportAPI.getPresenters(),
         videoReportAPI.getBackgrounds(),
       ]);
       setMessageTemplate(templateRes.template);

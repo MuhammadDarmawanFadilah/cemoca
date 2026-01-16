@@ -3004,11 +3004,8 @@ export const videoReportAPI = {
     apiCall<{ template: string; waTemplate: string }>('/message-templates/defaults'),
 
   // Get available avatars
-  getPresenters: (options?: { avatarId?: string }): Promise<VideoAvatarOption[]> => {
-    const avatarId = options?.avatarId ? String(options.avatarId).trim() : ''
-    const qs = avatarId ? `?avatarId=${encodeURIComponent(avatarId)}` : ''
-    return apiCall<VideoAvatarOption[]>(`/video-reports/avatars${qs}`)
-  },
+  getPresenters: (): Promise<VideoAvatarOption[]> =>
+    apiCall<VideoAvatarOption[]>('/video-reports/avatars'),
 
   // Get available video backgrounds
   getBackgrounds: (): Promise<string[]> =>

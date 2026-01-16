@@ -1,17 +1,5 @@
 package com.shadcn.backend.service;
 
-import com.shadcn.backend.model.*;
-import com.shadcn.backend.repository.*;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.MediaType;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.client.RestTemplate;
-
-import jakarta.annotation.PostConstruct;
-
 import java.net.URI;
 import java.nio.file.Files;
 import java.time.LocalDate;
@@ -22,6 +10,63 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+
+import org.springframework.http.MediaType;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.client.RestTemplate;
+
+import com.shadcn.backend.model.LearningModuleImage;
+import com.shadcn.backend.model.LearningModulePdf;
+import com.shadcn.backend.model.LearningModulePowerPoint;
+import com.shadcn.backend.model.LearningScheduleConfig;
+import com.shadcn.backend.model.LearningScheduleConfigMaterial;
+
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.MediaType;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.client.RestTemplate;
+
+import com.shadcn.backend.model.LearningModuleImage;
+import com.shadcn.backend.model.LearningModulePdf;
+import com.shadcn.backend.model.LearningModulePowerPoint;
+import com.shadcn.backend.model.LearningScheduleConfig;
+import com.shadcn.backend.model.LearningScheduleConfigMaterial;
+import com.shadcn.backend.model.LearningScheduleHistory;
+import com.shadcn.backend.model.LearningScheduleHistoryItem;
+import com.shadcn.backend.model.MasterAgencyAgent;
+import com.shadcn.backend.repository.LearningModuleImageRepository;
+import com.shadcn.backend.repository.LearningModulePdfRepository;
+import com.shadcn.backend.repository.LearningModulePowerPointRepository;
+import com.shadcn.backend.repository.LearningModuleVideoRepository;
+import com.shadcn.backend.repository.LearningScheduleConfigMaterialRepository;
+import com.shadcn.backend.repository.LearningScheduleHistoryItemRepository;
+import com.shadcn.backend.repository.LearningScheduleHistoryRepository;
+import com.shadcn.backend.repository.MasterAgencyAgentRepository;
+import com.shadcn.backend.repository.MasterPolicySalesRepository;
+import com.shadcn.backend.repository.UserRepository;
+
+import jakarta.annotation.PostConstruct;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import com.shadcn.backend.model.LearningScheduleHistory;
+import com.shadcn.backend.model.LearningScheduleHistoryItem;
+import com.shadcn.backend.model.MasterAgencyAgent;
+import com.shadcn.backend.repository.LearningModuleImageRepository;
+import com.shadcn.backend.repository.LearningModulePdfRepository;
+import com.shadcn.backend.repository.LearningModulePowerPointRepository;
+import com.shadcn.backend.repository.LearningModuleVideoRepository;
+import com.shadcn.backend.repository.LearningScheduleConfigMaterialRepository;
+import com.shadcn.backend.repository.LearningScheduleHistoryItemRepository;
+import com.shadcn.backend.repository.LearningScheduleHistoryRepository;
+import com.shadcn.backend.repository.MasterAgencyAgentRepository;
+import com.shadcn.backend.repository.MasterPolicySalesRepository;
+import com.shadcn.backend.repository.UserRepository;
+
+import jakarta.annotation.PostConstruct;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
 @Service
