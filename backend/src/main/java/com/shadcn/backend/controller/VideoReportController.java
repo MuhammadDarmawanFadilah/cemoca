@@ -292,8 +292,8 @@ public class VideoReportController {
             @RequestParam(name = "avatarId", required = false) String avatarId,
             @RequestParam(name = "avatar_id", required = false) String avatarIdSnake
     ) {
-        // Always return the full avatar list. Some clients may pass avatarId, but the UI expects
-        // to be able to select from all available avatars.
+        // Return avatars created/owned by this HeyGen account by default (public/premium can be
+        // enabled via configuration).
         List<Map<String, Object>> avatars = heyGenService.listAvatars();
         List<VideoAvatarOption> out = new java.util.ArrayList<>();
         if (avatars != null) {

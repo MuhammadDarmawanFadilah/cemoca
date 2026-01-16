@@ -48,13 +48,19 @@ public class HeyGenService {
     private final long avatarCacheTtlMs;
     private final Duration heygenRequestTimeout;
 
-    private volatile CachedValue<List<Map<String, Object>>> avatarCache;
+    private final boolean includePublicAvatars;
+    private final boolean includePremiumAvatars;
+
+    private volatile CachedValue<List<Map<String, Object>>> avatarCacheOwned;
+    private volatile CachedValue<List<Map<String, Object>>> avatarCacheAll;
 
     public HeyGenService(
             @Value("${heygen.api.base-url:https://api.heygen.com}") String baseUrl,
             @Value("${heygen.api.key:}") String apiKey,
             @Value("${heygen.api.timeout-seconds:30}") int timeoutSeconds,
             @Value("${heygen.api.avatar-cache-ttl-seconds:300}") int avatarCacheTtlSeconds,
+            @Value("${heygen.api.avatars.include-public:false}") boolean includePublicAvatars,
+            @Value("${heygen.api.avatars.include-premium:false}") boolean includePremiumAvatars,
             ObjectMapper objectMapper
     ) {
         this.apiKey = apiKey == null ? "" : apiKey.trim();
@@ -64,6 +70,9 @@ public class HeyGenService {
         int effectiveCacheTtlSeconds = avatarCacheTtlSeconds <= 0 ? 300 : avatarCacheTtlSeconds;
         this.heygenRequestTimeout = Duration.ofSeconds(effectiveTimeoutSeconds);
         this.avatarCacheTtlMs = effectiveCacheTtlSeconds * 1000L;
+
+        this.includePublicAvatars = includePublicAvatars;
+        this.includePremiumAvatars = includePremiumAvatars;
 
         String effectiveBaseUrl = baseUrl == null ? "" : baseUrl.trim();
         if (effectiveBaseUrl.isBlank()) {
@@ -120,7 +129,15 @@ public class HeyGenService {
     }
 
     public List<Map<String, Object>> listAvatars() {
-        CachedValue<List<Map<String, Object>>> cached = avatarCache;
+        return listAvatarsInternal(includePublicAvatars || includePremiumAvatars);
+    }
+
+    public List<Map<String, Object>> listAllAvatars() {
+        return listAvatarsInternal(true);
+    }
+
+    private List<Map<String, Object>> listAvatarsInternal(boolean includeAll) {
+        CachedValue<List<Map<String, Object>>> cached = includeAll ? avatarCacheAll : avatarCacheOwned;
         long now = System.currentTimeMillis();
         if (cached != null && (now - cached.createdAtMs) < avatarCacheTtlMs && cached.value != null && !cached.value.isEmpty()) {
             return deepCopyAvatarList(cached.value);
@@ -185,11 +202,18 @@ public class HeyGenService {
             }
         }
 
-            avatarCache = new CachedValue<>(System.currentTimeMillis(), deepCopyAvatarList(result));
+            List<Map<String, Object>> filtered = includeAll ? result : filterOwnedAvatars(result);
+
+            CachedValue<List<Map<String, Object>>> newCache = new CachedValue<>(System.currentTimeMillis(), deepCopyAvatarList(filtered));
+            if (includeAll) {
+                avatarCacheAll = newCache;
+            } else {
+                avatarCacheOwned = newCache;
+            }
 
             long tookMs = (System.nanoTime() - startNs) / 1_000_000L;
-            logger.info("[HEYGEN] listAvatars: {} items in {} ms", result.size(), tookMs);
-            return result;
+            logger.info("[HEYGEN] listAvatars: {} items (includeAll={}) in {} ms", filtered.size(), includeAll, tookMs);
+            return filtered;
         } catch (Exception e) {
             long tookMs = (System.nanoTime() - startNs) / 1_000_000L;
             logger.error("[HEYGEN] listAvatars failed after {} ms: {}", tookMs, e.toString());
@@ -199,6 +223,33 @@ public class HeyGenService {
             }
             throw e;
         }
+    }
+
+    private List<Map<String, Object>> filterOwnedAvatars(List<Map<String, Object>> avatars) {
+        if (avatars == null || avatars.isEmpty()) {
+            return new ArrayList<>();
+        }
+
+        List<Map<String, Object>> filtered = new ArrayList<>(avatars.size());
+        for (Map<String, Object> a : avatars) {
+            if (a == null) {
+                continue;
+            }
+
+            Boolean isPublic = (a.get("is_public") instanceof Boolean) ? (Boolean) a.get("is_public") : null;
+            Boolean isPremium = (a.get("is_premium") instanceof Boolean) ? (Boolean) a.get("is_premium") : null;
+
+            if (!includePublicAvatars && Boolean.TRUE.equals(isPublic)) {
+                continue;
+            }
+            if (!includePremiumAvatars && Boolean.TRUE.equals(isPremium)) {
+                continue;
+            }
+
+            filtered.add(a);
+        }
+
+        return filtered;
     }
 
     private static List<Map<String, Object>> deepCopyAvatarList(List<Map<String, Object>> list) {
@@ -229,7 +280,7 @@ public class HeyGenService {
                     .block();
         } catch (Exception e) {
             // Fallback: some avatar types may not support details endpoint.
-            for (Map<String, Object> a : listAvatars()) {
+            for (Map<String, Object> a : listAllAvatars()) {
                 if (a == null) {
                     continue;
                 }
