@@ -2,14 +2,14 @@
 
 ## Overview Proyek
 **Nama Aplikasi**: CeMoCA (Creative Motion Content Application)  
-**Deskripsi**: Platform AI-powered video generation dengan D-ID API integration untuk membuat video presentasi dengan avatar dan voice cloning  
+**Deskripsi**: Platform AI-powered video generation dengan HeyGen API integration untuk membuat video presentasi dengan avatar  
 **Repository**: https://github.com/MuhammadDarmawanFadilah/cemoca.git  
 **Production URL**: https://cemoca.org  
 
 **Teknologi Stack**:
 - Backend: Java 21, Spring Boot 3.4.1, MySQL, Tomcat
 - Frontend: Next.js 15.3.0, Shadcn/ui, TailwindCSS
-- External API: D-ID (video generation & voice cloning), AWS Polly (TTS)
+- External API: HeyGen (video generation), AWS Polly (TTS)
 - Support: Desktop/Mobile responsive, Dark/Light theme, PWA
 
 ## Server Access & Deployment
@@ -17,7 +17,6 @@
 ### Production Server
 **Host**: 72.61.208.104  
 **User**: root  
-**Password**: P@ssw0rdAfan  
 **Access Method**: SSH via PuTTY/plink
 
 ### Deployment Scripts
@@ -34,10 +33,10 @@ bash /opt/CEMOCA/redeploy-frontend.sh
 ### Deployment dari Windows (PowerShell)
 ```powershell
 # Backend
-echo y | plink -ssh root@72.61.208.104 -pw "P@ssw0rdAfan" "bash /opt/CEMOCA/redeploy-backend.sh"
+$pw = Read-Host -Prompt "SSH Password"; echo y | plink -ssh root@72.61.208.104 -pw $pw "bash /opt/CEMOCA/redeploy-backend.sh"
 
 # Frontend
-echo y | plink -ssh root@72.61.208.104 -pw "P@ssw0rdAfan" "bash /opt/CEMOCA/redeploy-frontend.sh"
+$pw = Read-Host -Prompt "SSH Password"; echo y | plink -ssh root@72.61.208.104 -pw $pw "bash /opt/CEMOCA/redeploy-frontend.sh"
 ```
 
 ### Deployment Workflow
@@ -264,10 +263,10 @@ cd frontend
 4. **Deploy to Production**
    ```powershell
    # Backend
-   echo y | plink -ssh root@72.61.208.104 -pw "P@ssw0rdAfan" "bash /opt/CEMOCA/redeploy-backend.sh"
+   $pw = Read-Host -Prompt "SSH Password"; echo y | plink -ssh root@72.61.208.104 -pw $pw "bash /opt/CEMOCA/redeploy-backend.sh"
    
    # Frontend
-   echo y | plink -ssh root@72.61.208.104 -pw "P@ssw0rdAfan" "bash /opt/CEMOCA/redeploy-frontend.sh"
+   $pw = Read-Host -Prompt "SSH Password"; echo y | plink -ssh root@72.61.208.104 -pw $pw "bash /opt/CEMOCA/redeploy-frontend.sh"
    ```
 
 ### Common Tasks
@@ -374,8 +373,8 @@ plink -ssh root@72.61.208.104 "ls -la /opt/"
 # Auto-accept host key
 echo y | plink -ssh root@72.61.208.104 "command"
 
-# With password inline (for automation)
-echo y | plink -ssh root@72.61.208.104 -pw "P@ssw0rdAfan" "command"
+# With password provided at runtime
+$pw = Read-Host -Prompt "SSH Password"; echo y | plink -ssh root@72.61.208.104 -pw $pw "command"
 ```
 
 #### Method 2: Using PuTTY GUI
@@ -384,7 +383,7 @@ echo y | plink -ssh root@72.61.208.104 -pw "P@ssw0rdAfan" "command"
 3. Port: `22`
 4. Connection type: SSH
 5. Login: `root`
-6. Password: `P@ssw0rdAfan`
+6. Password: (enter at prompt)
 
 #### Method 3: Using VS Code Remote SSH
 1. Install "Remote - SSH" extension
@@ -393,7 +392,7 @@ echo y | plink -ssh root@72.61.208.104 -pw "P@ssw0rdAfan" "command"
    Host cemoca
      HostName 72.61.208.104
      User root
-     Password P@ssw0rdAfan
+       # Do not store passwords here
    ```
 3. Connect via command palette
 
@@ -402,7 +401,7 @@ echo y | plink -ssh root@72.61.208.104 -pw "P@ssw0rdAfan" "command"
 #### Deploy Backend
 ```powershell
 # Full command with auto-accept
-echo y | plink -ssh root@72.61.208.104 -pw "P@ssw0rdAfan" "bash /opt/CEMOCA/redeploy-backend.sh"
+$pw = Read-Host -Prompt "SSH Password"; echo y | plink -ssh root@72.61.208.104 -pw $pw "bash /opt/CEMOCA/redeploy-backend.sh"
 
 # Expected output:
 # - Pulling latest code
@@ -416,7 +415,7 @@ echo y | plink -ssh root@72.61.208.104 -pw "P@ssw0rdAfan" "bash /opt/CEMOCA/rede
 #### Deploy Frontend
 ```powershell
 # Full command with auto-accept
-echo y | plink -ssh root@72.61.208.104 -pw "P@ssw0rdAfan" "bash /opt/CEMOCA/redeploy-frontend.sh"
+$pw = Read-Host -Prompt "SSH Password"; echo y | plink -ssh root@72.61.208.104 -pw $pw "bash /opt/CEMOCA/redeploy-frontend.sh"
 
 # Expected output:
 # - Pulling latest code
@@ -429,25 +428,25 @@ echo y | plink -ssh root@72.61.208.104 -pw "P@ssw0rdAfan" "bash /opt/CEMOCA/rede
 #### Check Application Status
 ```powershell
 # Check Tomcat status
-echo y | plink -ssh root@72.61.208.104 -pw "P@ssw0rdAfan" "sudo systemctl status tomcat"
+$pw = Read-Host -Prompt "SSH Password"; echo y | plink -ssh root@72.61.208.104 -pw $pw "sudo systemctl status tomcat"
 
 # Check backend API
-echo y | plink -ssh root@72.61.208.104 -pw "P@ssw0rdAfan" "curl http://localhost:8080/cemoca/api/health"
+$pw = Read-Host -Prompt "SSH Password"; echo y | plink -ssh root@72.61.208.104 -pw $pw "curl http://localhost:8080/cemoca/api/health"
 
 # Check frontend
-echo y | plink -ssh root@72.61.208.104 -pw "P@ssw0rdAfan" "curl http://localhost:3000"
+$pw = Read-Host -Prompt "SSH Password"; echo y | plink -ssh root@72.61.208.104 -pw $pw "curl http://localhost:3000"
 ```
 
 #### View Logs
 ```powershell
 # Tomcat logs (last 100 lines)
-echo y | plink -ssh root@72.61.208.104 -pw "P@ssw0rdAfan" "sudo tail -n 100 /opt/tomcat/logs/catalina.out"
+$pw = Read-Host -Prompt "SSH Password"; echo y | plink -ssh root@72.61.208.104 -pw $pw "sudo tail -n 100 /opt/tomcat/logs/catalina.out"
 
 # Application logs (last 100 lines)
-echo y | plink -ssh root@72.61.208.104 -pw "P@ssw0rdAfan" "sudo tail -n 100 /opt/tomcat/logs/application.log"
+$pw = Read-Host -Prompt "SSH Password"; echo y | plink -ssh root@72.61.208.104 -pw $pw "sudo tail -n 100 /opt/tomcat/logs/application.log"
 
 # Follow logs in real-time (Ctrl+C to exit)
-echo y | plink -ssh root@72.61.208.104 -pw "P@ssw0rdAfan" "sudo tail -f /opt/tomcat/logs/application.log"
+$pw = Read-Host -Prompt "SSH Password"; echo y | plink -ssh root@72.61.208.104 -pw $pw "sudo tail -f /opt/tomcat/logs/application.log"
 ```
 
 ### File Management on Server
@@ -455,25 +454,25 @@ echo y | plink -ssh root@72.61.208.104 -pw "P@ssw0rdAfan" "sudo tail -f /opt/tom
 #### Upload Files
 ```powershell
 # Using pscp (PuTTY scp)
-pscp -pw "P@ssw0rdAfan" local-file.txt root@72.61.208.104:/opt/cemoca/
+$pw = Read-Host -Prompt "SSH Password"; pscp -pw $pw local-file.txt root@72.61.208.104:/opt/cemoca/
 
 # Upload directory
-pscp -r -pw "P@ssw0rdAfan" local-dir/ root@72.61.208.104:/opt/cemoca/
+$pw = Read-Host -Prompt "SSH Password"; pscp -r -pw $pw local-dir/ root@72.61.208.104:/opt/cemoca/
 ```
 
 #### Download Files
 ```powershell
 # Download single file
-pscp -pw "P@ssw0rdAfan" root@72.61.208.104:/opt/tomcat/logs/application.log ./
+$pw = Read-Host -Prompt "SSH Password"; pscp -pw $pw root@72.61.208.104:/opt/tomcat/logs/application.log ./
 
 # Download directory
-pscp -r -pw "P@ssw0rdAfan" root@72.61.208.104:/opt/file/ ./downloads/
+$pw = Read-Host -Prompt "SSH Password"; pscp -r -pw $pw root@72.61.208.104:/opt/file/ ./downloads/
 ```
 
 #### Edit Files on Server
 ```bash
 # SSH into server first
-echo y | plink -ssh root@72.61.208.104 -pw "P@ssw0rdAfan"
+$pw = Read-Host -Prompt "SSH Password"; echo y | plink -ssh root@72.61.208.104 -pw $pw
 
 # Then use nano or vi
 nano /opt/cemoca/app/backend/src/main/resources/application-prod.properties
