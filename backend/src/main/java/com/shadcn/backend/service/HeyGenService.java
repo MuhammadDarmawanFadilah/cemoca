@@ -4,24 +4,40 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.time.Duration;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.NullNode;
+import io.netty.channel.ChannelOption;
+import io.netty.handler.timeout.ReadTimeoutHandler;
+import io.netty.handler.timeout.WriteTimeoutHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.client.reactive.ReactorClientHttpConnector;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.ExchangeStrategies;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
+import reactor.netty.http.client.HttpClient;
 
 @Service
 public class HeyGenService {
     private static final Logger logger = LoggerFactory.getLogger(HeyGenService.class);
+
+    private static final class CachedValue<T> {
+        private final long createdAtMs;
+        private final T value;
+
+        private CachedValue(long createdAtMs, T value) {
+            this.createdAtMs = createdAtMs;
+            this.value = value;
+        }
+    }
 
     private final WebClient webClient;
 
@@ -29,13 +45,25 @@ public class HeyGenService {
 
     private final String apiKey;
 
+    private final long avatarCacheTtlMs;
+    private final Duration heygenRequestTimeout;
+
+    private volatile CachedValue<List<Map<String, Object>>> avatarCache;
+
     public HeyGenService(
             @Value("${heygen.api.base-url:https://api.heygen.com}") String baseUrl,
             @Value("${heygen.api.key:}") String apiKey,
+            @Value("${heygen.api.timeout-seconds:30}") int timeoutSeconds,
+            @Value("${heygen.api.avatar-cache-ttl-seconds:300}") int avatarCacheTtlSeconds,
             ObjectMapper objectMapper
     ) {
         this.apiKey = apiKey == null ? "" : apiKey.trim();
         this.objectMapper = objectMapper;
+
+        int effectiveTimeoutSeconds = timeoutSeconds <= 0 ? 30 : timeoutSeconds;
+        int effectiveCacheTtlSeconds = avatarCacheTtlSeconds <= 0 ? 300 : avatarCacheTtlSeconds;
+        this.heygenRequestTimeout = Duration.ofSeconds(effectiveTimeoutSeconds);
+        this.avatarCacheTtlMs = effectiveCacheTtlSeconds * 1000L;
 
         String effectiveBaseUrl = baseUrl == null ? "" : baseUrl.trim();
         if (effectiveBaseUrl.isBlank()) {
@@ -50,12 +78,24 @@ public class HeyGenService {
 
         logger.info("[HEYGEN] Using base URL: {}", effectiveBaseUrl);
 
+        int timeoutSecForHandlers = (int) Math.max(1L, heygenRequestTimeout.getSeconds());
+
+        HttpClient httpClient = HttpClient.create()
+            .compress(true)
+            .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, 10_000)
+            .responseTimeout(heygenRequestTimeout)
+            .doOnConnected(conn -> conn
+                .addHandlerLast(new ReadTimeoutHandler(timeoutSecForHandlers))
+                .addHandlerLast(new WriteTimeoutHandler(timeoutSecForHandlers))
+            );
+
         WebClient.Builder builder = WebClient.builder()
                 .baseUrl(effectiveBaseUrl)
             .defaultHeader(HttpHeaders.ACCEPT, MediaType.APPLICATION_JSON_VALUE)
+            .clientConnector(new ReactorClientHttpConnector(httpClient))
             .exchangeStrategies(
                 ExchangeStrategies.builder()
-                    .codecs(cfg -> cfg.defaultCodecs().maxInMemorySize(10 * 1024 * 1024))
+                .codecs(cfg -> cfg.defaultCodecs().maxInMemorySize(30 * 1024 * 1024))
                     .build()
             );
 
@@ -80,19 +120,28 @@ public class HeyGenService {
     }
 
     public List<Map<String, Object>> listAvatars() {
-        String body = webClient.get()
-            .uri("/v2/avatars")
-            .retrieve()
-            .bodyToMono(String.class)
-            .block();
-
-        JsonNode root = parseJsonOrNull(body);
-
-        List<Map<String, Object>> result = new ArrayList<>();
-
-        if (root == null || root.isNull() || root.isMissingNode()) {
-            return result;
+        CachedValue<List<Map<String, Object>>> cached = avatarCache;
+        long now = System.currentTimeMillis();
+        if (cached != null && (now - cached.createdAtMs) < avatarCacheTtlMs && cached.value != null && !cached.value.isEmpty()) {
+            return deepCopyAvatarList(cached.value);
         }
+
+        long startNs = System.nanoTime();
+        try {
+            String body = webClient.get()
+                .uri("/v2/avatars")
+                .retrieve()
+                .bodyToMono(String.class)
+                .timeout(heygenRequestTimeout)
+                .block(heygenRequestTimeout);
+
+            JsonNode root = parseJsonOrNull(body);
+
+            List<Map<String, Object>> result = new ArrayList<>();
+
+            if (root == null || root.isNull() || root.isMissingNode()) {
+                return result;
+            }
 
         JsonNode data = root.path("data");
         if (data.isMissingNode() || data.isNull()) {
@@ -136,7 +185,31 @@ public class HeyGenService {
             }
         }
 
-        return result;
+            avatarCache = new CachedValue<>(System.currentTimeMillis(), deepCopyAvatarList(result));
+
+            long tookMs = (System.nanoTime() - startNs) / 1_000_000L;
+            logger.info("[HEYGEN] listAvatars: {} items in {} ms", result.size(), tookMs);
+            return result;
+        } catch (Exception e) {
+            long tookMs = (System.nanoTime() - startNs) / 1_000_000L;
+            logger.error("[HEYGEN] listAvatars failed after {} ms: {}", tookMs, e.toString());
+
+            if (cached != null && cached.value != null && !cached.value.isEmpty()) {
+                return deepCopyAvatarList(cached.value);
+            }
+            throw e;
+        }
+    }
+
+    private static List<Map<String, Object>> deepCopyAvatarList(List<Map<String, Object>> list) {
+        if (list == null || list.isEmpty()) {
+            return new ArrayList<>();
+        }
+        List<Map<String, Object>> copy = new ArrayList<>(list.size());
+        for (Map<String, Object> m : list) {
+            copy.add(m == null ? null : new HashMap<>(m));
+        }
+        return copy;
     }
 
     public Map<String, Object> getAvatarById(String avatarId) {
