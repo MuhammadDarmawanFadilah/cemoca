@@ -91,11 +91,11 @@ export const learningSchedule = {
     learningMaterialPlaceholder: 'Select Learning Code from library...',
     browseButton: 'Browse Library',
 
-    videoScript: 'Video Script (D-ID)',
+    videoScript: 'Video Script',
     videoScriptPlaceholder: 'Enter text for the video generator. Use :name for agent name.',
-    videoScriptNote: 'This text will be converted into voice for the generated video.',
+    videoScriptNote: 'This text will be used as narration for the generated video.',
 
-    avatar: 'Avatar (D-ID)',
+    avatar: 'Avatar',
     chooseAvatar: 'Choose Avatar',
     clearAvatar: 'Reset',
     avatarNotSelected: 'No avatar selected (use default)',
@@ -105,7 +105,7 @@ export const learningSchedule = {
     refreshAvatars: 'Refresh',
     loadingAvatars: 'Loading avatars...',
     noAvatars: 'No avatars available.',
-    createAtDID: 'Create at D-ID',
+    createAtDID: 'Manage in HeyGen',
     selected: 'Selected',
     notFoundAvatar: 'Not found',
     closeAvatarDialog: 'Close',

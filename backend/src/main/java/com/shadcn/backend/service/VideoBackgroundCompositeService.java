@@ -47,6 +47,15 @@ public class VideoBackgroundCompositeService {
     @Value("${app.video.chroma.timeout-minutes:8}")
     private long timeoutMinutes;
 
+    @Value("${app.video.audio.boost-enabled:true}")
+    private boolean audioBoostEnabled;
+
+    @Value("${app.video.audio.filter:loudnorm=I=-10:TP=-1.0:LRA=7}")
+    private String audioBoostFilter;
+
+    @Value("${app.video.audio.bitrate:192k}")
+    private String audioBitrate;
+
     public VideoBackgroundCompositeService(ImageService imageService, VideoBackgroundService videoBackgroundService) {
         this.imageService = imageService;
         this.videoBackgroundService = videoBackgroundService;
@@ -114,7 +123,11 @@ public class VideoBackgroundCompositeService {
             cmd.add("-c:a");
             cmd.add("aac");
             cmd.add("-b:a");
-            cmd.add("128k");
+            cmd.add(audioBitrate == null || audioBitrate.isBlank() ? "192k" : audioBitrate.trim());
+            if (audioBoostEnabled && audioBoostFilter != null && !audioBoostFilter.isBlank()) {
+                cmd.add("-af");
+                cmd.add(audioBoostFilter.trim());
+            }
             cmd.add("-movflags");
             cmd.add("+faststart");
             cmd.add(outputPath.toString());
@@ -156,6 +169,52 @@ public class VideoBackgroundCompositeService {
                 } catch (Exception ignored) {
                 }
             }
+        }
+    }
+
+    public boolean boostAudioToMp4(Path inputMp4, Path outputMp4) {
+        if (!audioBoostEnabled) {
+            return false;
+        }
+        if (inputMp4 == null || outputMp4 == null) {
+            return false;
+        }
+        if (audioBoostFilter == null || audioBoostFilter.isBlank()) {
+            return false;
+        }
+
+        try {
+            Files.createDirectories(outputMp4.getParent());
+        } catch (Exception ignore) {
+        }
+
+        try {
+            List<String> cmd = new ArrayList<>();
+            cmd.add(ffmpegPath);
+            cmd.add("-y");
+            cmd.add("-i");
+            cmd.add(inputMp4.toString());
+            cmd.add("-c:v");
+            cmd.add("copy");
+            cmd.add("-c:a");
+            cmd.add("aac");
+            cmd.add("-b:a");
+            cmd.add(audioBitrate == null || audioBitrate.isBlank() ? "192k" : audioBitrate.trim());
+            cmd.add("-af");
+            cmd.add(audioBoostFilter.trim());
+            cmd.add("-movflags");
+            cmd.add("+faststart");
+            cmd.add(outputMp4.toString());
+
+            int exit = runProcess(cmd, Duration.ofMinutes(Math.max(1, timeoutMinutes)));
+            return exit == 0 && Files.exists(outputMp4) && Files.size(outputMp4) > 0;
+        } catch (Exception e) {
+            log.warn("Audio boost failed: {}", e.getMessage());
+            try {
+                Files.deleteIfExists(outputMp4);
+            } catch (Exception ignore) {
+            }
+            return false;
         }
     }
 

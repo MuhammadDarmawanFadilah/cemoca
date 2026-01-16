@@ -7,7 +7,7 @@
 						<prosody rate="medium" pitch="+10%">Kính chào</prosody>
 						<break time="700ms"/>
 						<prosody rate="medium" pitch="+3%">:name.</prosody>
-						<break time="550ms"/>
+						<break time="2550ms"/>
 					</s>
 				</p>
 

@@ -36,7 +36,7 @@ import {
 } from '@/components/ui/table'
 import { LearningScheduleService, type LearningScheduleConfig, type LearningScheduleConfigRequest, type LearningSchedulePrerequisiteResponse } from '@/services/learningScheduleService'
 import { ApiClient } from '@/services/apiClient'
-import { videoReportAPI, type DIDPresenter } from '@/lib/api'
+import { videoReportAPI, type VideoAvatarOption } from '@/lib/api'
 import { apiCall } from '@/lib/api'
 import { Check, X, ChevronRight, ChevronLeft, Play, FileText, Image as ImageIcon, File, AlertCircle, RefreshCw, Settings, Calendar, Bell, Info, Clock, Search, Zap } from 'lucide-react'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
@@ -233,10 +233,10 @@ export default function LearningScheduleConfigurationPage() {
   const [videoScriptTabByCard, setVideoScriptTabByCard] = useState<Record<number, VideoScriptTab>>({})
   const [videoIdeaPromptByCard, setVideoIdeaPromptByCard] = useState<Record<number, string>>({})
 
-  // D-ID Avatar (VIDEO only)
+  // Avatar (VIDEO only)
   const [didPresenterId, setDidPresenterId] = useState('')
   const [didPresenterName, setDidPresenterName] = useState('')
-  const [presenters, setPresenters] = useState<DIDPresenter[]>([])
+  const [presenters, setPresenters] = useState<VideoAvatarOption[]>([])
   const [presentersLoading, setPresentersLoading] = useState(false)
   const [avatarDialogOpen, setAvatarDialogOpen] = useState(false)
   const [avatarSearch, setAvatarSearch] = useState('')
@@ -396,7 +396,7 @@ export default function LearningScheduleConfigurationPage() {
           || !String(m.videoTextTemplate2 || '').trim()
           || !String(m.videoTextTemplate3 || '').trim()
           || !String(m.videoTextTemplate4 || '').trim()) {
-          showErrorToast(`Video Script (D-ID) 1-4 wajib diisi (Card ${m.idx + 1})`)
+          showErrorToast(`Video Script 1-4 wajib diisi (Card ${m.idx + 1})`)
           return false
         }
       } else {
@@ -1948,7 +1948,7 @@ export default function LearningScheduleConfigurationPage() {
 
                                       <Tabs value={scriptTab} onValueChange={(v) => setScriptTab(v as VideoScriptTab)} className="w-full">
                                         <TabsList className="w-full justify-start">
-                                          <TabsTrigger value="script">Video Script (D-ID)</TabsTrigger>
+                                          <TabsTrigger value="script">Video Script</TabsTrigger>
                                           <TabsTrigger value="generate">Generate Idea</TabsTrigger>
                                         </TabsList>
 
@@ -2069,9 +2069,9 @@ export default function LearningScheduleConfigurationPage() {
                     </div>
 
                     {(() => {
-                      const selected = presenters.find(p => String(p.presenter_id || '') === String(didPresenterId || '')) || null
+                      const selected = presenters.find(p => String(p.avatar_id || '') === String(didPresenterId || '')) || null
                       const thumb = selected?.thumbnail_url || ''
-                      const name = (didPresenterName || selected?.presenter_name || '').trim()
+                      const name = (didPresenterName || selected?.display_name || selected?.avatar_name || selected?.avatar_id || '').trim()
 
                       return (
                         <div className="rounded-lg border bg-muted/10 p-3">
@@ -2081,7 +2081,7 @@ export default function LearningScheduleConfigurationPage() {
                                 // eslint-disable-next-line @next/next/no-img-element
                                 <img src={thumb} alt={name || 'Avatar'} className="h-full w-full object-cover" />
                               ) : (
-                                <span className="text-xs text-muted-foreground">D-ID</span>
+                                <span className="text-xs text-muted-foreground">HeyGen</span>
                               )}
                             </div>
                             <div className="min-w-0 flex-1">
@@ -2286,20 +2286,12 @@ export default function LearningScheduleConfigurationPage() {
               <div className="text-xs text-muted-foreground py-8 text-center">{t('learningSchedule.step3.loadingAvatars')}</div>
             ) : presenters.length === 0 ? (
               <div className="text-xs text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/30 p-3 rounded">
-                {t('learningSchedule.step3.noAvatars')}{' '}
-                <a
-                  href="https://studio.d-id.com/avatars/create"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="underline"
-                >
-                  {t('learningSchedule.step3.createAtDID')}
-                </a>
+                {t('learningSchedule.step3.noAvatars')}
               </div>
             ) : (
               (() => {
                 const filtered = presenters.filter(p =>
-                  !avatarSearch || (String(p.presenter_name || '')).toLowerCase().includes(avatarSearch.toLowerCase())
+                  !avatarSearch || (String(p.display_name || p.avatar_name || p.avatar_id || '')).toLowerCase().includes(avatarSearch.toLowerCase())
                 )
                 const totalPages = Math.max(1, Math.ceil(filtered.length / AVATARS_PER_PAGE))
                 const startIdx = (avatarPage - 1) * AVATARS_PER_PAGE
@@ -2309,22 +2301,23 @@ export default function LearningScheduleConfigurationPage() {
                   <>
                     <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-3">
                       {paginated.map(p => {
-                        const id = String(p.presenter_id || '')
+                        const id = String(p.avatar_id || '')
+                        const label = String(p.display_name || p.avatar_name || p.avatar_id || '')
                         const isSelected = id && id === String(didPresenterId || '')
                         return (
                           <div
-                            key={id || String(p.presenter_name || '')}
+                            key={id || label}
                             className={`border rounded-lg overflow-hidden cursor-pointer transition bg-background hover:border-primary ${isSelected ? 'border-primary ring-2 ring-primary/20' : ''}`}
                             onClick={() => {
                               setDidPresenterId(id)
-                              setDidPresenterName(String(p.presenter_name || ''))
+                              setDidPresenterName(label)
                               setAvatarDialogOpen(false)
                             }}
                           >
                             {p.thumbnail_url ? (
                               <div className="relative aspect-square">
                                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                                <img src={p.thumbnail_url} alt={p.presenter_name} className="w-full h-full object-cover" />
+                                <img src={p.thumbnail_url} alt={label} className="w-full h-full object-cover" />
                                 {isSelected && (
                                   <div className="absolute inset-0 bg-primary/30 flex items-center justify-center">
                                     <div className="text-[10px] font-medium bg-primary text-primary-foreground px-2 py-1 rounded">
@@ -2335,11 +2328,11 @@ export default function LearningScheduleConfigurationPage() {
                               </div>
                             ) : (
                               <div className="aspect-square bg-muted flex items-center justify-center">
-                                <span className="text-xs text-muted-foreground">D-ID</span>
+                                <span className="text-xs text-muted-foreground">HeyGen</span>
                               </div>
                             )}
                             <div className="p-1.5 text-center border-t">
-                              <span className="text-[10px] font-medium truncate block">{p.presenter_name || t('learningSchedule.step3.avatar')}</span>
+                              <span className="text-[10px] font-medium truncate block">{label || t('learningSchedule.step3.avatar')}</span>
                             </div>
                           </div>
                         )

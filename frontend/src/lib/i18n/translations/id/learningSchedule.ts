@@ -91,11 +91,11 @@ export const learningSchedule = {
     learningMaterialPlaceholder: 'Pilih Learning Code dari library...',
     browseButton: 'Browse Library',
 
-    videoScript: 'Video Script (D-ID)',
+    videoScript: 'Video Script',
     videoScriptPlaceholder: 'Masukkan teks untuk video generator. Gunakan :name untuk nama agent.',
-    videoScriptNote: 'Teks ini akan dikonversi menjadi suara pada video yang digenerate.',
+    videoScriptNote: 'Teks ini akan digunakan sebagai narasi untuk video yang digenerate.',
 
-    avatar: 'Avatar (D-ID)',
+    avatar: 'Avatar',
     chooseAvatar: 'Pilih Avatar',
     clearAvatar: 'Reset',
     avatarNotSelected: 'Belum memilih avatar (pakai default)',
@@ -105,7 +105,7 @@ export const learningSchedule = {
     refreshAvatars: 'Refresh',
     loadingAvatars: 'Memuat avatar...',
     noAvatars: 'Tidak ada avatar tersedia.',
-    createAtDID: 'Buat di D-ID',
+    createAtDID: 'Kelola di HeyGen',
     selected: 'Dipilih',
     notFoundAvatar: 'Tidak ditemukan',
     closeAvatarDialog: 'Tutup',

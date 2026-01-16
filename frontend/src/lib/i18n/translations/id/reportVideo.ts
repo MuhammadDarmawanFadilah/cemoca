@@ -39,7 +39,7 @@ export const reportVideo = {
   availableAvatars: "Avatar Tersedia",
   loadingAvatars: "Memuat...",
   noAvatars: "Tidak ada avatar.",
-  createAtDID: "Buat di D-ID",
+  createAtDID: "Kelola di HeyGen",
   avatars: "Avatar",
   searchAvatar: "Cari avatar...",
   copy: "Salin",

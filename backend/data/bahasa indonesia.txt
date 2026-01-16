@@ -5,7 +5,7 @@
 				<prosody rate="medium" pitch="+8%">Selamat pagi</prosody>
 				<break time="700ms"/>
 				<prosody rate="medium" pitch="+2%">:name.</prosody>
-				<break time="500ms"/>
+				<break time="2500ms"/>
 			</s>
 		</p>
 

@@ -226,14 +226,14 @@ export function Step2PreviewAndProcess({
             }
 
             if (rawStatus === "processing") {
-              setPreviewVideoDialogMessage("D-ID sedang memproses video preview...");
+              setPreviewVideoDialogMessage("HeyGen sedang memproses video preview...");
             } else if (rawStatus === "created") {
-              setPreviewVideoDialogMessage("Mengirim permintaan ke D-ID...");
+              setPreviewVideoDialogMessage("Mengirim permintaan ke HeyGen...");
             } else {
               setPreviewVideoDialogMessage(`Status: ${statusResp.status || "unknown"}`);
             }
           } catch {
-            setPreviewVideoDialogMessage("Menunggu status dari D-ID...");
+            setPreviewVideoDialogMessage("Menunggu status dari HeyGen...");
           }
         }
       };
@@ -567,7 +567,7 @@ export function Step2PreviewAndProcess({
                   {previewItem.name} • {previewItem.phone} • {previewItem.avatar}
                 </div>
               )}
-              <div className="text-[11px] text-white/50">Mohon tunggu sampai D-ID selesai.</div>
+              <div className="text-[11px] text-white/50">Mohon tunggu sampai HeyGen selesai.</div>
             </div>
           )}
 

@@ -91,11 +91,11 @@ export const learningSchedule = {
     learningMaterialPlaceholder: '从素材库选择 Learning Code...',
     browseButton: '浏览素材库',
 
-    videoScript: '视频脚本（D-ID）',
+    videoScript: '视频脚本',
     videoScriptPlaceholder: '输入视频生成文本，使用 :name 代表代理姓名。',
-    videoScriptNote: '该文本将转换为生成视频的语音。',
+    videoScriptNote: '该文本将作为生成视频的旁白使用。',
 
-    avatar: '头像（D-ID）',
+    avatar: '头像',
     chooseAvatar: '选择头像',
     clearAvatar: '重置',
     avatarNotSelected: '未选择头像（使用默认）',
@@ -105,7 +105,7 @@ export const learningSchedule = {
     refreshAvatars: '刷新',
     loadingAvatars: '加载头像中...',
     noAvatars: '没有可用头像。',
-    createAtDID: '在 D-ID 创建',
+    createAtDID: '在 HeyGen 管理',
     selected: '已选择',
     notFoundAvatar: '未找到',
     closeAvatarDialog: '关闭',

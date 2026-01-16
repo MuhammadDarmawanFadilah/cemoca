@@ -1,16 +1,35 @@
 package com.shadcn.backend.service;
 
-import com.shadcn.backend.dto.ExcelValidationResult;
-import com.shadcn.backend.dto.VideoReportRequest;
-import com.shadcn.backend.dto.VideoReportResponse;
-import com.shadcn.backend.dto.VideoReportResponse.VideoReportItemResponse;
-import com.shadcn.backend.model.User;
-import com.shadcn.backend.entity.VideoReport;
-import com.shadcn.backend.entity.VideoReportItem;
-import com.shadcn.backend.repository.VideoBackgroundRepository;
-import com.shadcn.backend.repository.VideoReportItemRepository;
-import com.shadcn.backend.repository.VideoReportRepository;
-import com.shadcn.backend.util.VideoLinkEncryptor;
+import java.io.BufferedReader;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
+import java.time.Duration;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
@@ -23,32 +42,18 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.io.BufferedReader;
-import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.nio.file.StandardCopyOption;
-import java.nio.charset.StandardCharsets;
-import java.time.Duration;
-import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
-import java.time.format.DateTimeParseException;
-import java.util.*;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ThreadPoolExecutor;
-import java.util.concurrent.ArrayBlockingQueue;
-import java.util.concurrent.RejectedExecutionException;
-import java.util.concurrent.TimeUnit;
-import java.util.UUID;
-import java.util.stream.Collectors;
+import com.shadcn.backend.dto.ExcelValidationResult;
+import com.shadcn.backend.dto.VideoReportRequest;
+import com.shadcn.backend.dto.VideoReportResponse;
+import com.shadcn.backend.dto.VideoReportResponse.VideoReportItemResponse;
+import com.shadcn.backend.entity.VideoReport;
+import com.shadcn.backend.entity.VideoReportItem;
+import com.shadcn.backend.model.User;
+import com.shadcn.backend.repository.VideoBackgroundRepository;
+import com.shadcn.backend.repository.VideoReportItemRepository;
+import com.shadcn.backend.repository.VideoReportRepository;
+import com.shadcn.backend.util.VideoLinkEncryptor;
+
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 
@@ -59,7 +64,7 @@ public class VideoReportService {
     private final VideoReportRepository videoReportRepository;
     private final VideoReportItemRepository videoReportItemRepository;
     private final ObjectProvider<VideoReportService> selfProvider;
-    private final DIDService didService;
+    private final HeyGenService heyGenService;
     private final ExcelService excelService;
     private final WhatsAppService whatsAppService;
     private final VideoBackgroundCompositeService videoBackgroundCompositeService;
@@ -107,12 +112,98 @@ public class VideoReportService {
     @Value("${app.wa.status-sync.max-items:200}")
     private int waStatusSyncMaxItems;
 
+    @Value("${whatsapp.wablas.bulk-enabled:true}")
+    private boolean whatsappBulkEnabled;
+
     private volatile ExecutorService videoCacheExecutor;
     private volatile HttpClient videoCacheHttpClient;
     private final java.util.concurrent.ConcurrentHashMap<String, Boolean> videoCacheInFlight = new java.util.concurrent.ConcurrentHashMap<>();
 
     private volatile ExecutorService videoWorkExecutor;
     private volatile ExecutorService clipStatusExecutor;
+
+    private final java.util.concurrent.ConcurrentHashMap<String, String> heygenAvatarLookup = new java.util.concurrent.ConcurrentHashMap<>();
+    private final Object heygenAvatarLookupLock = new Object();
+    private volatile boolean heygenAvatarLookupLoaded = false;
+
+    private String normalize(String v) {
+        if (v == null) {
+            return null;
+        }
+        String t = v.trim();
+        return t.isEmpty() ? null : t;
+    }
+
+    private String normalizeKey(String v) {
+        String t = normalize(v);
+        if (t == null) {
+            return null;
+        }
+        return t.toLowerCase(Locale.ROOT)
+                .replace(" ", "")
+                .replace("_", "")
+                .replace("-", "");
+    }
+
+    private void ensureHeygenAvatarLookupLoaded() {
+        if (heygenAvatarLookupLoaded) {
+            return;
+        }
+
+        synchronized (heygenAvatarLookupLock) {
+            if (heygenAvatarLookupLoaded) {
+                return;
+            }
+
+            try {
+                List<Map<String, Object>> avatars = heyGenService.listAvatars();
+                for (Map<String, Object> a : avatars) {
+                    String avatarId = a.get("avatar_id") == null ? null : String.valueOf(a.get("avatar_id"));
+                    avatarId = normalize(avatarId);
+                    if (avatarId == null) {
+                        continue;
+                    }
+
+                    putAvatarLookup(avatarId, avatarId);
+
+                    String avatarName = a.get("avatar_name") == null ? null : String.valueOf(a.get("avatar_name"));
+                    putAvatarLookup(avatarName, avatarId);
+
+                    String displayName = a.get("display_name") == null ? null : String.valueOf(a.get("display_name"));
+                    putAvatarLookup(displayName, avatarId);
+                }
+            } catch (Exception e) {
+                logger.warn("[HEYGEN] Failed to load avatars: {}", e.getMessage());
+            }
+
+            heygenAvatarLookupLoaded = true;
+        }
+    }
+
+    private void putAvatarLookup(String key, String avatarId) {
+        String k = normalizeKey(key);
+        String id = normalize(avatarId);
+        if (k == null || id == null) {
+            return;
+        }
+        heygenAvatarLookup.putIfAbsent(k, id);
+    }
+
+    private String resolveAvatarId(String avatar) {
+        String raw = normalize(avatar);
+        if (raw == null) {
+            return null;
+        }
+
+        // If the caller already provided a HeyGen avatar_id, just use it.
+        // Otherwise, try a best-effort match by display_name/avatar_name.
+        ensureHeygenAvatarLookupLoaded();
+        String hit = heygenAvatarLookup.get(normalizeKey(raw));
+        if (hit != null) {
+            return hit;
+        }
+        return raw;
+    }
 
     private Path cacheLockPath(String token) {
         try {
@@ -247,7 +338,7 @@ public class VideoReportService {
     public VideoReportService(VideoReportRepository videoReportRepository,
                              VideoReportItemRepository videoReportItemRepository,
                              ObjectProvider<VideoReportService> selfProvider,
-                             DIDService didService,
+                             HeyGenService heyGenService,
                              ExcelService excelService,
                              WhatsAppService whatsAppService,
                              VideoBackgroundCompositeService videoBackgroundCompositeService,
@@ -255,7 +346,7 @@ public class VideoReportService {
         this.videoReportRepository = videoReportRepository;
         this.videoReportItemRepository = videoReportItemRepository;
         this.selfProvider = selfProvider;
-        this.didService = didService;
+        this.heyGenService = heyGenService;
         this.excelService = excelService;
         this.whatsAppService = whatsAppService;
         this.videoBackgroundCompositeService = videoBackgroundCompositeService;
@@ -407,8 +498,7 @@ public class VideoReportService {
         final String messageTemplate = resolveMessageTemplate(report);
 
         try {
-            // Warm avatar cache once; resolveExpressPresenterId should then be O(1) per item.
-            didService.getPresentersForListing(true);
+            heyGenService.listAvatars();
         } catch (Exception ignore) {
         }
 
@@ -523,32 +613,36 @@ public class VideoReportService {
      */
     private VideoReportItem processVideoItem(VideoReportItem item, String backgroundUrl, String messageTemplate) {
         try {
-            String presenterId = didService.resolveExpressPresenterId(item.getAvatar());
-            if (presenterId == null || presenterId.isBlank()) {
+            String avatarId = resolveAvatarId(item.getAvatar());
+            if (avatarId == null || avatarId.isBlank()) {
                 item.setStatus("FAILED");
-                item.setErrorMessage("Avatar tidak ditemukan (Express Avatar): " + item.getAvatar());
+                item.setErrorMessage("Avatar tidak ditemukan: " + item.getAvatar());
                 videoReportItemRepository.save(item);
                 return item;
             }
 
             String script = personalizeMessage(messageTemplate, item);
-            
-            // Create clip via D-ID
-            Map<String, Object> result = didService.createClip(
-                    presenterId,
+
+            Map<String, Object> result = heyGenService.generateAvatarVideo(
+                    avatarId,
+                    null,
                     script,
-                    backgroundUrl,
+                    1280,
+                    720,
+                    backgroundUrl != null && !backgroundUrl.isBlank(),
+                    null,
                     null
             );
 
-            if ((Boolean) result.get("success")) {
-                item.setDidClipId((String) result.get("id"));
+            String videoId = result.get("video_id") == null ? null : String.valueOf(result.get("video_id"));
+            if (videoId != null && !videoId.isBlank()) {
+                item.setProviderVideoId(videoId);
                 item.setStatus("PROCESSING");
-                logger.info("[VIDEO GEN] Item {} - D-ID clip created: {}", item.getId(), result.get("id"));
+                logger.info("[VIDEO GEN] Item {} - video created: {}", item.getId(), videoId);
             } else {
                 item.setStatus("FAILED");
-                item.setErrorMessage((String) result.get("error"));
-                logger.error("[VIDEO GEN] Item {} - D-ID failed: {}", item.getId(), result.get("error"));
+                item.setErrorMessage("Video creation failed");
+                logger.error("[VIDEO GEN] Item {} - video creation failed", item.getId());
             }
         } catch (Exception e) {
             logger.error("[VIDEO GEN] Item {} - Exception: {}", item.getId(), e.getMessage());
@@ -585,33 +679,36 @@ public class VideoReportService {
             item.setStatus("PENDING");
             item.setVideoUrl(null);
             item.setErrorMessage(null);
-            item.setDidClipId(null);
+            item.setProviderVideoId(null);
             videoReportItemRepository.save(item);
-            
-            // Convert avatar name to presenter ID
-            String presenterId = didService.resolveExpressPresenterId(item.getAvatar());
-            if (presenterId == null || presenterId.isBlank()) {
+
+            String avatarId = resolveAvatarId(item.getAvatar());
+            if (avatarId == null || avatarId.isBlank()) {
                 item.setStatus("FAILED");
-                item.setErrorMessage("Avatar tidak ditemukan (Express Avatar): " + item.getAvatar());
+                item.setErrorMessage("Avatar tidak ditemukan: " + item.getAvatar());
                 videoReportItemRepository.save(item);
                 checkAndUpdateReportStatus(reportId);
                 return item;
             }
-            
-            // Create clip via D-ID
-            Map<String, Object> result = didService.createClip(
-                    presenterId,
+
+            Map<String, Object> result = heyGenService.generateAvatarVideo(
+                    avatarId,
+                    null,
                     personalizeMessage(messageTemplate, item),
-                    backgroundUrl,
+                    1280,
+                    720,
+                    backgroundUrl != null && !backgroundUrl.isBlank(),
+                    null,
                     null
             );
 
-            if ((Boolean) result.get("success")) {
-                item.setDidClipId((String) result.get("id"));
+            String videoId = result.get("video_id") == null ? null : String.valueOf(result.get("video_id"));
+            if (videoId != null && !videoId.isBlank()) {
+                item.setProviderVideoId(videoId);
                 item.setStatus("PROCESSING");
             } else {
                 item.setStatus("FAILED");
-                item.setErrorMessage((String) result.get("error"));
+                item.setErrorMessage("Video creation failed");
             }
             
             videoReportItemRepository.save(item);
@@ -655,7 +752,7 @@ public class VideoReportService {
         
         item.setStatus("PENDING");
         item.setVideoUrl(null);
-        item.setDidClipId(null);
+        item.setProviderVideoId(null);
         item.setErrorMessage(null);
         videoReportItemRepository.save(item);
         
@@ -674,7 +771,7 @@ public class VideoReportService {
         for (VideoReportItem item : items) {
             item.setStatus("PENDING");
             item.setVideoUrl(null);
-            item.setDidClipId(null);
+            item.setProviderVideoId(null);
             item.setErrorMessage(null);
             videoReportItemRepository.save(item);
         }
@@ -781,80 +878,107 @@ public class VideoReportService {
 
         logger.info("[WA BLAST VIDEO] Claimed {} items for batch {}", readyItems.size(), batchId);
 
-        // STEP 3: Send LINK-only using Wablas v2 bulk API (100 per request)
-        // Supports high volume (e.g., 1000) without video upload.
-        java.util.List<WhatsAppService.BulkMessageItem> bulk = new java.util.ArrayList<>();
-        java.util.Map<Long, VideoReportItem> byId = new java.util.HashMap<>();
-
         String waTemplate = report.getWaMessageTemplate();
         if (waTemplate == null || waTemplate.isEmpty()) {
             waTemplate = getDefaultWaMessageTemplate();
         }
 
-        for (VideoReportItem item : readyItems) {
-            String shareUrl = buildPublicVideoShareUrl(reportId, item.getId());
-            String message = waTemplate
-                    .replace(":name", item.getName() == null ? "" : item.getName())
-                    .replace(":linkvideo", shareUrl == null ? "" : shareUrl);
-
-            if (shareUrl != null && !shareUrl.isBlank() && !message.contains(shareUrl)) {
-                message = message + "\n\n" + shareUrl;
-            }
-
-            bulk.add(new WhatsAppService.BulkMessageItem(item.getPhone(), message, String.valueOf(item.getId())));
-            byId.put(item.getId(), item);
-        }
-
-        java.util.List<WhatsAppService.BulkMessageResult> results = whatsAppService.sendBulkMessagesWithRetry(bulk, 3);
-
         int successCount = 0;
         int failCount = 0;
 
-        for (WhatsAppService.BulkMessageResult r : results) {
-            Long itemId;
-            try {
-                itemId = r.getOriginalId() == null ? null : Long.parseLong(r.getOriginalId());
-            } catch (Exception ignore) {
-                itemId = null;
-            }
-            if (itemId == null) {
-                continue;
-            }
+        if (whatsappBulkEnabled) {
+            // Bulk API (high volume)
+            java.util.List<WhatsAppService.BulkMessageItem> bulk = new java.util.ArrayList<>();
+            java.util.Map<Long, VideoReportItem> byId = new java.util.HashMap<>();
 
-            VideoReportItem item = byId.get(itemId);
-            if (item == null) {
-                continue;
-            }
+            for (VideoReportItem item : readyItems) {
+                String shareUrl = buildPublicVideoShareUrl(reportId, item.getId());
+                String message = waTemplate
+                        .replace(":name", item.getName() == null ? "" : item.getName())
+                        .replace(":linkvideo", shareUrl == null ? "" : shareUrl);
 
-            if (r.isSuccess()) {
-                item.setWaStatus("QUEUED");
-                item.setWaMessageId(r.getMessageId());
-                item.setWaSentAt(LocalDateTime.now());
-                item.setWaErrorMessage(null);
-                successCount++;
-            } else {
-                item.setWaStatus("ERROR");
-                item.setWaMessageId(r.getMessageId());
-                item.setWaErrorMessage(r.getError());
-                failCount++;
+                if (shareUrl != null && !shareUrl.isBlank() && !message.contains(shareUrl)) {
+                    message = message + "\n\n" + shareUrl;
+                }
+
+                bulk.add(new WhatsAppService.BulkMessageItem(item.getPhone(), message, String.valueOf(item.getId())));
+                byId.put(item.getId(), item);
             }
 
-            videoReportItemRepository.save(item);
-        }
+            java.util.List<WhatsAppService.BulkMessageResult> results = whatsAppService.sendBulkMessagesWithRetry(bulk, 3);
 
-        // Any item still PROCESSING here means it never got a result back from provider
-        int missingResultCount = 0;
-        for (VideoReportItem item : readyItems) {
-            if ("PROCESSING".equals(item.getWaStatus())) {
-                item.setWaStatus("ERROR");
-                item.setWaErrorMessage("No result returned from Wablas bulk send");
+            for (WhatsAppService.BulkMessageResult r : results) {
+                Long itemId;
+                try {
+                    itemId = r.getOriginalId() == null ? null : Long.parseLong(r.getOriginalId());
+                } catch (Exception ignore) {
+                    itemId = null;
+                }
+                if (itemId == null) {
+                    continue;
+                }
+
+                VideoReportItem item = byId.get(itemId);
+                if (item == null) {
+                    continue;
+                }
+
+                if (r.isSuccess()) {
+                    item.setWaStatus("QUEUED");
+                    item.setWaMessageId(r.getMessageId());
+                    item.setWaSentAt(LocalDateTime.now());
+                    item.setWaErrorMessage(null);
+                    successCount++;
+                } else {
+                    item.setWaStatus("ERROR");
+                    item.setWaMessageId(r.getMessageId());
+                    item.setWaErrorMessage(r.getError());
+                    failCount++;
+                }
+
                 videoReportItemRepository.save(item);
-                missingResultCount++;
             }
-        }
 
-        if (missingResultCount > 0) {
-            failCount += missingResultCount;
+            // Any item still PROCESSING here means it never got a result back from provider
+            int missingResultCount = 0;
+            for (VideoReportItem item : readyItems) {
+                if ("PROCESSING".equals(item.getWaStatus())) {
+                    item.setWaStatus("ERROR");
+                    item.setWaErrorMessage("No result returned from Wablas bulk send");
+                    videoReportItemRepository.save(item);
+                    missingResultCount++;
+                }
+            }
+
+            if (missingResultCount > 0) {
+                failCount += missingResultCount;
+            }
+        } else {
+            // Rollback mode: send one-by-one
+            for (VideoReportItem item : readyItems) {
+                String shareUrl = buildPublicVideoShareUrl(reportId, item.getId());
+                String message = waTemplate
+                        .replace(":name", item.getName() == null ? "" : item.getName())
+                        .replace(":linkvideo", shareUrl == null ? "" : shareUrl);
+
+                if (shareUrl != null && !shareUrl.isBlank() && !message.contains(shareUrl)) {
+                    message = message + "\n\n" + shareUrl;
+                }
+
+                try {
+                    String messageId = whatsAppService.sendMessage(item.getPhone(), message);
+                    item.setWaStatus("QUEUED");
+                    item.setWaMessageId(messageId);
+                    item.setWaSentAt(LocalDateTime.now());
+                    item.setWaErrorMessage(null);
+                    successCount++;
+                } catch (Exception e) {
+                    item.setWaStatus("ERROR");
+                    item.setWaErrorMessage(e.getMessage());
+                    failCount++;
+                }
+                videoReportItemRepository.save(item);
+            }
         }
         
         // Update report counters based on DB (avoid drift / double count)
@@ -972,7 +1096,7 @@ public class VideoReportService {
         // Reset video status
         item.setStatus("PENDING");
         item.setErrorMessage(null);
-        item.setDidClipId(null);
+        item.setProviderVideoId(null);
         item.setVideoUrl(null);
         item.setVideoGeneratedAt(null);
         
@@ -1375,84 +1499,92 @@ public class VideoReportService {
      * Check status of a single clip
      */
     private void checkSingleClipStatus(Long reportId, VideoReportItem item) {
-        if (item.getDidClipId() == null) return;
+        if (item.getProviderVideoId() == null) return;
         
         try {
-            logger.debug("[CHECK CLIPS] Checking D-ID status for clip: {} (item: {})", item.getDidClipId(), item.getId());
-            Map<String, Object> status = didService.getClipStatus(item.getDidClipId());
-            
-            logger.debug("[CHECK CLIPS] D-ID response for item {}: success={}, status={}, error={}, result_url={}", 
-                item.getId(), status.get("success"), status.get("status"), status.get("error"), status.get("result_url"));
-            
-            if (Boolean.TRUE.equals(status.get("success"))) {
-                String clipStatus = (String) status.get("status");
-                logger.debug("[CHECK CLIPS] Item {} - Processing clipStatus: {}", item.getId(), clipStatus);
-                
-                if ("done".equals(clipStatus)) {
-                    String resultUrl = (String) status.get("result_url");
-                    logger.debug("[CHECK CLIPS] Item {} - resultUrl: {}", item.getId(), resultUrl);
-                    if (resultUrl == null || resultUrl.isBlank()) {
-                        item.setStatus("FAILED");
-                        item.setErrorMessage("D-ID done but result_url is empty");
-                        logger.warn("[CHECK CLIPS] Item {} FAILED: {}", item.getId(), item.getErrorMessage());
-                    } else {
-                        String finalUrl = resultUrl;
+            String videoId = item.getProviderVideoId();
+            logger.debug("[CHECK CLIPS] Checking HeyGen status for video: {} (item: {})", videoId, item.getId());
 
-                        // If background is enabled but the background URL is not publicly reachable via HTTPS,
-                        // D-ID cannot fetch it. In that case, perform local chroma-key composite.
-                        try {
-                            VideoReport report = videoReportRepository.findById(reportId).orElse(null);
-                            if (report != null && Boolean.TRUE.equals(report.getUseBackground())) {
-                                String bgName = report.getBackgroundName();
-                                String bgUrl = buildPublicBackgroundUrl(bgName);
-                                boolean shouldComposite = bgName != null && !bgName.isBlank() && !isHttpsUrl(bgUrl);
+            Map<String, Object> status = heyGenService.getVideoStatus(videoId);
+            String s = status.get("status") == null ? null : String.valueOf(status.get("status"));
+            String videoUrl = status.get("video_url") == null ? null : String.valueOf(status.get("video_url"));
+            String err = status.get("error") == null ? null : String.valueOf(status.get("error"));
 
-                                if (shouldComposite) {
-                                    java.util.Optional<String> composited = videoBackgroundCompositeService
-                                            .compositeToStoredVideoUrl(resultUrl, bgName, backendUrl, serverContextPath);
-                                    if (composited.isPresent() && !composited.get().isBlank()) {
-                                        finalUrl = composited.get();
-                                        logger.debug("[CHECK CLIPS] Item {} - composited background URL: {}", item.getId(), finalUrl);
-                                    } else {
-                                        logger.warn("[CHECK CLIPS] Item {} - background composite skipped/failed; using original URL", item.getId());
-                                    }
-                                }
-                            }
-                        } catch (Exception e) {
-                            logger.warn("[CHECK CLIPS] Item {} - background composite error: {}", item.getId(), e.getMessage());
-                        }
+            if (s == null || s.isBlank()) {
+                logger.debug("[CHECK CLIPS] HeyGen response for item {} missing status", item.getId());
+                return;
+            }
 
-                        item.setVideoUrl(finalUrl);
-                        item.setStatus("DONE");
-                        item.setVideoGeneratedAt(LocalDateTime.now());
-                        item.setErrorMessage(null);
-                        logger.info("[CHECK CLIPS] Item {} DONE with URL: {}", item.getId(), finalUrl);
-
-                        enqueueShareCacheDownloadIfNeeded(reportId, item.getId(), finalUrl);
-                    }
-                } else if ("error".equals(clipStatus) || "failed".equals(clipStatus)) {
+            String sl = s.trim().toLowerCase(Locale.ROOT);
+            if ("completed".equals(sl)) {
+                if (videoUrl == null || videoUrl.isBlank()) {
                     item.setStatus("FAILED");
-                    String err = status.get("error") == null ? null : String.valueOf(status.get("error"));
-                    if (err == null || err.isBlank()) {
-                        String pending = status.get("pending_url") == null ? null : String.valueOf(status.get("pending_url"));
-                        StringBuilder sb = new StringBuilder("D-ID returned status=").append(clipStatus);
-                        if (pending != null && !pending.isBlank()) {
-                            sb.append(" | pending_url=").append(pending);
-                        }
-                        err = sb.toString();
-                    }
-                    item.setErrorMessage(err);
+                    item.setErrorMessage("HeyGen completed but video_url is empty");
                     logger.warn("[CHECK CLIPS] Item {} FAILED: {}", item.getId(), item.getErrorMessage());
                 } else {
-                    logger.debug("[CHECK CLIPS] Item {} still PROCESSING with D-ID status: {}", item.getId(), clipStatus);
+                    String finalUrl = videoUrl;
+
+                    try {
+                        VideoReport report = videoReportRepository.findById(reportId).orElse(null);
+                        if (report != null && Boolean.TRUE.equals(report.getUseBackground())) {
+                            String bgName = report.getBackgroundName();
+                            boolean shouldComposite = bgName != null && !bgName.isBlank();
+                            if (shouldComposite) {
+                                java.util.Optional<String> composited = videoBackgroundCompositeService
+                                        .compositeToStoredVideoUrl(videoUrl, bgName, backendUrl, serverContextPath);
+                                if (composited.isPresent() && !composited.get().isBlank()) {
+                                    finalUrl = composited.get();
+                                    logger.debug("[CHECK CLIPS] Item {} - composited background URL: {}", item.getId(), finalUrl);
+                                } else {
+                                    logger.warn("[CHECK CLIPS] Item {} - background composite skipped/failed; using original URL", item.getId());
+                                }
+                            }
+                        }
+                    } catch (Exception e) {
+                        logger.warn("[CHECK CLIPS] Item {} - background composite error: {}", item.getId(), e.getMessage());
+                    }
+
+                    item.setVideoUrl(finalUrl);
+                    item.setStatus("DONE");
+                    item.setVideoGeneratedAt(LocalDateTime.now());
+                    item.setErrorMessage(null);
+                    logger.info("[CHECK CLIPS] Item {} DONE with URL: {}", item.getId(), finalUrl);
+
+                    enqueueShareCacheDownloadIfNeeded(reportId, item.getId(), finalUrl);
                 }
-                
                 videoReportItemRepository.save(item);
-            } else {
-                logger.error("[CHECK CLIPS] D-ID API call failed for item {}: {}", item.getId(), status.get("error"));
+                return;
+            }
+
+            if ("failed".equals(sl) || "error".equals(sl)) {
+                item.setStatus("FAILED");
+                if (err == null || err.isBlank()) {
+                    err = "HeyGen returned status=" + s;
+                }
+                item.setErrorMessage(err);
+                logger.warn("[CHECK CLIPS] Item {} FAILED: {}", item.getId(), item.getErrorMessage());
+                videoReportItemRepository.save(item);
+                return;
+            }
+
+            // pending|waiting|processing
+            if (!"PROCESSING".equals(item.getStatus())) {
+                item.setStatus("PROCESSING");
+                videoReportItemRepository.save(item);
             }
         } catch (Exception e) {
-            logger.error("[CHECK CLIPS] Exception checking item {} (clip: {}): {}", item.getId(), item.getDidClipId(), e.getMessage(), e);
+            String msg = e.getMessage() == null ? "" : e.getMessage().trim();
+            if (msg.length() > 800) {
+                msg = msg.substring(0, 800) + "...";
+            }
+            String nextErr = "HeyGen status check error: " + msg;
+
+            if (item.getErrorMessage() == null || !nextErr.equals(item.getErrorMessage())) {
+                item.setErrorMessage(nextErr);
+                videoReportItemRepository.save(item);
+            }
+
+            logger.error("[CHECK CLIPS] Exception checking item {} (video: {}): {}", item.getId(), item.getProviderVideoId(), e.getMessage(), e);
         }
     }
 
@@ -1570,6 +1702,31 @@ public class VideoReportService {
                     } catch (Exception ignore) {
                     }
                     return;
+                }
+
+                // Boost/normalize audio before caching for share playback.
+                try {
+                    if (videoBackgroundCompositeService != null) {
+                        Path boostedPath = Paths.get(videoShareDir, token + ".mp4.boost." + UUID.randomUUID());
+                        boolean boosted = videoBackgroundCompositeService.boostAudioToMp4(tmpPath, boostedPath);
+                        if (boosted) {
+                            try {
+                                Files.deleteIfExists(tmpPath);
+                            } catch (Exception ignore) {
+                            }
+                            tmpPath = boostedPath;
+                            try {
+                                copied = Files.size(tmpPath);
+                            } catch (Exception ignore) {
+                            }
+                        } else {
+                            try {
+                                Files.deleteIfExists(boostedPath);
+                            } catch (Exception ignore) {
+                            }
+                        }
+                    }
+                } catch (Exception ignore) {
                 }
 
                 Files.move(tmpPath, targetPath, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
@@ -1696,6 +1853,31 @@ public class VideoReportService {
                 return false;
             }
 
+            // Boost/normalize audio before caching for share playback.
+            try {
+                if (videoBackgroundCompositeService != null) {
+                    Path boostedPath = Paths.get(videoShareDir, token + ".mp4.boost." + UUID.randomUUID());
+                    boolean boosted = videoBackgroundCompositeService.boostAudioToMp4(tmpPath, boostedPath);
+                    if (boosted) {
+                        try {
+                            Files.deleteIfExists(tmpPath);
+                        } catch (Exception ignore) {
+                        }
+                        tmpPath = boostedPath;
+                        try {
+                            copied = Files.size(tmpPath);
+                        } catch (Exception ignore) {
+                        }
+                    } else {
+                        try {
+                            Files.deleteIfExists(boostedPath);
+                        } catch (Exception ignore) {
+                        }
+                    }
+                }
+            } catch (Exception ignore) {
+            }
+
             Files.move(tmpPath, targetPath, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
             logger.info("[VIDEO CACHE] Cached video token {} ({} bytes) [blocking]", token, copied);
             return true;
@@ -1735,7 +1917,7 @@ public class VideoReportService {
         for (VideoReportItem item : failedItems) {
             item.setStatus("PENDING");
             item.setErrorMessage(null);
-            item.setDidClipId(null);
+            item.setProviderVideoId(null);
             videoReportItemRepository.save(item);
         }
         
@@ -1776,7 +1958,7 @@ public class VideoReportService {
         for (VideoReportItem item : failedItems) {
             item.setStatus("PENDING");
             item.setErrorMessage(null);
-            item.setDidClipId(null);
+            item.setProviderVideoId(null);
             item.setVideoUrl(null);
             item.setVideoGeneratedAt(null);
             
@@ -2030,7 +2212,7 @@ public class VideoReportService {
         ir.setPhone(item.getPhone());
         ir.setAvatar(item.getAvatar());
         ir.setPersonalizedMessage(item.getPersonalizedMessage());
-        ir.setDidClipId(item.getDidClipId());
+        ir.setProviderVideoId(item.getProviderVideoId());
         ir.setStatus(item.getStatus());
         String videoUrl = item.getVideoUrl();
         try {

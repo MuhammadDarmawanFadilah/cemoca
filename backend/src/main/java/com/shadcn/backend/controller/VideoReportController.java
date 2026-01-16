@@ -1,36 +1,5 @@
 package com.shadcn.backend.controller;
 
-import com.shadcn.backend.dto.*;
-import com.shadcn.backend.model.User;
-import com.shadcn.backend.entity.VideoReport;
-import com.shadcn.backend.entity.VideoReportItem;
-import com.shadcn.backend.repository.VideoReportRepository;
-import com.shadcn.backend.repository.VideoReportItemRepository;
-import com.shadcn.backend.service.DIDService;
-import com.shadcn.backend.service.AuthService;
-import com.shadcn.backend.service.VideoBackgroundCompositeService;
-import com.shadcn.backend.service.VideoReportService;
-import com.shadcn.backend.service.WhatsAppService;
-import com.shadcn.backend.util.VideoLinkEncryptor;
-import org.apache.poi.ss.usermodel.*;
-import org.apache.poi.xssf.usermodel.XSSFWorkbook;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Pageable;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.MediaType;
-import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
-import org.springframework.web.multipart.MultipartFile;
-
-import jakarta.annotation.PostConstruct;
-import jakarta.servlet.http.HttpServletRequest;
-import jakarta.servlet.http.HttpServletResponse;
-
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
@@ -42,6 +11,63 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+
+import org.apache.poi.ss.usermodel.BorderStyle;
+import org.apache.poi.ss.usermodel.Cell;
+import org.apache.poi.ss.usermodel.CellStyle;
+import org.apache.poi.ss.usermodel.CreationHelper;
+import org.apache.poi.ss.usermodel.FillPatternType;
+import org.apache.poi.ss.usermodel.Font;
+import org.apache.poi.ss.usermodel.IndexedColors;
+import org.apache.poi.ss.usermodel.Row;
+import org.apache.poi.ss.usermodel.Sheet;
+import org.apache.poi.ss.usermodel.Workbook;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.CrossOrigin;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestMethod;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
+
+import com.shadcn.backend.dto.ExcelValidationResult;
+import com.shadcn.backend.dto.VideoAvatarOption;
+import com.shadcn.backend.dto.VideoPreviewRequest;
+import com.shadcn.backend.dto.VideoPreviewResponse;
+import com.shadcn.backend.dto.VideoReportRequest;
+import com.shadcn.backend.dto.VideoReportResponse;
+import com.shadcn.backend.entity.VideoReport;
+import com.shadcn.backend.entity.VideoReportItem;
+import com.shadcn.backend.model.User;
+import com.shadcn.backend.repository.VideoReportItemRepository;
+import com.shadcn.backend.repository.VideoReportRepository;
+import com.shadcn.backend.service.AuthService;
+import com.shadcn.backend.service.HeyGenService;
+import com.shadcn.backend.service.VideoBackgroundCompositeService;
+import com.shadcn.backend.service.VideoReportService;
+import com.shadcn.backend.service.WhatsAppService;
+import com.shadcn.backend.util.VideoLinkEncryptor;
+
+import jakarta.annotation.PostConstruct;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 
 @RestController
 @RequestMapping("/api/video-reports")
@@ -67,7 +93,7 @@ public class VideoReportController {
     }
 
     private final VideoReportService videoReportService;
-    private final DIDService didService;
+    private final HeyGenService heyGenService;
     private final AuthService authService;
     private final WhatsAppService whatsAppService;
     private final VideoReportItemRepository videoReportItemRepository;
@@ -103,14 +129,14 @@ public class VideoReportController {
     }
 
     public VideoReportController(VideoReportService videoReportService,
-                                DIDService didService,
+                                HeyGenService heyGenService,
                                 AuthService authService,
                                 WhatsAppService whatsAppService,
                                 VideoReportItemRepository videoReportItemRepository,
                                 VideoReportRepository videoReportRepository,
                                 VideoBackgroundCompositeService videoBackgroundCompositeService) {
         this.videoReportService = videoReportService;
-        this.didService = didService;
+        this.heyGenService = heyGenService;
         this.authService = authService;
         this.whatsAppService = whatsAppService;
         this.videoReportItemRepository = videoReportItemRepository;
@@ -187,19 +213,19 @@ public class VideoReportController {
                 }
 
                 VideoReportItem item = videoReportService.generateSingleVideo(tempReportId, items.get(0).getId());
-                String didClipId = item == null ? null : item.getDidClipId();
-                if (didClipId == null || didClipId.isBlank()) {
+                String providerVideoId = item == null ? null : item.getProviderVideoId();
+                if (providerVideoId == null || providerVideoId.isBlank()) {
                     String err = item == null ? null : item.getErrorMessage();
-                    return ResponseEntity.badRequest().body(new VideoPreviewResponse(false, null, null, null, null, err == null ? "Failed to create D-ID clip" : err));
+                    return ResponseEntity.badRequest().body(new VideoPreviewResponse(false, null, null, null, null, err == null ? "Failed to create video" : err));
                 }
 
                 boolean useBg = Boolean.TRUE.equals(request.getUseBackground());
                 String bgName = request.getBackgroundName();
                 if (useBg && bgName != null && !bgName.isBlank()) {
-                    previewContexts.put(didClipId, new PreviewContext(true, bgName));
+                    previewContexts.put(providerVideoId, new PreviewContext(true, bgName));
                 }
 
-                return ResponseEntity.ok(new VideoPreviewResponse(true, didClipId, "processing", "clip", null, null));
+                return ResponseEntity.ok(new VideoPreviewResponse(true, providerVideoId, "processing", "clip", null, null));
             } finally {
                 if (tempReportId != null) {
                     try {
@@ -227,33 +253,23 @@ public class VideoReportController {
                 return ResponseEntity.badRequest().body(new VideoPreviewResponse(false, null, null, null, null, "Invalid videoId"));
             }
 
-            Map<String, Object> status = didService.getClipStatus(videoId.trim());
-            if (!Boolean.TRUE.equals(status.get("success"))) {
-                String err = status.get("error") == null ? "Failed to fetch D-ID status" : String.valueOf(status.get("error"));
-                return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
-                        .body(new VideoPreviewResponse(false, videoId, null, null, null, err));
-            }
-
+            Map<String, Object> status = heyGenService.getVideoStatus(videoId.trim());
             String s = status.get("status") == null ? null : String.valueOf(status.get("status"));
-            String type = status.get("type") == null ? null : String.valueOf(status.get("type"));
-            String resultUrl = status.get("result_url") == null ? null : String.valueOf(status.get("result_url"));
+            String type = "video";
+            String resultUrl = status.get("video_url") == null ? null : String.valueOf(status.get("video_url"));
             String err = status.get("error") == null ? null : String.valueOf(status.get("error"));
 
-            if ("done".equalsIgnoreCase(s) && resultUrl != null && !resultUrl.isBlank()) {
+            if ("completed".equalsIgnoreCase(s) && resultUrl != null && !resultUrl.isBlank()) {
                 PreviewContext ctx = previewContexts.get(videoId.trim());
                 if (ctx != null && ctx.useBackground && ctx.backgroundName != null && !ctx.backgroundName.isBlank()) {
                     if (ctx.compositedUrl != null && !ctx.compositedUrl.isBlank()) {
                         resultUrl = ctx.compositedUrl;
                     } else {
-                        String bgUrl = videoReportService.resolveBackgroundUrlForRequest(true, ctx.backgroundName);
-                        boolean shouldComposite = bgUrl == null || !bgUrl.regionMatches(true, 0, "https://", 0, "https://".length());
-                        if (shouldComposite) {
-                            java.util.Optional<String> composited = videoBackgroundCompositeService
-                                    .compositeToStoredVideoUrl(resultUrl, ctx.backgroundName, backendUrl, serverContextPath);
-                            if (composited.isPresent() && !composited.get().isBlank()) {
-                                ctx.compositedUrl = composited.get();
-                                resultUrl = ctx.compositedUrl;
-                            }
+                        java.util.Optional<String> composited = videoBackgroundCompositeService
+                                .compositeToStoredVideoUrl(resultUrl, ctx.backgroundName, backendUrl, serverContextPath);
+                        if (composited.isPresent() && !composited.get().isBlank()) {
+                            ctx.compositedUrl = composited.get();
+                            resultUrl = ctx.compositedUrl;
                         }
                     }
                 }
@@ -271,40 +287,59 @@ public class VideoReportController {
         previewContexts.entrySet().removeIf(e -> now - e.getValue().createdAtMs > PREVIEW_CONTEXT_TTL_MS);
     }
 
-    /**
-     * Get available D-ID presenters
-     */
+    @GetMapping("/avatars")
+    public ResponseEntity<List<VideoAvatarOption>> getAvatars(
+            @RequestParam(name = "avatarId", required = false) String avatarId,
+            @RequestParam(name = "avatar_id", required = false) String avatarIdSnake
+    ) {
+        String effectiveAvatarId = (avatarId != null && !avatarId.trim().isEmpty())
+                ? avatarId.trim()
+                : (avatarIdSnake != null && !avatarIdSnake.trim().isEmpty() ? avatarIdSnake.trim() : null);
+
+        List<Map<String, Object>> avatars;
+        if (effectiveAvatarId != null) {
+            Map<String, Object> one = heyGenService.getAvatarById(effectiveAvatarId);
+            avatars = (one == null) ? java.util.List.of() : java.util.List.of(one);
+        } else {
+            avatars = heyGenService.listAvatars();
+        }
+        List<VideoAvatarOption> out = new java.util.ArrayList<>();
+        if (avatars != null) {
+            for (Map<String, Object> a : avatars) {
+                if (a == null) {
+                    continue;
+                }
+                out.add(new VideoAvatarOption(
+                        a.get("avatar_id") == null ? null : String.valueOf(a.get("avatar_id")),
+                        a.get("display_name") == null ? null : String.valueOf(a.get("display_name")),
+                        a.get("avatar_name") == null ? null : String.valueOf(a.get("avatar_name")),
+                        a.get("gender") == null ? null : String.valueOf(a.get("gender")),
+                        a.get("thumbnail_url") == null ? null : String.valueOf(a.get("thumbnail_url")),
+                        a.get("preview_url") == null ? null : String.valueOf(a.get("preview_url")),
+                        a.get("is_premium") == null ? null : Boolean.valueOf(String.valueOf(a.get("is_premium"))),
+                        a.get("type") == null ? null : String.valueOf(a.get("type"))
+                ));
+            }
+        }
+
+        out.sort(java.util.Comparator.comparing(
+                v -> (v.getDisplay_name() == null ? "" : v.getDisplay_name()).toLowerCase(java.util.Locale.ROOT)
+        ));
+        return ResponseEntity.ok(out);
+    }
+
+    // Backward compatible alias (no D-ID dependency).
     @GetMapping("/presenters")
-    public ResponseEntity<List<DIDPresenter>> getPresenters(
-            @RequestParam(defaultValue = "true") boolean includeNotReadyExpress
+    public ResponseEntity<List<VideoAvatarOption>> getPresentersAlias(
+            @RequestParam(name = "avatarId", required = false) String avatarId,
+            @RequestParam(name = "avatar_id", required = false) String avatarIdSnake
     ) {
-        return ResponseEntity.ok(
-            didService.getPresentersForListing(includeNotReadyExpress)
-                .stream()
-                .filter(p -> p != null && "express".equalsIgnoreCase(p.getAvatar_type()))
-                .toList()
-        );
+        return getAvatars(avatarId, avatarIdSnake);
     }
 
-    @GetMapping("/presenters/clips")
-    public ResponseEntity<List<DIDPresenter>> getClipsPresenters(
-            @RequestParam(defaultValue = "false") boolean includePublic
-    ) {
-        return ResponseEntity.ok(didService.getClipsPresentersFromApi(includePublic));
-    }
-
-    @GetMapping("/presenters/diagnostics")
-    public ResponseEntity<Map<String, Object>> presentersDiagnostics() {
-        return ResponseEntity.ok(didService.diagnosePresenterAccess());
-    }
-
-    /**
-     * Get voice policy information for video generation.
-     * Returns the voice selection priority and how to configure custom voices.
-     */
     @GetMapping("/voices")
-    public ResponseEntity<Map<String, Object>> getVoiceConfiguration() {
-        return ResponseEntity.ok(didService.getVoicePolicyInfo());
+    public ResponseEntity<List<Map<String, Object>>> getVoices() {
+        return ResponseEntity.ok(heyGenService.listVoices());
     }
 
     /**
@@ -475,16 +510,7 @@ public class VideoReportController {
                     
                     // Get avatar name (handle both presenter_id and custom names)
                     String avatarDisplay = item.getAvatar();
-                    // If avatar is a presenter_id, get the display name
-                    if (avatarDisplay != null && avatarDisplay.startsWith("v2_")) {
-                        // This is a presenter_id from API, try to get display name
-                        java.util.Optional<com.shadcn.backend.model.DIDAvatar> avatarOpt = 
-                            didService.getAvatarById(avatarDisplay);
-                        if (avatarOpt.isPresent()) {
-                            avatarDisplay = avatarOpt.get().getPresenterName();
-                        }
-                    }
-                    // Otherwise it's already a custom name, use as-is
+                    // Avatar may be an id or a friendly name; use as-is in exports.
                     createStyledCell(row, 3, avatarDisplay, dataStyle);
                     
                     // Status Video with color
@@ -919,7 +945,7 @@ public class VideoReportController {
         response.put("phone", item.getPhone());
         response.put("avatar", item.getAvatar());
         response.put("personalizedMessage", item.getPersonalizedMessage());
-        response.put("didClipId", item.getDidClipId());
+        response.put("providerVideoId", item.getProviderVideoId());
         response.put("status", item.getStatus());
         response.put("videoUrl", item.getVideoUrl());
         response.put("errorMessage", item.getErrorMessage());

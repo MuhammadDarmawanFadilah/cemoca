@@ -1,11 +1,11 @@
 package com.shadcn.backend.dto;
 
+import java.time.LocalDateTime;
+import java.util.List;
+
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
-
-import java.time.LocalDateTime;
-import java.util.List;
 
 @Data
 @NoArgsConstructor
@@ -48,7 +48,7 @@ public class VideoReportResponse {
         private String phone;
         private String avatar;
         private String personalizedMessage;
-        private String didClipId;
+        private String providerVideoId;
         private String status;
         private String videoUrl;
         private LocalDateTime videoGeneratedAt;

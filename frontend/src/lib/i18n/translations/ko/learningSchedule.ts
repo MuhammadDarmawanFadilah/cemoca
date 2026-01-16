@@ -91,11 +91,11 @@ export const learningSchedule = {
     learningMaterialPlaceholder: '라이브러리에서 Learning Code 선택...',
     browseButton: '라이브러리 찾기',
 
-    videoScript: '비디오 스크립트(D-ID)',
+    videoScript: '비디오 스크립트',
     videoScriptPlaceholder: '비디오 생성용 텍스트를 입력하세요. :name 으로 에이전트 이름을 넣을 수 있습니다.',
-    videoScriptNote: '이 텍스트는 생성된 비디오의 음성으로 변환됩니다.',
+    videoScriptNote: '이 텍스트는 생성된 비디오의 나레이션으로 사용됩니다.',
 
-    avatar: '아바타(D-ID)',
+    avatar: '아바타',
     chooseAvatar: '아바타 선택',
     clearAvatar: '리셋',
     avatarNotSelected: '선택된 아바타 없음(기본 사용)',
@@ -105,7 +105,7 @@ export const learningSchedule = {
     refreshAvatars: '새로고침',
     loadingAvatars: '아바타 로딩 중...',
     noAvatars: '사용 가능한 아바타가 없습니다.',
-    createAtDID: 'D-ID에서 생성',
+    createAtDID: 'HeyGen에서 관리',
     selected: '선택됨',
     notFoundAvatar: '찾을 수 없음',
     closeAvatarDialog: '닫기',

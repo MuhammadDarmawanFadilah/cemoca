@@ -38,7 +38,7 @@ export const reportVideo = {
   availableAvatars: "可用头像",
   loadingAvatars: "加载中...",
   noAvatars: "没有可用头像。",
-  createAtDID: "在D-ID创建",
+  createAtDID: "在 HeyGen 管理",
   avatars: "头像",
   searchAvatar: "搜索头像...",
   copy: "复制",

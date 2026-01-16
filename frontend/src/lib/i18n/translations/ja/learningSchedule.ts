@@ -90,11 +90,11 @@ export const learningSchedule = {
     learningMaterialPlaceholder: 'ライブラリから Learning Code を選択...',
     browseButton: 'ライブラリ参照',
 
-    videoScript: '動画スクリプト（D-ID）',
+    videoScript: '動画スクリプト',
     videoScriptPlaceholder: '動画生成のテキストを入力。:name で代理名を挿入します。',
-    videoScriptNote: 'このテキストは生成動画の音声に変換されます。',
+    videoScriptNote: 'このテキストは生成動画のナレーションとして使用されます。',
 
-    avatar: 'アバター（D-ID）',
+    avatar: 'アバター',
     chooseAvatar: 'アバターを選択',
     clearAvatar: 'リセット',
     avatarNotSelected: '未選択（デフォルトを使用）',
@@ -104,7 +104,7 @@ export const learningSchedule = {
     refreshAvatars: '更新',
     loadingAvatars: 'アバター読み込み中...',
     noAvatars: '利用可能なアバターがありません。',
-    createAtDID: 'D-IDで作成',
+    createAtDID: 'HeyGenで管理',
     selected: '選択済み',
     notFoundAvatar: '見つかりません',
     closeAvatarDialog: '閉じる',

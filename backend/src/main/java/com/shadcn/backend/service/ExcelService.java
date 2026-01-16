@@ -1,6 +1,5 @@
 package com.shadcn.backend.service;
 
-import com.shadcn.backend.dto.DIDPresenter;
 import com.shadcn.backend.dto.ExcelValidationResult;
 import com.shadcn.backend.dto.ExcelValidationResult.ExcelRow;
 import org.apache.poi.ss.usermodel.*;
@@ -25,19 +24,18 @@ public class ExcelService {
     // - Also accept Indonesian local mobile formats (08xx / 62xx / +62xx)
     private static final Pattern PHONE_PATTERN = Pattern.compile("^((\\+[1-9]\\d{7,14})|([1-9]\\d{7,14})|((\\+62|62|0)8[1-9][0-9]{7,10}))$");
     
-    private final DIDService didService;
+    private final HeyGenService heyGenService;
 
-    public ExcelService(DIDService didService) {
-        this.didService = didService;
+    public ExcelService(HeyGenService heyGenService) {
+        this.heyGenService = heyGenService;
     }
 
     /**
      * Parse and validate Excel file
      * Expected columns: no, avatar (name), phone, name
-     * Avatar validation: 
-     * 1. First check database for existing avatar
-     * 2. If not found, refresh from D-ID API
-     * 3. If still not found, mark as error
+    * Avatar validation (HeyGen):
+    * - Accept avatar_id directly
+    * - Or match against display_name/avatar_name from HeyGen avatars list
      */
     public ExcelValidationResult parseAndValidateExcel(MultipartFile file) {
         ExcelValidationResult result = new ExcelValidationResult();
@@ -204,8 +202,7 @@ public class ExcelService {
             excelRow.setValidPhone(true);
         }
 
-        // Validate avatar - only allow Express Avatars created in D-ID Studio
-        // Avatar validation is done in a batch pass (single D-ID lookup per file)
+        // Avatar validation is done in a batch pass (single HeyGen lookup per file)
         excelRow.setValidAvatar(false);
 
         return excelRow;
@@ -216,28 +213,38 @@ public class ExcelService {
             return;
         }
 
-        Map<String, String> expressByName = new HashMap<>();
-        Set<String> expressIds = new HashSet<>();
+        Map<String, String> avatarIdByName = new HashMap<>();
+        Set<String> avatarIds = new HashSet<>();
 
         try {
-            List<DIDPresenter> presenters = didService.getPresentersForListing(true);
-            if (presenters != null) {
-                for (DIDPresenter p : presenters) {
-                    if (p == null) continue;
-                    if (!"express".equalsIgnoreCase(p.getAvatar_type())) continue;
-                    String id = p.getPresenter_id();
-                    if (id == null || id.isBlank()) continue;
-                    expressIds.add(id.trim());
+            List<Map<String, Object>> avatars = heyGenService.listAvatars();
+            if (avatars != null) {
+                for (Map<String, Object> a : avatars) {
+                    if (a == null) {
+                        continue;
+                    }
 
-                    String name = p.getPresenter_name();
-                    String normalized = normalizePresenterNameForMatch(name);
-                    if (!normalized.isEmpty()) {
-                        expressByName.putIfAbsent(normalized, id.trim());
+                    String id = a.get("avatar_id") == null ? null : String.valueOf(a.get("avatar_id"));
+                    if (id == null || id.isBlank()) {
+                        continue;
+                    }
+                    avatarIds.add(id.trim());
+
+                    String displayName = a.get("display_name") == null ? null : String.valueOf(a.get("display_name"));
+                    String avatarName = a.get("avatar_name") == null ? null : String.valueOf(a.get("avatar_name"));
+
+                    String nd = normalizePresenterNameForMatch(displayName);
+                    if (!nd.isEmpty()) {
+                        avatarIdByName.putIfAbsent(nd, id.trim());
+                    }
+                    String na = normalizePresenterNameForMatch(avatarName);
+                    if (!na.isEmpty()) {
+                        avatarIdByName.putIfAbsent(na, id.trim());
                     }
                 }
             }
         } catch (Exception e) {
-            logger.warn("Failed to fetch Express Avatars for validation: {}", e.getMessage());
+            logger.warn("Failed to fetch HeyGen avatars for validation: {}", e.getMessage());
         }
 
         for (ExcelRow row : rows) {
@@ -252,22 +259,17 @@ public class ExcelService {
 
             String trimmed = avatarName.trim();
 
-            if (trimmed.startsWith("avt_")) {
-                if (!expressIds.isEmpty() && expressIds.contains(trimmed)) {
-                    row.setValidAvatar(true);
-                } else {
-                    row.setValidAvatar(false);
-                    row.setAvatarError("Avatar tidak ditemukan (Express Avatar)");
-                }
+            if (!avatarIds.isEmpty() && avatarIds.contains(trimmed)) {
+                row.setValidAvatar(true);
                 continue;
             }
 
             String normalized = normalizePresenterNameForMatch(trimmed);
-            if (!expressByName.isEmpty() && expressByName.containsKey(normalized)) {
+            if (!avatarIdByName.isEmpty() && avatarIdByName.containsKey(normalized)) {
                 row.setValidAvatar(true);
             } else {
                 row.setValidAvatar(false);
-                row.setAvatarError("Avatar tidak ditemukan (Express Avatar)");
+                row.setAvatarError("Avatar tidak ditemukan");
             }
         }
     }

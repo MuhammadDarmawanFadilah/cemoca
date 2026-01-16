@@ -1,15 +1,16 @@
 package com.shadcn.backend.service;
 
-import com.shadcn.backend.dto.PdfExcelValidationResult;
-import com.shadcn.backend.dto.PdfReportRequest;
-import com.shadcn.backend.dto.PdfReportResponse;
-import com.shadcn.backend.dto.PdfReportResponse.PdfReportItemResponse;
-import com.shadcn.backend.model.User;
-import com.shadcn.backend.entity.PdfReport;
-import com.shadcn.backend.entity.PdfReportItem;
-import com.shadcn.backend.repository.PdfReportItemRepository;
-import com.shadcn.backend.repository.PdfReportRepository;
-import com.shadcn.backend.util.PdfLinkEncryptor;
+import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -21,15 +22,16 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.time.LocalDateTime;
-import java.util.*;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
-import java.util.stream.Collectors;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
+import com.shadcn.backend.dto.PdfExcelValidationResult;
+import com.shadcn.backend.dto.PdfReportRequest;
+import com.shadcn.backend.dto.PdfReportResponse;
+import com.shadcn.backend.dto.PdfReportResponse.PdfReportItemResponse;
+import com.shadcn.backend.entity.PdfReport;
+import com.shadcn.backend.entity.PdfReportItem;
+import com.shadcn.backend.model.User;
+import com.shadcn.backend.repository.PdfReportItemRepository;
+import com.shadcn.backend.repository.PdfReportRepository;
+import com.shadcn.backend.util.PdfLinkEncryptor;
 
 @Service
 public class PdfReportService {
@@ -48,6 +50,9 @@ public class PdfReportService {
     
     @Value("${app.frontend.url:http://localhost:3000}")
     private String frontendUrl;
+
+    @Value("${whatsapp.wablas.bulk-enabled:true}")
+    private boolean whatsappBulkEnabled;
 
     public PdfReportService(PdfReportRepository pdfReportRepository,
                            PdfReportItemRepository pdfReportItemRepository,
@@ -524,46 +529,79 @@ public class PdfReportService {
             itemMap.put(item.getId(), item);
         }
         
-        logger.info("[WA BLAST PDF] Sending {} messages via Wablas bulk API...", bulkItems.size());
-        
-        // STEP 4: Send bulk messages
-        List<WhatsAppService.BulkMessageResult> results = whatsAppService.sendBulkMessages(bulkItems);
-        
-        // STEP 5: Process results and update status to SENT/FAILED
         int successCount = 0;
         int failCount = 0;
-        
-        for (WhatsAppService.BulkMessageResult result : results) {
-            PdfReportItem item = null;
+
+        if (whatsappBulkEnabled) {
+            logger.info("[WA BLAST PDF] Sending {} messages via Wablas bulk API...", bulkItems.size());
             
-            // Try to find item by originalId first
-            if (result.getOriginalId() != null) {
-                try {
-                    Long itemId = Long.parseLong(result.getOriginalId());
-                    item = itemMap.get(itemId);
-                } catch (NumberFormatException e) {
-                    logger.warn("[WA BLAST PDF] Invalid originalId: {}", result.getOriginalId());
+            // STEP 4: Send bulk messages
+            List<WhatsAppService.BulkMessageResult> results = whatsAppService.sendBulkMessages(bulkItems);
+            
+            // STEP 5: Process results and update status to SENT/FAILED
+            for (WhatsAppService.BulkMessageResult result : results) {
+                PdfReportItem item = null;
+                
+                // Try to find item by originalId first
+                if (result.getOriginalId() != null) {
+                    try {
+                        Long itemId = Long.parseLong(result.getOriginalId());
+                        item = itemMap.get(itemId);
+                    } catch (NumberFormatException e) {
+                        logger.warn("[WA BLAST PDF] Invalid originalId: {}", result.getOriginalId());
+                    }
                 }
+                
+                if (item == null) continue;
+                
+                if (result.isSuccess()) {
+                    item.setWaStatus("SENT");
+                    item.setWaMessageId(result.getMessageId());
+                    item.setWaSentAt(LocalDateTime.now());
+                    item.setWaErrorMessage(null);
+                    successCount++;
+                    logger.debug("[WA BLAST PDF] Item {} SENT successfully", item.getId());
+                } else {
+                    item.setWaStatus("FAILED");
+                    item.setWaMessageId(result.getMessageId());
+                    item.setWaErrorMessage(result.getError());
+                    failCount++;
+                    logger.warn("[WA BLAST PDF] Item {} FAILED: {}", item.getId(), result.getError());
+                }
+                
+                pdfReportItemRepository.save(item);
             }
-            
-            if (item == null) continue;
-            
-            if (result.isSuccess()) {
-                item.setWaStatus("SENT");
-                item.setWaMessageId(result.getMessageId());
-                item.setWaSentAt(LocalDateTime.now());
-                item.setWaErrorMessage(null);
-                successCount++;
-                logger.debug("[WA BLAST PDF] Item {} SENT successfully", item.getId());
-            } else {
-                item.setWaStatus("FAILED");
-                item.setWaMessageId(result.getMessageId());
-                item.setWaErrorMessage(result.getError());
-                failCount++;
-                logger.warn("[WA BLAST PDF] Item {} FAILED: {}", item.getId(), result.getError());
+        } else {
+            logger.info("[WA BLAST PDF] Bulk disabled, sending one-by-one...");
+
+            for (PdfReportItem item : readyItems) {
+                String token = PdfLinkEncryptor.encryptPdfLink(reportId, item.getId());
+                String pdfLink = frontendUrl + "/p/" + token;
+
+                String waTemplate = report.getWaMessageTemplate();
+                if (waTemplate == null || waTemplate.isEmpty()) {
+                    waTemplate = getDefaultWaMessageTemplate();
+                }
+
+                String waMessage = waTemplate
+                        .replace(":name", item.getName())
+                        .replace(":linkpdf", pdfLink);
+
+                try {
+                    String messageId = whatsAppService.sendMessage(item.getPhone(), waMessage);
+                    item.setWaStatus("SENT");
+                    item.setWaMessageId(messageId);
+                    item.setWaSentAt(LocalDateTime.now());
+                    item.setWaErrorMessage(null);
+                    successCount++;
+                } catch (Exception e) {
+                    item.setWaStatus("FAILED");
+                    item.setWaErrorMessage(e.getMessage());
+                    failCount++;
+                }
+
+                pdfReportItemRepository.save(item);
             }
-            
-            pdfReportItemRepository.save(item);
         }
         
         // STEP 6: Update report counters

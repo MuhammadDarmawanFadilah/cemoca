@@ -35,7 +35,7 @@ import {
   Globe,
 } from "lucide-react";
 import { toast } from "sonner";
-import { DIDPresenter, messageTemplateAPI, LanguageOption } from "@/lib/api";
+import { VideoAvatarOption, messageTemplateAPI, LanguageOption } from "@/lib/api";
 import { config } from "@/lib/config";
 import { AVATARS_PER_PAGE } from "./types";
 import { useLanguage } from "@/contexts/LanguageContext";
@@ -49,7 +49,7 @@ interface Step1InputDataProps {
   setWaMessageTemplate: (value: string) => void;
   selectedFile: File | null;
   handleFileChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
-  presenters: DIDPresenter[];
+  presenters: VideoAvatarOption[];
   loadingPresenters: boolean;
   avatarPage: number;
   setAvatarPage: (value: number | ((p: number) => number)) => void;
@@ -237,7 +237,7 @@ export function Step1InputData({
           <div className="text-xs text-slate-400">{t("reportVideo.loadingAvatars")}</div>
         ) : presenters.length === 0 ? (
           <div className="text-xs text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/30 p-2 rounded">
-            {t("reportVideo.noAvatars")} <a href="https://studio.d-id.com/avatars/create" target="_blank" rel="noopener noreferrer" className="underline">{t("reportVideo.createAtDID")}</a>
+            {t("reportVideo.noAvatars")}
           </div>
         ) : (
           <Dialog onOpenChange={open => { if (open) { setAvatarPage(1); setAvatarSearch(""); } }}>
@@ -258,18 +258,25 @@ export function Step1InputData({
               </div>
               <div className="flex-1 overflow-y-auto">
                 {(() => {
-                  const filtered = presenters.filter(p => !avatarSearch || (p.presenter_name || "").toLowerCase().includes(avatarSearch.toLowerCase()));
+                  const filtered = presenters.filter(p => {
+                    if (!avatarSearch) return true;
+                    const q = avatarSearch.toLowerCase();
+                    const label = String(p.display_name || p.avatar_name || p.avatar_id || '').toLowerCase();
+                    return label.includes(q);
+                  });
                   const totalPages = Math.ceil(filtered.length / AVATARS_PER_PAGE);
                   const startIdx = (avatarPage - 1) * AVATARS_PER_PAGE;
                   const paginated = filtered.slice(startIdx, startIdx + AVATARS_PER_PAGE);
                   return (
                     <>
                       <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-3">
-                        {paginated.map(p => (
-                          <div key={p.presenter_id} className="border rounded-lg overflow-hidden hover:border-blue-400 cursor-pointer transition group bg-white dark:bg-slate-800" onClick={() => { navigator.clipboard.writeText(p.presenter_name || ""); toast.success(`"${p.presenter_name}" ${t("reportVideo.copied")}`); }}>
+                        {paginated.map(p => {
+                          const label = String(p.display_name || p.avatar_name || p.avatar_id || '');
+                          return (
+                          <div key={p.avatar_id} className="border rounded-lg overflow-hidden hover:border-blue-400 cursor-pointer transition group bg-white dark:bg-slate-800" onClick={() => { navigator.clipboard.writeText(label); toast.success(`"${label}" ${t("reportVideo.copied")}`); }}>
                             {p.thumbnail_url ? (
                               <div className="relative aspect-square">
-                                <img src={p.thumbnail_url} alt={p.presenter_name} className="w-full h-full object-cover" />
+                                <img src={p.thumbnail_url} alt={label} className="w-full h-full object-cover" />
                                 <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition flex items-center justify-center">
                                   <span className="text-[10px] text-white font-medium px-2 py-1 bg-blue-600 rounded">{t("reportVideo.copy")}</span>
                                 </div>
@@ -280,10 +287,11 @@ export function Step1InputData({
                               </div>
                             )}
                             <div className="p-1.5 text-center border-t">
-                              <span className="text-[10px] font-medium truncate block">{p.presenter_name || t("reportVideo.avatars")}</span>
+                              <span className="text-[10px] font-medium truncate block">{label || t("reportVideo.avatars")}</span>
                             </div>
                           </div>
-                        ))}
+                        );
+                        })}
                       </div>
                       {totalPages > 1 && (
                         <div className="flex items-center justify-center gap-2 mt-4 pt-3 border-t">

@@ -38,7 +38,7 @@ export const reportVideo = {
   availableAvatars: "사용 가능한 아바타",
   loadingAvatars: "로딩 중...",
   noAvatars: "아바타가 없습니다.",
-  createAtDID: "D-ID에서 만들기",
+  createAtDID: "HeyGen에서 관리",
   avatars: "아바타",
   searchAvatar: "아바타 검색...",
   copy: "복사",

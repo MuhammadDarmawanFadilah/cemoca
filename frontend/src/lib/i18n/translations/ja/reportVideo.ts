@@ -38,7 +38,7 @@ export const reportVideo = {
   availableAvatars: "利用可能なアバター",
   loadingAvatars: "読み込み中...",
   noAvatars: "アバターがありません。",
-  createAtDID: "D-IDで作成",
+  createAtDID: "HeyGenで管理",
   avatars: "アバター",
   searchAvatar: "アバターを検索...",
   copy: "コピー",

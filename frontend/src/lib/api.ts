@@ -2833,15 +2833,15 @@ export const configAPI = {
 }
 
 // Video Report Types
-export interface DIDPresenter {
-  presenter_id: string;
-  presenter_name: string;
-  gender: string;
-  thumbnail_url: string;
-  preview_url: string;
-  is_premium: boolean;
-  avatar_type?: string; // "express" for Express Avatars, "clips" for Clips Presenters
-  voice_id?: string; // For Express Avatars with cloned voice
+export interface VideoAvatarOption {
+  avatar_id: string;
+  display_name?: string;
+  avatar_name?: string;
+  gender?: string;
+  thumbnail_url?: string;
+  preview_url?: string;
+  is_premium?: boolean;
+  type?: string;
 }
 
 export interface ExcelRow {
@@ -2885,7 +2885,7 @@ export interface VideoReportItemResponse {
   phone: string;
   avatar: string;
   personalizedMessage: string;
-  didClipId: string;
+  providerVideoId: string;
   status: string;
   videoUrl: string;
   videoGeneratedAt?: string;
@@ -3003,9 +3003,12 @@ export const videoReportAPI = {
   getDefaultTemplate: (): Promise<{ template: string; waTemplate: string }> =>
     apiCall<{ template: string; waTemplate: string }>('/message-templates/defaults'),
 
-  // Get available D-ID presenters
-  getPresenters: (): Promise<DIDPresenter[]> =>
-    apiCall<DIDPresenter[]>('/video-reports/presenters'),
+  // Get available avatars
+  getPresenters: (options?: { avatarId?: string }): Promise<VideoAvatarOption[]> => {
+    const avatarId = options?.avatarId ? String(options.avatarId).trim() : ''
+    const qs = avatarId ? `?avatarId=${encodeURIComponent(avatarId)}` : ''
+    return apiCall<VideoAvatarOption[]>(`/video-reports/avatars${qs}`)
+  },
 
   // Get available video backgrounds
   getBackgrounds: (): Promise<string[]> =>

@@ -1,4 +1,4 @@
-import { VideoReportResponse, ExcelValidationResult, DIDPresenter } from "@/lib/api";
+import { VideoReportResponse, ExcelValidationResult, VideoAvatarOption } from "@/lib/api";
 
 export type ViewMode = "history" | "generate";
 export type Step = 1 | 2 | 3;
@@ -17,7 +17,7 @@ export interface PersonalSalesState {
   messageTemplate: string;
   waMessageTemplate: string;
   selectedFile: File | null;
-  presenters: DIDPresenter[];
+  presenters: VideoAvatarOption[];
   loadingPresenters: boolean;
   avatarPage: number;
   avatarSearch: string;

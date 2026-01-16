@@ -4,7 +4,7 @@
       <lang xml:lang="th-TH">
 		<prosody rate="90%">
         <prosody rate="medium" pitch="+2%">สวัสดีตอนเช้า คุณ <emphasis level="moderate">:name</emphasis></prosody>
-    <break time="500ms"/>
+    <break time="2500ms"/>
 
         ตลอดหลายทศวรรษในอุตสาหกรรมประกันชีวิต มีความท้าทายหนึ่งที่ยังคงเหมือนเดิมเสมอ
         <break time="300ms"/>

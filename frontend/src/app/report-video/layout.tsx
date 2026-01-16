@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 
 export const metadata: Metadata = {
   title: "Report Video | CAMOCA",
-  description: "Generate AI video dengan D-ID untuk personal notification",
+  description: "Generate AI video dengan HeyGen untuk personal notification",
 };
 
 export default function ReportVideoLayout({

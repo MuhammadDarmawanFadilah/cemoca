@@ -471,7 +471,7 @@ export default function ReportDetailPage({ params }: { params: Promise<{ id: str
                     Terdapat error pada proses
                   </div>
                   <div className="text-xs text-red-700/80 dark:text-red-400/80 mt-0.5">
-                    {videoFailedCount > 0 ? `${videoFailedCount} video gagal generate (D-ID)` : ""}
+                    {videoFailedCount > 0 ? `${videoFailedCount} video gagal generate (HeyGen)` : ""}
                     {videoFailedCount > 0 && (waFailedCount > 0 || waPendingCount > 0 || waNotReadyCount > 0) ? " • " : ""}
                     {waFailedCount > 0 ? `${waFailedCount} WhatsApp gagal (Wablas)` : ""}
                     {waFailedCount > 0 && (waPendingCount > 0 || waNotReadyCount > 0) ? " • " : ""}

@@ -41,7 +41,7 @@ public class LearningSchedulerExecutionService {
 
     private final LearningScheduleConfigMaterialRepository learningScheduleConfigMaterialRepository;
 
-    private final DIDService didService;
+    private final HeyGenService heyGenService;
     private final WhatsAppService whatsAppService;
     private final DocumentFileService documentFileService;
     private final ImageService imageService;
@@ -57,20 +57,18 @@ public class LearningSchedulerExecutionService {
     @Value("${app.document.base-url:}")
     private String documentBaseUrl;
 
-    @Value("${learning.scheduler.did.presenter-name:}")
-    private String didPresenterName;
+    @Value("${learning.scheduler.heygen.avatar-name:}")
+    private String heygenAvatarName;
 
-    @Value("${learning.scheduler.did.presenter-id:}")
-    private String didPresenterId;
+    @Value("${learning.scheduler.heygen.avatar-id:}")
+    private String heygenAvatarId;
 
-    @Value("${learning.scheduler.did.max-wait-seconds:180}")
-    private int didMaxWaitSeconds;
 
-    @Value("${learning.scheduler.did.scene.max-wait-seconds:600}")
-    private int didSceneMaxWaitSeconds;
+    @Value("${learning.scheduler.heygen.max-wait-seconds:600}")
+    private int heygenMaxWaitSeconds;
 
-    @Value("${learning.scheduler.did.poll-interval-ms:5000}")
-    private long didPollIntervalMs;
+    @Value("${learning.scheduler.heygen.poll-interval-ms:5000}")
+    private long heygenPollIntervalMs;
 
     @Value("${whatsapp.api.max-media-bytes}")
     private long wablasMaxMediaBytes;
@@ -186,7 +184,7 @@ public class LearningSchedulerExecutionService {
 
                         if ("VIDEO".equals(mediaTypeValue)) {
                             String script = applyTemplate(effectiveVideoTextTemplate, vars);
-                            waResult = sendDidVideoWithWablasFallback(config, agency.getPhoneNo(), caption, script);
+                            waResult = sendHeyGenVideoWithWablasFallback(config, agency.getPhoneNo(), caption, script);
                         } else if ("IMAGE".equals(mediaTypeValue)) {
                             LearningModuleImage img = learningModuleImageRepository.findByCodeIgnoreCase(effectiveLearningCode)
                                     .orElseThrow(() -> new RuntimeException("Learning image code not found"));
@@ -314,7 +312,7 @@ public class LearningSchedulerExecutionService {
 
                         if ("VIDEO".equals(mediaTypeValue)) {
                             String script = applyTemplate(effectiveVideoTextTemplate, vars);
-                            waResult = sendDidVideoWithWablasFallback(config, agency.getPhoneNo(), caption, script);
+                            waResult = sendHeyGenVideoWithWablasFallback(config, agency.getPhoneNo(), caption, script);
                         } else if ("IMAGE".equals(mediaTypeValue)) {
                             LearningModuleImage img = learningModuleImageRepository.findByCodeIgnoreCase(effectiveLearningCode)
                                     .orElseThrow(() -> new RuntimeException("Learning image code not found"));
@@ -462,7 +460,7 @@ public class LearningSchedulerExecutionService {
 
                         if ("VIDEO".equals(mediaTypeValue)) {
                             String script = applyTemplate(effectiveVideoTextTemplate, vars);
-                            waResult = sendDidVideoWithWablasFallback(config, agency.getPhoneNo(), caption, script);
+                            waResult = sendHeyGenVideoWithWablasFallback(config, agency.getPhoneNo(), caption, script);
                         } else if ("IMAGE".equals(mediaTypeValue)) {
                             LearningModuleImage img = learningModuleImageRepository.findByCodeIgnoreCase(effectiveLearningCode)
                                     .orElseThrow(() -> new RuntimeException("Learning image code not found"));
@@ -629,7 +627,7 @@ public class LearningSchedulerExecutionService {
 
                         if ("VIDEO".equals(mediaTypeValue)) {
                             String script = applyTemplate(effectiveVideoTextTemplate, vars);
-                            waResult = sendDidVideoWithWablasFallback(config, agency.getPhoneNo(), caption, script);
+                            waResult = sendHeyGenVideoWithWablasFallback(config, agency.getPhoneNo(), caption, script);
                         } else if ("IMAGE".equals(mediaTypeValue)) {
                             LearningModuleImage img = learningModuleImageRepository.findByCodeIgnoreCase(effectiveLearningCode)
                                     .orElseThrow(() -> new RuntimeException("Learning image code not found"));
@@ -763,7 +761,7 @@ public class LearningSchedulerExecutionService {
 
                         if ("VIDEO".equals(mediaTypeValue)) {
                             String script = applyTemplate(effectiveVideoTextTemplate, vars);
-                            waResult = sendDidVideoWithWablasFallback(config, agency.getPhoneNo(), caption, script);
+                            waResult = sendHeyGenVideoWithWablasFallback(config, agency.getPhoneNo(), caption, script);
                         } else if ("IMAGE".equals(mediaTypeValue)) {
                             LearningModuleImage img = learningModuleImageRepository.findByCodeIgnoreCase(effectiveLearningCode)
                                     .orElseThrow(() -> new RuntimeException("Learning image code not found"));
@@ -903,13 +901,13 @@ public class LearningSchedulerExecutionService {
         return t.getClass().getSimpleName() + ": " + msg;
     }
 
-    private Map<String, Object> sendDidVideoWithWablasFallback(
+    private Map<String, Object> sendHeyGenVideoWithWablasFallback(
             LearningScheduleConfig config,
             String phoneNumber,
             String caption,
             String script
     ) {
-        DidVideoResult video = generateDidVideo(config, script);
+        GeneratedVideoResult video = generateHeyGenVideo(config, script);
 
         boolean hasBytes = video.bytes != null && video.bytes.length > 0;
         boolean tooLargeForLocal = hasBytes && wablasMaxMediaBytes > 0 && video.bytes.length > wablasMaxMediaBytes;
@@ -951,101 +949,84 @@ public class LearningSchedulerExecutionService {
         return res;
     }
 
-    private static class DidVideoResult {
+    private static class GeneratedVideoResult {
         private final byte[] bytes;
         private final String resultUrl;
 
-        private DidVideoResult(byte[] bytes, String resultUrl) {
+        private GeneratedVideoResult(byte[] bytes, String resultUrl) {
             this.bytes = bytes;
             this.resultUrl = resultUrl;
         }
     }
 
-    private DidVideoResult generateDidVideo(LearningScheduleConfig config, String script) {
-        String presenterId = resolvePresenterId(config);
-        if (presenterId == null || presenterId.isBlank()) {
-            throw new IllegalArgumentException("D-ID presenter is not configured");
+    private GeneratedVideoResult generateHeyGenVideo(LearningScheduleConfig config, String script) {
+        String avatarId = resolveHeyGenAvatarId(config);
+        if (avatarId == null || avatarId.isBlank()) {
+            throw new IllegalArgumentException("HeyGen avatar is not configured");
         }
+        Map<String, Object> created = heyGenService.generateAvatarVideo(
+                avatarId,
+            null,
+                script,
+                null,
+                null,
+                false,
+                null,
+                null
+        );
 
-        Map<String, Object> created = didService.createClip(presenterId, script);
-        boolean ok = Boolean.TRUE.equals(created.get("success"));
-        if (!ok) {
-            throw new RuntimeException("D-ID create clip failed: " + created.get("error"));
-        }
-
-        String videoId = (String) created.get("id");
+        String videoId = created == null ? null : (String) created.get("video_id");
         if (videoId == null || videoId.isBlank()) {
-            throw new RuntimeException("D-ID returned empty video id");
+            throw new RuntimeException("HeyGen returned empty video_id");
         }
 
-        String createdType = created.get("type") == null ? "" : String.valueOf(created.get("type")).toLowerCase(Locale.ROOT);
-        int waitSeconds = (videoId.startsWith("scn_") || "scene".equals(createdType)) ? didSceneMaxWaitSeconds : didMaxWaitSeconds;
-
-        long deadline = System.currentTimeMillis() + (long) waitSeconds * 1000L;
+        long deadline = System.currentTimeMillis() + (long) heygenMaxWaitSeconds * 1000L;
         String resultUrl = null;
         Map<String, Object> lastStatus = null;
 
         while (System.currentTimeMillis() < deadline) {
-            Map<String, Object> status = didService.getClipStatus(videoId);
+            Map<String, Object> status = heyGenService.getVideoStatus(videoId);
             lastStatus = status;
-            if (!Boolean.TRUE.equals(status.get("success"))) {
-                throw new RuntimeException("D-ID status failed: " + status.get("error"));
-            }
 
-            String st = status.get("status") == null ? "" : status.get("status").toString().toLowerCase(Locale.ROOT);
-            resultUrl = status.get("result_url") == null ? null : status.get("result_url").toString();
+            String st = status == null || status.get("status") == null ? "" : status.get("status").toString().toLowerCase(Locale.ROOT);
+            resultUrl = status == null || status.get("video_url") == null ? null : status.get("video_url").toString();
 
-            if (("done".equals(st) || "completed".equals(st)) && resultUrl != null && !resultUrl.isBlank()) {
+            if (("completed".equals(st) || "done".equals(st)) && resultUrl != null && !resultUrl.isBlank()) {
                 break;
             }
-
-            if ("error".equals(st) || "failed".equals(st)) {
-                throw new RuntimeException("D-ID generation failed: " + status.get("error"));
+            if ("failed".equals(st) || "error".equals(st)) {
+                String err = status == null || status.get("error") == null ? null : String.valueOf(status.get("error"));
+                throw new RuntimeException("HeyGen generation failed" + (err == null || err.isBlank() ? "" : (": " + err)));
             }
 
             try {
-                Thread.sleep(didPollIntervalMs);
+                Thread.sleep(heygenPollIntervalMs);
             } catch (InterruptedException ie) {
                 Thread.currentThread().interrupt();
-                throw new RuntimeException("Interrupted while waiting D-ID");
+                throw new RuntimeException("Interrupted while waiting HeyGen");
             }
         }
 
         if (resultUrl == null || resultUrl.isBlank()) {
             String lastSt = lastStatus == null ? "" : String.valueOf(lastStatus.getOrDefault("status", ""));
-            String pending = lastStatus == null ? null : (lastStatus.get("pending_url") == null ? null : String.valueOf(lastStatus.get("pending_url")));
             String err = lastStatus == null ? null : (lastStatus.get("error") == null ? null : String.valueOf(lastStatus.get("error")));
-            StringBuilder sb = new StringBuilder("D-ID result URL not available");
+            StringBuilder sb = new StringBuilder("HeyGen result URL not available");
             if (lastSt != null && !lastSt.isBlank()) sb.append(" | status=").append(lastSt);
-            if (pending != null && !pending.isBlank()) sb.append(" | pending_url=").append(pending);
             if (err != null && !err.isBlank()) sb.append(" | error=").append(err);
-            sb.append(" | waitSeconds=").append(waitSeconds);
+            sb.append(" | waitSeconds=").append(heygenMaxWaitSeconds);
             throw new RuntimeException(sb.toString());
         }
 
-        String normalizedUrl = normalizeDidResultUrl(resultUrl);
-        byte[] bytes = restTemplate.getForObject(toSafeDidResultUri(normalizedUrl), byte[].class);
-        return new DidVideoResult(bytes, normalizedUrl);
+        byte[] bytes = restTemplate.getForObject(toSafeUri(resultUrl), byte[].class);
+        return new GeneratedVideoResult(bytes, resultUrl);
     }
 
-    private String normalizeDidResultUrl(String resultUrl) {
-        String url = resultUrl == null ? "" : resultUrl.trim();
-        if (url.contains("%25")) {
-            try {
-                url = java.net.URLDecoder.decode(url, java.nio.charset.StandardCharsets.UTF_8);
-            } catch (Exception ignored) {
-                // keep original
-            }
-        }
-        return url;
+    private URI toSafeUri(String url) {
+        String v = url == null ? "" : url.trim();
+        return URI.create(v);
     }
 
-    private URI toSafeDidResultUri(String resultUrl) {
-        String url = normalizeDidResultUrl(resultUrl);
-        return URI.create(url);
-    }
-
-    private String resolvePresenterId(LearningScheduleConfig config) {
+    private String resolveHeyGenAvatarId(LearningScheduleConfig config) {
         String perConfigId = config == null ? null : normalize(config.getDidPresenterId());
         if (perConfigId != null) {
             return perConfigId;
@@ -1053,20 +1034,51 @@ public class LearningSchedulerExecutionService {
 
         String perConfigName = config == null ? null : normalize(config.getDidPresenterName());
         if (perConfigName != null) {
-            String id = didService.getPresenterIdByName(perConfigName);
-            if (id != null && !id.isBlank()) {
+            String id = findHeyGenAvatarIdByNameOrId(perConfigName);
+            if (id != null) {
                 return id;
             }
         }
 
-        String name = normalize(didPresenterName);
+        String name = normalize(heygenAvatarName);
         if (name != null) {
-            String id = didService.getPresenterIdByName(name);
-            if (id != null && !id.isBlank()) {
+            String id = findHeyGenAvatarIdByNameOrId(name);
+            if (id != null) {
                 return id;
             }
         }
-        return normalize(didPresenterId);
+
+        return normalize(heygenAvatarId);
+    }
+
+    private String findHeyGenAvatarIdByNameOrId(String raw) {
+        String needle = normalize(raw);
+        if (needle == null) return null;
+
+        String needleNorm = normalizeComparable(needle);
+        for (Map<String, Object> a : heyGenService.listAvatars()) {
+            if (a == null) continue;
+            String id = a.get("avatar_id") == null ? null : String.valueOf(a.get("avatar_id"));
+            if (id != null && (id.equalsIgnoreCase(needle) || normalizeComparable(id).equals(needleNorm))) {
+                return id;
+            }
+            String displayName = a.get("display_name") == null ? null : String.valueOf(a.get("display_name"));
+            if (displayName != null && normalizeComparable(displayName).equals(needleNorm)) {
+                return id;
+            }
+            String avatarName = a.get("avatar_name") == null ? null : String.valueOf(a.get("avatar_name"));
+            if (avatarName != null && normalizeComparable(avatarName).equals(needleNorm)) {
+                return id;
+            }
+        }
+        return null;
+    }
+
+    private String normalizeComparable(String raw) {
+        String v = normalize(raw);
+        if (v == null) return "";
+        return v.toLowerCase(Locale.ROOT)
+                .replaceAll("[^a-z0-9]", "");
     }
 
     private String applyTemplate(String template, Map<String, String> vars) {

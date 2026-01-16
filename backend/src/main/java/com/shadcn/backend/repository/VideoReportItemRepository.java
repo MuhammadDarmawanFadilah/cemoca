@@ -1,6 +1,9 @@
 package com.shadcn.backend.repository;
 
-import com.shadcn.backend.entity.VideoReportItem;
+import java.time.LocalDateTime;
+import java.util.Collection;
+import java.util.List;
+
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -10,9 +13,7 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.Collection;
-import java.util.List;
-import java.time.LocalDateTime;
+import com.shadcn.backend.entity.VideoReportItem;
 
 @Repository
 public interface VideoReportItemRepository extends JpaRepository<VideoReportItem, Long> {
@@ -29,8 +30,8 @@ public interface VideoReportItemRepository extends JpaRepository<VideoReportItem
        @Query("DELETE FROM VideoReportItem i WHERE i.videoReport.id = :reportId")
        void deleteByVideoReportId(@Param("reportId") Long reportId);
 
-       // Webhook lookup by D-ID clip id
-       @Query("SELECT i FROM VideoReportItem i WHERE i.didClipId = :didClipId")
+       // Webhook lookup by provider video id (legacy column: did_clip_id)
+       @Query("SELECT i FROM VideoReportItem i WHERE i.providerVideoId = :didClipId")
        VideoReportItem findByDidClipId(@Param("didClipId") String didClipId);
     
     // Paginated queries for large datasets

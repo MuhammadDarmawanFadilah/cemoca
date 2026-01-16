@@ -39,7 +39,7 @@ export const reportVideo = {
   availableAvatars: "Available Avatars",
   loadingAvatars: "Loading...",
   noAvatars: "No avatars available.",
-  createAtDID: "Create at D-ID",
+  createAtDID: "Manage in HeyGen",
   avatars: "Avatar",
   searchAvatar: "Search avatar...",
   copy: "Copy",

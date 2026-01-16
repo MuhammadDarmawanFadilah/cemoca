@@ -53,5 +53,13 @@ build/
 uploads/
 image/
 
+# Local video storage/cache
+storage/
+
 # NOTE: Backend menggunakan application.properties, BUKAN .env
 # Jangan commit file properties dengan sensitive data
+
+# Local/prod secrets (never commit)
+src/main/resources/application-local-secrets.properties
+src/main/resources/application-prod-secrets.properties
+src/main/resources/application-secrets.properties

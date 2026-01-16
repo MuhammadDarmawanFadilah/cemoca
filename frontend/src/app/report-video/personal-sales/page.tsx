@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 import {
   videoReportAPI,
-  DIDPresenter,
+  VideoAvatarOption,
   ExcelValidationResult,
   VideoReportResponse,
 } from "@/lib/api";
@@ -24,6 +24,8 @@ import { useLanguage } from "@/contexts/LanguageContext";
 export default function PersonalSalesPage() {
   const { t } = useLanguage();
   const router = useRouter();
+
+  const ONLY_AVATAR_ID = "d14c75f06e33478b996f01084db971cc";
   const [viewMode, setViewMode] = useState<ViewMode>("history");
   const [step, setStep] = useState<Step>(1);
   const [loading, setLoading] = useState(false);
@@ -39,7 +41,7 @@ export default function PersonalSalesPage() {
   const [messageTemplate, setMessageTemplate] = useState("");
   const [waMessageTemplate, setWaMessageTemplate] = useState("");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [presenters, setPresenters] = useState<DIDPresenter[]>([]);
+  const [presenters, setPresenters] = useState<VideoAvatarOption[]>([]);
   const [loadingPresenters, setLoadingPresenters] = useState(false);
   const [avatarPage, setAvatarPage] = useState(1);
   const [avatarSearch, setAvatarSearch] = useState("");
@@ -83,7 +85,7 @@ export default function PersonalSalesPage() {
       setLoadingBackgrounds(true);
       const [templateRes, presentersList, backgroundsList] = await Promise.all([
         videoReportAPI.getDefaultTemplate(),
-        videoReportAPI.getPresenters(),
+        videoReportAPI.getPresenters({ avatarId: ONLY_AVATAR_ID }),
         videoReportAPI.getBackgrounds(),
       ]);
       setMessageTemplate(templateRes.template);
