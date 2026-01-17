@@ -24,7 +24,8 @@ else {
   throw "Missing SSH auth. Set SSH_PASSWORD env var or pass -SshPassword."
 }
 
-echo y | plink -ssh "$userName@$hostName" @authArgs "bash /opt/CEMOCA/redeploy-backend.sh"
+echo y | plink -batch -ssh "$userName@$hostName" @authArgs "bash /opt/CEMOCA/redeploy-backend.sh"
 if ($LASTEXITCODE -ne 0) {
   throw "Backend redeploy failed (plink exit code $LASTEXITCODE)"
 }
+
