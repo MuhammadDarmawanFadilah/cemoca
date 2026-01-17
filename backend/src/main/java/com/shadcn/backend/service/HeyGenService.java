@@ -63,6 +63,7 @@ public class HeyGenService {
 
     private final boolean onlyVideoAvatars;
     private final int maxAvatarResults;
+    private final boolean excludePublicHints;
 
     private volatile CachedValue<List<Map<String, Object>>> avatarCacheOwned;
     private volatile CachedValue<List<Map<String, Object>>> avatarCacheAll;
@@ -80,6 +81,7 @@ public class HeyGenService {
                 @Value("${heygen.api.avatars.fallback-to-all-if-owned-empty:true}") boolean fallbackToAllIfOwnedEmpty,
             @Value("${heygen.api.avatars.only-video-avatars:true}") boolean onlyVideoAvatars,
             @Value("${heygen.api.avatars.max-results:200}") int maxAvatarResults,
+                @Value("${heygen.api.avatars.exclude-public-hints:true}") boolean excludePublicHints,
             ObjectMapper objectMapper
     ) {
         this.apiKey = apiKey == null ? "" : apiKey.trim();
@@ -110,6 +112,7 @@ public class HeyGenService {
 
         this.onlyVideoAvatars = onlyVideoAvatars;
         this.maxAvatarResults = maxAvatarResults <= 0 ? 200 : maxAvatarResults;
+        this.excludePublicHints = excludePublicHints;
 
         String effectiveBaseUrl = baseUrl == null ? "" : baseUrl.trim();
         if (effectiveBaseUrl.isBlank()) {
@@ -280,6 +283,10 @@ public class HeyGenService {
                 }
             }
 
+            if (!includePublicAvatars && excludePublicHints && isLikelyPublicByHint(a)) {
+                continue;
+            }
+
             out.add(a);
             if (out.size() >= maxAvatarResults) {
                 break;
@@ -287,6 +294,17 @@ public class HeyGenService {
         }
 
         return out;
+    }
+
+    private static boolean isLikelyPublicByHint(Map<String, Object> a) {
+        if (a == null) {
+            return false;
+        }
+        String id = a.get("avatar_id") == null ? "" : String.valueOf(a.get("avatar_id"));
+        String display = a.get("display_name") == null ? "" : String.valueOf(a.get("display_name"));
+        String name = a.get("avatar_name") == null ? "" : String.valueOf(a.get("avatar_name"));
+        String combined = (id + " " + display + " " + name).toLowerCase(java.util.Locale.ROOT);
+        return combined.contains("_public_") || combined.contains(" public ") || combined.contains("public_") || combined.contains("_public") || combined.contains("public");
     }
 
     private List<Map<String, Object>> fetchOwnedAvatarsFromV2() {
