@@ -9,9 +9,6 @@ $hostName = "72.61.208.104"
 $userName = "root"
 $remoteFrontendDir = "/opt/cemoca/app/frontend"
 
-$ppkPath = Join-Path $PSScriptRoot "afan2.ppk"
-$useKeyAuth = Test-Path $ppkPath
-
 if (-not (Get-Command plink -ErrorAction SilentlyContinue)) {
   Write-Error "plink not found. Install PuTTY and ensure plink.exe is in PATH."
   exit 1
@@ -28,10 +25,6 @@ if (-not (Test-Path "c:\PROJEK\CEMOCAPPS\frontend")) {
 }
 
 function Get-AuthArgs {
-  if ($useKeyAuth) {
-    return @("-i", $ppkPath)
-  }
-
   if ($SshPassword) {
     return @("-pw", $SshPassword)
   }
@@ -40,7 +33,7 @@ function Get-AuthArgs {
     return @("-pw", $env:SSH_PASSWORD)
   }
 
-  throw "Missing SSH auth. Provide afan2.ppk, or set SSH_PASSWORD env var, or pass -SshPassword."
+  throw "Missing SSH auth. Set SSH_PASSWORD env var or pass -SshPassword."
 }
 
 $authArgs = Get-AuthArgs
