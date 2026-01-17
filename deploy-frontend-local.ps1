@@ -40,16 +40,7 @@ function Get-AuthArgs {
     return @("-pw", $env:SSH_PASSWORD)
   }
 
-  $securePw = Read-Host -Prompt "SSH Password" -AsSecureString
-  $bstr = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($securePw)
-  try {
-    $plainPw = [System.Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr)
-  }
-  finally {
-    [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr)
-  }
-
-  return @("-pw", $plainPw)
+  throw "Missing SSH auth. Provide afan2.ppk, or set SSH_PASSWORD env var, or pass -SshPassword."
 }
 
 $authArgs = Get-AuthArgs
