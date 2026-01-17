@@ -61,6 +61,9 @@ public class HeyGenService {
     private final boolean useAvatarGroupsForOwned;
     private final boolean fallbackToAllIfOwnedEmpty;
 
+    private final boolean onlyVideoAvatars;
+    private final int maxAvatarResults;
+
     private volatile CachedValue<List<Map<String, Object>>> avatarCacheOwned;
     private volatile CachedValue<List<Map<String, Object>>> avatarCacheAll;
 
@@ -75,6 +78,8 @@ public class HeyGenService {
             @Value("${heygen.api.avatars.include-premium:false}") boolean includePremiumAvatars,
             @Value("${heygen.api.avatars.use-groups:true}") boolean useAvatarGroupsForOwned,
                 @Value("${heygen.api.avatars.fallback-to-all-if-owned-empty:true}") boolean fallbackToAllIfOwnedEmpty,
+            @Value("${heygen.api.avatars.only-video-avatars:true}") boolean onlyVideoAvatars,
+            @Value("${heygen.api.avatars.max-results:200}") int maxAvatarResults,
             ObjectMapper objectMapper
     ) {
         this.apiKey = apiKey == null ? "" : apiKey.trim();
@@ -102,6 +107,9 @@ public class HeyGenService {
         this.includePremiumAvatars = includePremiumAvatars;
         this.useAvatarGroupsForOwned = useAvatarGroupsForOwned;
         this.fallbackToAllIfOwnedEmpty = fallbackToAllIfOwnedEmpty;
+
+        this.onlyVideoAvatars = onlyVideoAvatars;
+        this.maxAvatarResults = maxAvatarResults <= 0 ? 200 : maxAvatarResults;
 
         String effectiveBaseUrl = baseUrl == null ? "" : baseUrl.trim();
         if (effectiveBaseUrl.isBlank()) {
@@ -213,11 +221,12 @@ public class HeyGenService {
 
             if (ownedFromGroups != null && !ownedFromGroups.isEmpty()) {
                 long cachedAtMs = System.currentTimeMillis();
-                avatarCacheOwned = new CachedValue<>(cachedAtMs, deepCopyAvatarList(ownedFromGroups));
+                List<Map<String, Object>> normalized = normalizeAvatarResults(ownedFromGroups);
+                avatarCacheOwned = new CachedValue<>(cachedAtMs, deepCopyAvatarList(normalized));
 
                 long tookMs = (System.nanoTime() - startNs) / 1_000_000L;
-                logger.info("[HEYGEN] listAvatars: {} items (owned via groups) in {} ms", ownedFromGroups.size(), tookMs);
-                return ownedFromGroups;
+                logger.info("[HEYGEN] listAvatars: {} items (owned via groups) in {} ms", normalized.size(), tookMs);
+                return normalized;
             }
 
             List<Map<String, Object>> owned = fetchOwnedAvatarsFromV2();
@@ -233,12 +242,14 @@ public class HeyGenService {
                 owned = new ArrayList<>();
             }
 
+            List<Map<String, Object>> normalized = normalizeAvatarResults(owned);
+
             long cachedAtMs = System.currentTimeMillis();
-            avatarCacheOwned = new CachedValue<>(cachedAtMs, deepCopyAvatarList(owned));
+            avatarCacheOwned = new CachedValue<>(cachedAtMs, deepCopyAvatarList(normalized));
 
             long tookMs = (System.nanoTime() - startNs) / 1_000_000L;
-            logger.info("[HEYGEN] listAvatars: {} items (owned via filter fallback) in {} ms", owned.size(), tookMs);
-            return owned;
+            logger.info("[HEYGEN] listAvatars: {} items (owned via filter fallback) in {} ms", normalized.size(), tookMs);
+            return normalized;
         } catch (Exception e) {
             long tookMs = (System.nanoTime() - startNs) / 1_000_000L;
             logger.error("[HEYGEN] listAvatars failed after {} ms: {}", tookMs, e.toString());
@@ -248,6 +259,34 @@ public class HeyGenService {
             }
             throw e;
         }
+    }
+
+    private List<Map<String, Object>> normalizeAvatarResults(List<Map<String, Object>> avatars) {
+        if (avatars == null || avatars.isEmpty()) {
+            return new ArrayList<>();
+        }
+
+        List<Map<String, Object>> out = new ArrayList<>(avatars.size());
+        for (Map<String, Object> a : avatars) {
+            if (a == null) {
+                continue;
+            }
+
+            if (onlyVideoAvatars) {
+                Object type = a.get("type");
+                String t = type == null ? "" : String.valueOf(type).trim().toLowerCase(java.util.Locale.ROOT);
+                if (!t.isEmpty() && !t.equals("avatar")) {
+                    continue;
+                }
+            }
+
+            out.add(a);
+            if (out.size() >= maxAvatarResults) {
+                break;
+            }
+        }
+
+        return out;
     }
 
     private List<Map<String, Object>> fetchOwnedAvatarsFromV2() {
