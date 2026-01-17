@@ -10,6 +10,8 @@ $hostName = "72.61.208.104"
 $userName = "root"
 $remoteFrontendDir = "/opt/cemoca/app/frontend"
 
+$defaultPasswordFile = Join-Path $PSScriptRoot "secrets\ssh_password.txt"
+
 if (-not (Get-Command plink -ErrorAction SilentlyContinue)) {
   Write-Error "plink not found. Install PuTTY and ensure plink.exe is in PATH."
   exit 1
@@ -26,6 +28,13 @@ if (-not (Test-Path "c:\PROJEK\CEMOCAPPS\frontend")) {
 }
 
 function Get-AuthArgs {
+  if (Test-Path $defaultPasswordFile) {
+    $pw = (Get-Content -Raw -Path $defaultPasswordFile).Trim()
+    if ($pw) {
+      return @("-pw", $pw)
+    }
+  }
+
   if ($SshPasswordFile) {
     if (-not (Test-Path $SshPasswordFile)) {
       throw "SSH password file not found: $SshPasswordFile"

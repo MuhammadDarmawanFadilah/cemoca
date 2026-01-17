@@ -9,6 +9,8 @@ $ErrorActionPreference = "Stop"
 $hostName = "72.61.208.104"
 $userName = "root"
 
+$defaultPasswordFile = Join-Path $PSScriptRoot "secrets\ssh_password.txt"
+
 if (-not (Get-Command plink -ErrorAction SilentlyContinue)) {
   Write-Error "plink not found. Install PuTTY and ensure plink.exe is in PATH."
   exit 1
@@ -26,6 +28,9 @@ elseif ($env:SSH_PASSWORD_FILE) {
     throw "SSH password file not found: $env:SSH_PASSWORD_FILE"
   }
   $SshPassword = (Get-Content -Raw -Path $env:SSH_PASSWORD_FILE).Trim()
+}
+elseif (Test-Path $defaultPasswordFile) {
+  $SshPassword = (Get-Content -Raw -Path $defaultPasswordFile).Trim()
 }
 
 if ($SshPassword) {
