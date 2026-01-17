@@ -1040,9 +1040,11 @@ public class HeyGenService {
             throw new IllegalArgumentException("outputLanguage is required");
         }
 
+        String normalizedOutputLanguage = normalizeHeyGenOutputLanguage(outputLanguage);
+
         Map<String, Object> body = new HashMap<>();
         body.put("video_url", videoUrl.trim());
-        body.put("output_language", outputLanguage.trim());
+        body.put("output_language", normalizedOutputLanguage);
 
         JsonNode root = webClient.post()
                 .uri("/v2/video_translate")
@@ -1069,6 +1071,39 @@ public class HeyGenService {
             result.put("error", textOrNull(data, "error"));
         }
         return result;
+    }
+
+    private static String normalizeHeyGenOutputLanguage(String outputLanguage) {
+        String v = outputLanguage == null ? null : outputLanguage.trim();
+        if (v == null || v.isBlank()) {
+            throw new IllegalArgumentException("outputLanguage is required");
+        }
+
+        String key = v.toLowerCase(java.util.Locale.ROOT);
+        if (key.equals("en")) {
+            return "English";
+        }
+        if (key.equals("id") || key.equals("in")) {
+            return "Indonesian";
+        }
+        if (key.equals("ja") || key.equals("jp")) {
+            return "Japanese";
+        }
+        if (key.equals("th")) {
+            return "Thai";
+        }
+        if (key.equals("vi")) {
+            return "Vietnamese";
+        }
+        if (key.equals("km")) {
+            return "Khmer";
+        }
+
+        if (key.matches("^[a-z]{2}(-[a-z]{2})?$") && !key.equals("zh")) {
+            throw new IllegalArgumentException("Unsupported outputLanguage code: " + v);
+        }
+
+        return v;
     }
 
     public Map<String, Object> getVideoTranslationStatus(String videoTranslateId) {
