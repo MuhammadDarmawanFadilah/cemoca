@@ -28,6 +28,7 @@ import io.netty.channel.ChannelOption;
 import io.netty.handler.timeout.ReadTimeoutHandler;
 import io.netty.handler.timeout.WriteTimeoutHandler;
 import reactor.netty.http.client.HttpClient;
+import reactor.netty.tcp.SslProvider;
 
 @Service
 public class HeyGenService {
@@ -53,6 +54,7 @@ public class HeyGenService {
     private final Duration heygenRequestTimeout;
 
     private final int connectTimeoutMs;
+    private final int sslHandshakeTimeoutMs;
 
     private final boolean includePublicAvatars;
     private final boolean includePremiumAvatars;
@@ -67,6 +69,7 @@ public class HeyGenService {
             @Value("${heygen.api.key:}") String apiKey,
             @Value("${heygen.api.timeout-seconds:30}") int timeoutSeconds,
             @Value("${heygen.api.connect-timeout-ms:10000}") int connectTimeoutMs,
+            @Value("${heygen.api.ssl-handshake-timeout-ms:10000}") int sslHandshakeTimeoutMs,
             @Value("${heygen.api.avatar-cache-ttl-seconds:300}") int avatarCacheTtlSeconds,
             @Value("${heygen.api.avatars.include-public:false}") boolean includePublicAvatars,
             @Value("${heygen.api.avatars.include-premium:false}") boolean includePremiumAvatars,
@@ -89,6 +92,12 @@ public class HeyGenService {
         }
         this.connectTimeoutMs = computedConnectTimeoutMs;
 
+        int computedHandshakeTimeoutMs = sslHandshakeTimeoutMs <= 0 ? 10_000 : sslHandshakeTimeoutMs;
+        if (computedHandshakeTimeoutMs > requestTimeoutMs) {
+            computedHandshakeTimeoutMs = (int) Math.min(Integer.MAX_VALUE, requestTimeoutMs);
+        }
+        this.sslHandshakeTimeoutMs = computedHandshakeTimeoutMs;
+
         this.includePublicAvatars = includePublicAvatars;
         this.includePremiumAvatars = includePremiumAvatars;
         this.useAvatarGroupsForOwned = useAvatarGroupsForOwned;
@@ -109,9 +118,15 @@ public class HeyGenService {
 
         int timeoutSecForHandlers = (int) Math.max(1L, heygenRequestTimeout.getSeconds());
 
+        SslProvider.Builder sslBuilder = SslProvider.builder()
+            .sslContext(SslProvider.defaultClientProvider().getSslContext());
+        sslBuilder.handshakeTimeoutMillis(this.sslHandshakeTimeoutMs);
+        SslProvider sslProvider = sslBuilder.build();
+
         HttpClient httpClient = HttpClient.create()
             .compress(true)
             .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, this.connectTimeoutMs)
+            .secure(sslProvider)
             .responseTimeout(heygenRequestTimeout)
             .doOnConnected(conn -> conn
                 .addHandlerLast(new ReadTimeoutHandler(timeoutSecForHandlers))
