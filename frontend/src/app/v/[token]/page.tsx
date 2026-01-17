@@ -3,8 +3,8 @@
 import { useRef, useState, useEffect } from "react";
 import { useParams } from "next/navigation";
 import { videoReportAPI } from "@/lib/api";
-import ReactPlayer from "react-player";
 import { Download, SkipBack, SkipForward } from "lucide-react";
+import VideoJsPlayer, { type VideoJsPlayerInstance } from "@/components/video/VideoJsPlayer";
 
 interface VideoData {
   id: number;
@@ -20,7 +20,7 @@ export default function VideoViewPage() {
   const params = useParams();
   const token = params.token as string;
 
-  const playerRef = useRef<any>(null);
+  const playerRef = useRef<VideoJsPlayerInstance | null>(null);
   
   const [videoData, setVideoData] = useState<VideoData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -95,14 +95,16 @@ export default function VideoViewPage() {
 
   // Video ready - full screen video
   if (videoData?.videoUrl) {
+    const downloadUrl = videoData.videoUrl.includes("?") ? `${videoData.videoUrl}&download=1` : `${videoData.videoUrl}?download=1`;
+
     const seekBySeconds = (deltaSeconds: number) => {
       const player = playerRef.current;
-      if (!player?.getCurrentTime || !player?.seekTo) {
+      if (!player) {
         return;
       }
-      const current = Number(player.getCurrentTime() ?? 0);
+      const current = Number(player.currentTime() ?? 0);
       const next = Math.max(0, current + deltaSeconds);
-      player.seekTo(next, "seconds");
+      player.currentTime(next);
     };
 
     return (
@@ -127,7 +129,7 @@ export default function VideoViewPage() {
             Next
           </button>
           <a
-            href={videoData.videoUrl}
+            href={downloadUrl}
             target="_blank"
             rel="noreferrer"
             download
@@ -140,20 +142,10 @@ export default function VideoViewPage() {
         </div>
 
         <div className="w-full h-full">
-          <ReactPlayer
-            ref={playerRef}
-            url={videoData.videoUrl}
-            playing
-            controls
-            width="100%"
-            height="100%"
-            playsinline
-            config={{
-              file: {
-                attributes: {
-                  className: "w-full h-full object-contain",
-                },
-              },
+          <VideoJsPlayer
+            sources={[{ src: videoData.videoUrl, type: "video/mp4" }]}
+            onReady={(player) => {
+              playerRef.current = player;
             }}
           />
         </div>

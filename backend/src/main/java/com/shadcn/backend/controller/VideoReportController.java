@@ -1223,7 +1223,17 @@ public class VideoReportController {
             }
 
             response.setHeader(HttpHeaders.ACCEPT_RANGES, "bytes");
-            response.setHeader(HttpHeaders.CONTENT_DISPOSITION, "inline");
+            boolean downloadRequested = false;
+            try {
+                String downloadParam = request == null ? null : request.getParameter("download");
+                downloadRequested = "1".equals(downloadParam) || "true".equalsIgnoreCase(downloadParam);
+            } catch (Exception ignore) {
+                downloadRequested = false;
+            }
+
+            String filename = "cemoca-" + token + ".mp4";
+            String dispositionType = downloadRequested ? "attachment" : "inline";
+            response.setHeader(HttpHeaders.CONTENT_DISPOSITION, dispositionType + "; filename=\"" + filename + "\"");
             response.setHeader(HttpHeaders.CACHE_CONTROL, "private, max-age=3600");
             response.setContentType("video/mp4");
 
