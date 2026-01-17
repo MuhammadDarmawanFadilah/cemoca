@@ -489,6 +489,7 @@ vi /opt/cemoca/app/backend/src/main/resources/application-prod.properties
 - **NEVER RUN backend or frontend** unless user specifically asks to fix errors
 - **READ LOGS if there are errors**: C:\PROJEK\CEMOCAPPS\backend\logs\application.log
 - **Just write "Success" when finished**
+- **NEVER remove/blank any passwords, API keys, tokens, or secrets** unless user explicitly requests it
 
 ## Success Criteria
 - [x] HeyGen video generation works

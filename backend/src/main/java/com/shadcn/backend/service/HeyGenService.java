@@ -111,7 +111,7 @@ public class HeyGenService {
         this.fallbackToAllIfOwnedEmpty = fallbackToAllIfOwnedEmpty;
 
         this.onlyVideoAvatars = onlyVideoAvatars;
-        this.maxAvatarResults = maxAvatarResults <= 0 ? 200 : maxAvatarResults;
+        this.maxAvatarResults = maxAvatarResults <= 0 ? Integer.MAX_VALUE : maxAvatarResults;
         this.excludePublicHints = excludePublicHints;
 
         String effectiveBaseUrl = baseUrl == null ? "" : baseUrl.trim();
@@ -234,10 +234,16 @@ public class HeyGenService {
 
             List<Map<String, Object>> owned = fetchOwnedAvatarsFromV2();
             if (owned == null || owned.isEmpty()) {
-                List<Map<String, Object>> all = fetchAllAvatarsFromV2();
-                owned = filterOwnedAvatars(all);
-                if ((owned == null || owned.isEmpty()) && fallbackToAllIfOwnedEmpty) {
-                    owned = all;
+                boolean strictOwnedOnly = useAvatarGroupsForOwned
+                        && !includePublicAvatars
+                        && !includePremiumAvatars
+                        && !fallbackToAllIfOwnedEmpty;
+                if (!strictOwnedOnly) {
+                    List<Map<String, Object>> all = fetchAllAvatarsFromV2();
+                    owned = filterOwnedAvatars(all);
+                    if ((owned == null || owned.isEmpty()) && fallbackToAllIfOwnedEmpty) {
+                        owned = all;
+                    }
                 }
             }
 
@@ -333,9 +339,7 @@ public class HeyGenService {
         }
 
         if (privateAvatars.isEmpty()) {
-            // Fallback: some accounts only return a unified list.
-            List<Map<String, Object>> all = fetchAllAvatarsFromV2();
-            return filterOwnedAvatars(all);
+            return new ArrayList<>();
         }
 
         List<Map<String, Object>> result = new ArrayList<>();
@@ -479,13 +483,30 @@ public class HeyGenService {
 
         JsonNode groupRoot = parseJsonOrNull(groupBody);
 
-        List<JsonNode> groups = extractArray(groupRoot, "data", "avatar_groups");
+        List<JsonNode> groups = extractArray(groupRoot, "data", "avatar_group_list");
+        if (groups.isEmpty()) {
+            groups = extractArray(groupRoot, "data", "avatar_groups");
+        }
         if (groups.isEmpty()) {
             groups = extractArray(groupRoot, "data", "groups");
+        }
+        if (groups.isEmpty()) {
+            groups = extractArray(groupRoot, "avatar_group_list");
+        }
+        if (groups.isEmpty()) {
+            groups = extractArray(groupRoot, "avatar_groups");
         }
 
         List<String> groupIds = new ArrayList<>();
         for (JsonNode g : groups) {
+            String groupType = textOrNull(g, "group_type");
+            if (!includePublicAvatars && groupType != null && !groupType.isBlank()) {
+                String t = groupType.trim().toUpperCase(java.util.Locale.ROOT);
+                if ("PUBLIC".equals(t)) {
+                    continue;
+                }
+            }
+
             String gid = firstNonBlank(
                 textOrNull(g, "group_id"),
                 textOrNull(g, "avatar_group_id"),
@@ -523,9 +544,15 @@ public class HeyGenService {
             if (data.isArray()) {
                 avatars = toList(data);
             } else {
-                avatars = extractArray(root, "data", "avatars");
+                avatars = extractArray(root, "data", "avatar_list");
+                if (avatars.isEmpty()) {
+                    avatars = extractArray(root, "data", "avatars");
+                }
                 if (avatars.isEmpty()) {
                     avatars = extractArray(root, "data", "data");
+                }
+                if (avatars.isEmpty()) {
+                    avatars = extractArray(root, "avatar_list");
                 }
             }
 
@@ -1230,6 +1257,17 @@ public class HeyGenService {
             return toList(inner);
         }
 
+        return List.of();
+    }
+
+    private static List<JsonNode> extractArray(JsonNode root, String field) {
+        if (root == null || field == null || field.isBlank()) {
+            return List.of();
+        }
+        JsonNode node = root.path(field);
+        if (node.isArray()) {
+            return toList(node);
+        }
         return List.of();
     }
 
