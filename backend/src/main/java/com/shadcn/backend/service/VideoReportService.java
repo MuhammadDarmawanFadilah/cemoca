@@ -1647,8 +1647,27 @@ public class VideoReportService {
         if (item.getProviderVideoId() == null) return;
         
         try {
+            VideoReport report = null;
+            try {
+                report = videoReportRepository.findById(reportId).orElse(null);
+            } catch (Exception ignore) {
+            }
+
+            String targetLang = report == null ? null : report.getVideoLanguageCode();
+            if (targetLang != null) {
+                targetLang = targetLang.trim();
+            }
+            boolean shouldTranslate = shouldTranslateVideoLanguage(targetLang);
+
             String translateId = item.getProviderTranslateId();
             if (translateId != null && !translateId.isBlank()) {
+                // Backward-compat / recovery: if translation is no longer needed (e.g., English),
+                // clear the stale translate id and finalize from the original HeyGen video.
+                if (!shouldTranslate) {
+                    item.setProviderTranslateId(null);
+                    translateId = null;
+                    videoReportItemRepository.save(item);
+                } else {
                 Map<String, Object> trStatus = heyGenService.getVideoTranslationStatus(translateId.trim());
                 String ts = trStatus.get("status") == null ? null : String.valueOf(trStatus.get("status"));
                 String tUrl = trStatus.get("video_url") == null ? null : String.valueOf(trStatus.get("video_url"));
@@ -1660,12 +1679,6 @@ public class VideoReportService {
                         item.setErrorMessage("HeyGen translate completed but video_url is empty");
                         videoReportItemRepository.save(item);
                         return;
-                    }
-
-                    VideoReport report = null;
-                    try {
-                        report = videoReportRepository.findById(reportId).orElse(null);
-                    } catch (Exception ignore) {
                     }
 
                     String finalUrl = tUrl;
@@ -1714,6 +1727,7 @@ public class VideoReportService {
                 }
                 videoReportItemRepository.save(item);
                 return;
+                }
             }
 
             String videoId = item.getProviderVideoId();
@@ -1736,19 +1750,7 @@ public class VideoReportService {
                     item.setErrorMessage("HeyGen completed but video_url is empty");
                     logger.warn("[CHECK CLIPS] Item {} FAILED: {}", item.getId(), item.getErrorMessage());
                 } else {
-                    VideoReport report = null;
-                    try {
-                        report = videoReportRepository.findById(reportId).orElse(null);
-                    } catch (Exception ignore) {
-                    }
-
                     String sourceUrl = videoUrl;
-                    String targetLang = report == null ? null : report.getVideoLanguageCode();
-                    if (targetLang != null) {
-                        targetLang = targetLang.trim();
-                    }
-
-                        boolean shouldTranslate = shouldTranslateVideoLanguage(targetLang);
 
                     if (shouldTranslate) {
                         if (translateId == null || translateId.isBlank()) {
