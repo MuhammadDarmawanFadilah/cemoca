@@ -1,5 +1,6 @@
 param(
-  [string]$SshPassword
+  [string]$SshPassword,
+  [string]$SshPasswordFile
 )
 
 Set-StrictMode -Version Latest
@@ -25,6 +26,26 @@ if (-not (Test-Path "c:\PROJEK\CEMOCAPPS\frontend")) {
 }
 
 function Get-AuthArgs {
+  if ($SshPasswordFile) {
+    if (-not (Test-Path $SshPasswordFile)) {
+      throw "SSH password file not found: $SshPasswordFile"
+    }
+    $pw = (Get-Content -Raw -Path $SshPasswordFile).Trim()
+    if ($pw) {
+      return @("-pw", $pw)
+    }
+  }
+
+  if ($env:SSH_PASSWORD_FILE) {
+    if (-not (Test-Path $env:SSH_PASSWORD_FILE)) {
+      throw "SSH password file not found: $env:SSH_PASSWORD_FILE"
+    }
+    $pw = (Get-Content -Raw -Path $env:SSH_PASSWORD_FILE).Trim()
+    if ($pw) {
+      return @("-pw", $pw)
+    }
+  }
+
   if ($SshPassword) {
     return @("-pw", $SshPassword)
   }
@@ -33,7 +54,7 @@ function Get-AuthArgs {
     return @("-pw", $env:SSH_PASSWORD)
   }
 
-  throw "Missing SSH auth. Set SSH_PASSWORD env var or pass -SshPassword."
+  throw "Missing SSH auth. Set SSH_PASSWORD / SSH_PASSWORD_FILE env var or pass -SshPassword / -SshPasswordFile."
 }
 
 $authArgs = Get-AuthArgs

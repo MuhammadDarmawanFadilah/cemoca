@@ -1,5 +1,6 @@
 param(
-  [string]$SshPassword
+  [string]$SshPassword,
+  [string]$SshPasswordFile
 )
 
 Set-StrictMode -Version Latest
@@ -14,6 +15,19 @@ if (-not (Get-Command plink -ErrorAction SilentlyContinue)) {
 }
 
 $authArgs = @()
+if ($SshPasswordFile) {
+  if (-not (Test-Path $SshPasswordFile)) {
+    throw "SSH password file not found: $SshPasswordFile"
+  }
+  $SshPassword = (Get-Content -Raw -Path $SshPasswordFile).Trim()
+}
+elseif ($env:SSH_PASSWORD_FILE) {
+  if (-not (Test-Path $env:SSH_PASSWORD_FILE)) {
+    throw "SSH password file not found: $env:SSH_PASSWORD_FILE"
+  }
+  $SshPassword = (Get-Content -Raw -Path $env:SSH_PASSWORD_FILE).Trim()
+}
+
 if ($SshPassword) {
   $authArgs = @("-pw", $SshPassword)
 }
@@ -21,7 +35,7 @@ elseif ($env:SSH_PASSWORD) {
   $authArgs = @("-pw", $env:SSH_PASSWORD)
 }
 else {
-  throw "Missing SSH auth. Set SSH_PASSWORD env var or pass -SshPassword."
+  throw "Missing SSH auth. Set SSH_PASSWORD / SSH_PASSWORD_FILE env var or pass -SshPassword / -SshPasswordFile."
 }
 
 echo y | plink -batch -ssh "$userName@$hostName" @authArgs "bash /opt/CEMOCA/redeploy-frontend.sh"
