@@ -24,13 +24,6 @@ import org.springframework.stereotype.Service;
 
 import com.shadcn.backend.model.VideoBackground;
 
-
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.stereotype.Service;
-
-import com.shadcn.backend.model.VideoBackground;
-
-import lombok.extern.slf4j.Slf4j;
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
@@ -58,11 +51,17 @@ public class VideoBackgroundCompositeService {
     @Value("${app.video.audio.boost-enabled:true}")
     private boolean audioBoostEnabled;
 
-    @Value("${app.video.audio.filter:loudnorm=I=-6:TP=-1.0:LRA=6,alimiter=limit=0.99}")
+    @Value("${app.video.audio.filter:volume=12dB,loudnorm=I=-3:TP=-1.0:LRA=4,alimiter=limit=0.99}")
     private String audioBoostFilter;
 
     @Value("${app.video.audio.bitrate:320k}")
     private String audioBitrate;
+
+    @Value("${app.video.output.width:720}")
+    private int outputWidth;
+
+    @Value("${app.video.output.height:1280}")
+    private int outputHeight;
 
     public VideoBackgroundCompositeService(ImageService imageService, VideoBackgroundService videoBackgroundService) {
         this.imageService = imageService;
@@ -106,13 +105,27 @@ public class VideoBackgroundCompositeService {
 
             Path outputPath = tempDir.resolve("output.mp4");
 
-            String filter = String.format(
+                int w = outputWidth > 0 ? outputWidth : 720;
+                int h = outputHeight > 0 ? outputHeight : 1280;
+
+                String filter = String.format(
                     Locale.ROOT,
-                    "[0:v]chromakey=%s:%.3f:%.3f[fg];[1:v][fg]scale2ref[bg][fg2];[bg][fg2]overlay,format=yuv420p[v]",
+                    "[0:v]chromakey=%s:%.3f:%.3f[fgraw];" +
+                        "[fgraw]scale=%d:%d:force_original_aspect_ratio=decrease,pad=%d:%d:(ow-iw)/2:(oh-ih)/2[fg];" +
+                        "[1:v]scale=%d:%d:force_original_aspect_ratio=cover,crop=%d:%d[bg];" +
+                        "[bg][fg]overlay,format=yuv420p[v]",
                     chromaKey,
                     chromaSimilarity,
-                    chromaBlend
-            );
+                    chromaBlend,
+                    w,
+                    h,
+                    w,
+                    h,
+                    w,
+                    h,
+                    w,
+                    h
+                );
 
             List<String> cmd = new ArrayList<>();
             cmd.add(ffmpegPath);
@@ -210,8 +223,22 @@ public class VideoBackgroundCompositeService {
             cmd.add("-y");
             cmd.add("-i");
             cmd.add(inputMp4.toString());
-            cmd.add("-c:v");
-            cmd.add("copy");
+                int w = outputWidth > 0 ? outputWidth : 720;
+                int h = outputHeight > 0 ? outputHeight : 1280;
+                cmd.add("-vf");
+                cmd.add(String.format(Locale.ROOT,
+                    "scale=%d:%d:force_original_aspect_ratio=decrease,pad=%d:%d:(ow-iw)/2:(oh-ih)/2,format=yuv420p",
+                    w,
+                    h,
+                    w,
+                    h
+                ));
+                cmd.add("-c:v");
+                cmd.add("libx264");
+                cmd.add("-preset");
+                cmd.add("fast");
+                cmd.add("-crf");
+                cmd.add("24");
             cmd.add("-c:a");
             cmd.add("aac");
             cmd.add("-b:a");

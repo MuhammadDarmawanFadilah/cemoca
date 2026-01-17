@@ -1,30 +1,32 @@
 package com.shadcn.backend.service;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.time.Duration;
 import java.util.concurrent.CompletableFuture;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.client.reactive.ReactorClientHttpConnector;
+import org.springframework.stereotype.Service;
+import org.springframework.web.reactive.function.client.ExchangeStrategies;
+import org.springframework.web.reactive.function.client.WebClient;
+import org.springframework.web.reactive.function.client.WebClientResponseException;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.NullNode;
+
 import io.netty.channel.ChannelOption;
 import io.netty.handler.timeout.ReadTimeoutHandler;
 import io.netty.handler.timeout.WriteTimeoutHandler;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.client.reactive.ReactorClientHttpConnector;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.MediaType;
-import org.springframework.stereotype.Service;
-import org.springframework.web.reactive.function.client.ExchangeStrategies;
-import org.springframework.web.reactive.function.client.WebClient;
-import org.springframework.web.reactive.function.client.WebClientResponseException;
 import reactor.netty.http.client.HttpClient;
 
 @Service
@@ -53,6 +55,7 @@ public class HeyGenService {
     private final boolean includePublicAvatars;
     private final boolean includePremiumAvatars;
     private final boolean useAvatarGroupsForOwned;
+    private final boolean fallbackToAllIfOwnedEmpty;
 
     private volatile CachedValue<List<Map<String, Object>>> avatarCacheOwned;
     private volatile CachedValue<List<Map<String, Object>>> avatarCacheAll;
@@ -65,6 +68,7 @@ public class HeyGenService {
             @Value("${heygen.api.avatars.include-public:false}") boolean includePublicAvatars,
             @Value("${heygen.api.avatars.include-premium:false}") boolean includePremiumAvatars,
             @Value("${heygen.api.avatars.use-groups:true}") boolean useAvatarGroupsForOwned,
+                @Value("${heygen.api.avatars.fallback-to-all-if-owned-empty:true}") boolean fallbackToAllIfOwnedEmpty,
             ObjectMapper objectMapper
     ) {
         this.apiKey = apiKey == null ? "" : apiKey.trim();
@@ -78,6 +82,7 @@ public class HeyGenService {
         this.includePublicAvatars = includePublicAvatars;
         this.includePremiumAvatars = includePremiumAvatars;
         this.useAvatarGroupsForOwned = useAvatarGroupsForOwned;
+        this.fallbackToAllIfOwnedEmpty = fallbackToAllIfOwnedEmpty;
 
         String effectiveBaseUrl = baseUrl == null ? "" : baseUrl.trim();
         if (effectiveBaseUrl.isBlank()) {
@@ -194,6 +199,13 @@ public class HeyGenService {
             if (owned == null || owned.isEmpty()) {
                 List<Map<String, Object>> all = fetchAllAvatarsFromV2();
                 owned = filterOwnedAvatars(all);
+                if ((owned == null || owned.isEmpty()) && fallbackToAllIfOwnedEmpty) {
+                    owned = all;
+                }
+            }
+
+            if (owned == null) {
+                owned = new ArrayList<>();
             }
 
             long cachedAtMs = System.currentTimeMillis();
@@ -234,7 +246,14 @@ public class HeyGenService {
         privateAvatars.addAll(extractArray(root, "data", "avatars_private"));
 
         if (privateAvatars.isEmpty()) {
-            return new ArrayList<>();
+            privateAvatars.addAll(extractArray(root, "data", "private"));
+            privateAvatars.addAll(extractArray(root, "data", "owned"));
+        }
+
+        if (privateAvatars.isEmpty()) {
+            // Fallback: some accounts only return a unified list.
+            List<Map<String, Object>> all = fetchAllAvatarsFromV2();
+            return filterOwnedAvatars(all);
         }
 
         List<Map<String, Object>> result = new ArrayList<>();
@@ -305,7 +324,64 @@ public class HeyGenService {
             }
         }
 
-        return result;
+        if (!result.isEmpty()) {
+            return result;
+        }
+
+        // Ultra fallback: scan response for avatar-like objects.
+        List<JsonNode> candidates = new ArrayList<>();
+        collectAvatarCandidates(root, candidates, 0);
+        if (candidates.isEmpty()) {
+            return result;
+        }
+
+        LinkedHashMap<String, Map<String, Object>> byId = new LinkedHashMap<>();
+        for (JsonNode a : candidates) {
+            Map<String, Object> item = toAvatarOptionMap(a, null);
+            Object id = item.get("avatar_id");
+            if (id == null) {
+                continue;
+            }
+            byId.putIfAbsent(String.valueOf(id), item);
+        }
+        return new ArrayList<>(byId.values());
+    }
+
+    private static void collectAvatarCandidates(JsonNode node, List<JsonNode> out, int depth) {
+        if (node == null || node.isNull() || node.isMissingNode()) {
+            return;
+        }
+        if (depth > 10) {
+            return;
+        }
+
+        if (node.isArray()) {
+            for (JsonNode child : node) {
+                collectAvatarCandidates(child, out, depth + 1);
+            }
+            return;
+        }
+
+        if (!node.isObject()) {
+            return;
+        }
+
+        boolean hasId = node.hasNonNull("avatar_id")
+                || node.hasNonNull("talking_photo_id")
+                || node.hasNonNull("photo_avatar_id")
+                || node.hasNonNull("id");
+
+        boolean hasName = node.hasNonNull("display_name")
+                || node.hasNonNull("avatar_name")
+                || node.hasNonNull("name");
+
+        if (hasId && hasName) {
+            out.add(node);
+        }
+
+        for (Map.Entry<String, JsonNode> e : node.properties()) {
+            collectAvatarCandidates(e.getValue(), out, depth + 1);
+        }
     }
 
     private List<Map<String, Object>> fetchOwnedAvatarsFromGroups() {
@@ -599,28 +675,84 @@ public class HeyGenService {
         );
         item.put("preview_url", previewUrl);
 
-        Boolean isPublic = boolOrNull(a, "is_public");
-        if (isPublic == null) {
-            isPublic = boolOrNull(a, "isPublic");
-        }
-        if (isPublic == null) {
-            isPublic = boolOrNull(a, "public");
-        }
+        Boolean isPublic = inferIsPublic(a);
         item.put("is_public", isPublic);
 
-        Boolean isPremium = boolOrNull(a, "is_premium");
-        if (isPremium == null) {
-            isPremium = boolOrNull(a, "isPremium");
-        }
-        if (isPremium == null) {
-            isPremium = boolOrNull(a, "premium");
-        }
+        Boolean isPremium = inferIsPremium(a);
         item.put("is_premium", isPremium);
 
         String type = firstNonBlank(textOrNull(a, "type"), fallbackType);
         item.put("type", type);
 
         return item;
+    }
+
+    private static Boolean inferIsPublic(JsonNode node) {
+        if (node == null) {
+            return null;
+        }
+
+        Boolean isPublic = boolOrNull(node, "is_public");
+        if (isPublic == null) {
+            isPublic = boolOrNull(node, "isPublic");
+        }
+        if (isPublic == null) {
+            isPublic = boolOrNull(node, "public");
+        }
+        if (isPublic != null) {
+            return isPublic;
+        }
+
+        Boolean isPrivate = boolOrNull(node, "is_private");
+        if (isPrivate == null) {
+            isPrivate = boolOrNull(node, "isPrivate");
+        }
+        if (isPrivate == null) {
+            isPrivate = boolOrNull(node, "private");
+        }
+        if (Boolean.TRUE.equals(isPrivate)) {
+            return Boolean.FALSE;
+        }
+
+        String access = firstNonBlank(textOrNull(node, "access"), textOrNull(node, "visibility"), textOrNull(node, "scope"));
+        if (access != null) {
+            String v = access.trim().toLowerCase(java.util.Locale.ROOT);
+            if ("public".equals(v)) {
+                return Boolean.TRUE;
+            }
+            if ("private".equals(v) || "owned".equals(v)) {
+                return Boolean.FALSE;
+            }
+        }
+
+        return null;
+    }
+
+    private static Boolean inferIsPremium(JsonNode node) {
+        if (node == null) {
+            return null;
+        }
+
+        Boolean isPremium = boolOrNull(node, "is_premium");
+        if (isPremium == null) {
+            isPremium = boolOrNull(node, "isPremium");
+        }
+        if (isPremium == null) {
+            isPremium = boolOrNull(node, "premium");
+        }
+        if (isPremium != null) {
+            return isPremium;
+        }
+
+        String tier = firstNonBlank(textOrNull(node, "tier"), textOrNull(node, "plan"), textOrNull(node, "category"));
+        if (tier != null) {
+            String v = tier.trim().toLowerCase(java.util.Locale.ROOT);
+            if (v.contains("premium") || v.contains("pro") || v.contains("enterprise")) {
+                return Boolean.TRUE;
+            }
+        }
+
+        return null;
     }
 
     private static String firstNonBlank(String... values) {
@@ -721,8 +853,8 @@ public class HeyGenService {
         }
         body.put("video_inputs", List.of(videoInput));
         Map<String, Object> dimension = new HashMap<>();
-        dimension.put("width", 1080);
-        dimension.put("height", 1920);
+        dimension.put("width", 720);
+        dimension.put("height", 1280);
         body.put("dimension", dimension);
 
         JsonNode root;
