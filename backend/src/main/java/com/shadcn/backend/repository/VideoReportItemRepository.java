@@ -25,13 +25,6 @@ public interface VideoReportItemRepository extends JpaRepository<VideoReportItem
     // Find single item by ID and report ID
     VideoReportItem findByIdAndVideoReportId(Long id, Long videoReportId);
 
-    @Query("SELECT i FROM VideoReportItem i WHERE i.videoReport.id = :reportId " +
-           "AND i.status = 'DONE' " +
-           "AND i.providerVideoId IS NOT NULL AND i.providerVideoId <> '' " +
-           "AND (i.providerTranslateId IS NULL OR i.providerTranslateId = '') " +
-           "AND (i.excluded = false OR i.excluded IS NULL)")
-    List<VideoReportItem> findDoneItemsNeedingTranslation(@Param("reportId") Long reportId);
-
        @Modifying
        @Transactional
        @Query("DELETE FROM VideoReportItem i WHERE i.videoReport.id = :reportId")
@@ -40,6 +33,9 @@ public interface VideoReportItemRepository extends JpaRepository<VideoReportItem
        // Webhook lookup by provider video id (legacy column: did_clip_id)
        @Query("SELECT i FROM VideoReportItem i WHERE i.providerVideoId = :didClipId")
        VideoReportItem findByDidClipId(@Param("didClipId") String didClipId);
+
+       @Query("SELECT i FROM VideoReportItem i WHERE i.videoReport.id = :reportId AND i.status = 'DONE' AND (i.providerTranslateId IS NULL OR i.providerTranslateId = '') AND i.providerVideoId IS NOT NULL AND i.providerVideoId <> ''")
+       List<VideoReportItem> findDoneNeedingTranslation(@Param("reportId") Long reportId);
     
     // Paginated queries for large datasets
     Page<VideoReportItem> findByVideoReportIdOrderByRowNumberAsc(Long videoReportId, Pageable pageable);

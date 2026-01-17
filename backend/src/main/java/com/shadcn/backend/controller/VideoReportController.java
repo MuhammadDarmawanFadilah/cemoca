@@ -104,12 +104,10 @@ public class VideoReportController {
         if (v.isBlank()) {
             return false;
         }
-
-        String key = v.toLowerCase(java.util.Locale.ROOT);
-        if (key.equals("en") || key.startsWith("en-") || key.equals("english") || key.contains("english")) {
+        // Don't call the Video Translate API when output is English.
+        if (v.equalsIgnoreCase("en") || v.toLowerCase(java.util.Locale.ROOT).startsWith("en-") || v.equalsIgnoreCase("english")) {
             return false;
         }
-
         return true;
     }
 

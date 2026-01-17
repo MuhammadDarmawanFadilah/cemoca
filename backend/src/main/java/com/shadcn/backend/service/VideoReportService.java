@@ -1600,42 +1600,27 @@ public class VideoReportService {
         List<VideoReportItem> processingItems = videoReportItemRepository
                 .findByVideoReportIdAndStatus(reportId, "PROCESSING");
 
-        if (shouldTranslate) {
-            try {
-                List<VideoReportItem> needingTranslation = videoReportItemRepository.findDoneItemsNeedingTranslation(reportId);
-                if (needingTranslation != null && !needingTranslation.isEmpty()) {
-                    processingItems = new ArrayList<>(processingItems);
-                    java.util.HashSet<Long> seen = new java.util.HashSet<>();
-                    for (VideoReportItem i : processingItems) {
-                        if (i != null && i.getId() != null) {
-                            seen.add(i.getId());
-                        }
-                    }
-                    for (VideoReportItem i : needingTranslation) {
-                        if (i == null || i.getId() == null) {
-                            continue;
-                        }
-                        if (seen.add(i.getId())) {
-                            processingItems.add(i);
-                        }
-                    }
-                }
-            } catch (Exception ignore) {
-            }
-        }
+        List<VideoReportItem> doneNeedingTranslation = shouldTranslate
+                ? videoReportItemRepository.findDoneNeedingTranslation(reportId)
+                : java.util.List.of();
 
-        logger.info("[CHECK CLIPS] Checking {} PROCESSING items for report {}", processingItems.size(), reportId);
-        
-        if (processingItems.isEmpty()) {
-            logger.info("[CHECK CLIPS] No processing items to check");
+        java.util.ArrayList<VideoReportItem> itemsToCheck = new java.util.ArrayList<>(processingItems.size() + doneNeedingTranslation.size());
+        itemsToCheck.addAll(processingItems);
+        itemsToCheck.addAll(doneNeedingTranslation);
+
+        logger.info("[CHECK CLIPS] Checking {} items for report {} (processing={}, translateCandidates={})",
+                itemsToCheck.size(), reportId, processingItems.size(), doneNeedingTranslation.size());
+
+        if (itemsToCheck.isEmpty()) {
+            logger.info("[CHECK CLIPS] No items to check");
             return;
         }
         
         // Use parallel checking for large batches
-        if (processingItems.size() > 10) {
-            checkClipsParallel(processingItems, reportId);
+        if (itemsToCheck.size() > 10) {
+            checkClipsParallel(itemsToCheck, reportId);
         } else {
-            checkClipsSequential(processingItems, reportId);
+            checkClipsSequential(itemsToCheck, reportId);
         }
 
         checkAndUpdateReportStatus(reportId);
@@ -1884,12 +1869,9 @@ public class VideoReportService {
         if (v.isBlank()) {
             return false;
         }
-
-        String key = v.toLowerCase(java.util.Locale.ROOT);
-        if (key.equals("en") || key.startsWith("en-") || key.equals("english") || key.contains("english")) {
+        if (v.equalsIgnoreCase("en") || v.toLowerCase(java.util.Locale.ROOT).startsWith("en-") || v.equalsIgnoreCase("english")) {
             return false;
         }
-
         return true;
     }
 
