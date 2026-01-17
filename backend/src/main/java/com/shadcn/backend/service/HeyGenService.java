@@ -52,6 +52,8 @@ public class HeyGenService {
     private final long avatarCacheTtlMs;
     private final Duration heygenRequestTimeout;
 
+    private final int connectTimeoutMs;
+
     private final boolean includePublicAvatars;
     private final boolean includePremiumAvatars;
     private final boolean useAvatarGroupsForOwned;
@@ -64,6 +66,7 @@ public class HeyGenService {
             @Value("${heygen.api.base-url:https://api.heygen.com}") String baseUrl,
             @Value("${heygen.api.key:}") String apiKey,
             @Value("${heygen.api.timeout-seconds:30}") int timeoutSeconds,
+            @Value("${heygen.api.connect-timeout-ms:10000}") int connectTimeoutMs,
             @Value("${heygen.api.avatar-cache-ttl-seconds:300}") int avatarCacheTtlSeconds,
             @Value("${heygen.api.avatars.include-public:false}") boolean includePublicAvatars,
             @Value("${heygen.api.avatars.include-premium:false}") boolean includePremiumAvatars,
@@ -78,6 +81,13 @@ public class HeyGenService {
         int effectiveCacheTtlSeconds = avatarCacheTtlSeconds <= 0 ? 300 : avatarCacheTtlSeconds;
         this.heygenRequestTimeout = Duration.ofSeconds(effectiveTimeoutSeconds);
         this.avatarCacheTtlMs = effectiveCacheTtlSeconds * 1000L;
+
+        int computedConnectTimeoutMs = connectTimeoutMs <= 0 ? 10_000 : connectTimeoutMs;
+        long requestTimeoutMs = Math.max(1_000L, this.heygenRequestTimeout.toMillis());
+        if (computedConnectTimeoutMs > requestTimeoutMs) {
+            computedConnectTimeoutMs = (int) Math.min(Integer.MAX_VALUE, requestTimeoutMs);
+        }
+        this.connectTimeoutMs = computedConnectTimeoutMs;
 
         this.includePublicAvatars = includePublicAvatars;
         this.includePremiumAvatars = includePremiumAvatars;
@@ -101,7 +111,7 @@ public class HeyGenService {
 
         HttpClient httpClient = HttpClient.create()
             .compress(true)
-            .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, 10_000)
+            .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, this.connectTimeoutMs)
             .responseTimeout(heygenRequestTimeout)
             .doOnConnected(conn -> conn
                 .addHandlerLast(new ReadTimeoutHandler(timeoutSecForHandlers))
