@@ -25,6 +25,13 @@ public interface VideoReportItemRepository extends JpaRepository<VideoReportItem
     // Find single item by ID and report ID
     VideoReportItem findByIdAndVideoReportId(Long id, Long videoReportId);
 
+    @Query("SELECT i FROM VideoReportItem i WHERE i.videoReport.id = :reportId " +
+           "AND i.status = 'DONE' " +
+           "AND i.providerVideoId IS NOT NULL AND i.providerVideoId <> '' " +
+           "AND (i.providerTranslateId IS NULL OR i.providerTranslateId = '') " +
+           "AND (i.excluded = false OR i.excluded IS NULL)")
+    List<VideoReportItem> findDoneItemsNeedingTranslation(@Param("reportId") Long reportId);
+
        @Modifying
        @Transactional
        @Query("DELETE FROM VideoReportItem i WHERE i.videoReport.id = :reportId")

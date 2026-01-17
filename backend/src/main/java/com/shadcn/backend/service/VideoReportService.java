@@ -1585,8 +1585,44 @@ public class VideoReportService {
      */
     @Transactional
     public void checkPendingClips(Long reportId) {
+        VideoReport report = null;
+        try {
+            report = videoReportRepository.findById(reportId).orElse(null);
+        } catch (Exception ignore) {
+        }
+
+        String targetLang = report == null ? null : report.getVideoLanguageCode();
+        if (targetLang != null) {
+            targetLang = targetLang.trim();
+        }
+        boolean shouldTranslate = shouldTranslateVideoLanguage(targetLang);
+
         List<VideoReportItem> processingItems = videoReportItemRepository
                 .findByVideoReportIdAndStatus(reportId, "PROCESSING");
+
+        if (shouldTranslate) {
+            try {
+                List<VideoReportItem> needingTranslation = videoReportItemRepository.findDoneItemsNeedingTranslation(reportId);
+                if (needingTranslation != null && !needingTranslation.isEmpty()) {
+                    processingItems = new ArrayList<>(processingItems);
+                    java.util.HashSet<Long> seen = new java.util.HashSet<>();
+                    for (VideoReportItem i : processingItems) {
+                        if (i != null && i.getId() != null) {
+                            seen.add(i.getId());
+                        }
+                    }
+                    for (VideoReportItem i : needingTranslation) {
+                        if (i == null || i.getId() == null) {
+                            continue;
+                        }
+                        if (seen.add(i.getId())) {
+                            processingItems.add(i);
+                        }
+                    }
+                }
+            } catch (Exception ignore) {
+            }
+        }
 
         logger.info("[CHECK CLIPS] Checking {} PROCESSING items for report {}", processingItems.size(), reportId);
         
@@ -1848,12 +1884,12 @@ public class VideoReportService {
         if (v.isBlank()) {
             return false;
         }
-        if ("id".equalsIgnoreCase(v)) {
+
+        String key = v.toLowerCase(java.util.Locale.ROOT);
+        if (key.equals("en") || key.startsWith("en-") || key.equals("english") || key.contains("english")) {
             return false;
         }
-        if (v.equalsIgnoreCase("en") || v.toLowerCase(java.util.Locale.ROOT).startsWith("en-")) {
-            return false;
-        }
+
         return true;
     }
 

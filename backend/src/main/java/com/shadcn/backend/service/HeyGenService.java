@@ -1189,27 +1189,29 @@ public class HeyGenService {
         }
 
         String key = v.toLowerCase(java.util.Locale.ROOT);
-        if (key.equals("en")) {
+
+        if (key.equals("english") || key.contains("english") || key.equals("en") || key.startsWith("en-")) {
             return "English";
         }
-        if (key.equals("id") || key.equals("in")) {
+
+        if (key.equals("indonesian") || key.contains("indonesia") || key.contains("bahasa") || key.equals("id") || key.equals("in") || key.startsWith("id-") || key.startsWith("in-")) {
             return "Indonesian";
         }
-        if (key.equals("ja") || key.equals("jp")) {
+
+        if (key.equals("japanese") || key.equals("ja") || key.equals("jp") || key.startsWith("ja-") || key.startsWith("jp-")) {
             return "Japanese";
         }
-        if (key.equals("th")) {
+
+        if (key.equals("thai") || key.equals("th") || key.startsWith("th-")) {
             return "Thai";
         }
-        if (key.equals("vi")) {
+
+        if (key.equals("vietnamese") || key.equals("vi") || key.startsWith("vi-")) {
             return "Vietnamese";
         }
-        if (key.equals("km")) {
-            return "Khmer";
-        }
 
-        if (key.matches("^[a-z]{2}(-[a-z]{2})?$") && !key.equals("zh")) {
-            throw new IllegalArgumentException("Unsupported outputLanguage code: " + v);
+        if (key.equals("khmer") || key.equals("km") || key.startsWith("km-")) {
+            return "Khmer";
         }
 
         return v;
