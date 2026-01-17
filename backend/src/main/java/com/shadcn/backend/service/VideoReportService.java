@@ -769,8 +769,8 @@ public class VideoReportService {
                     avatarId,
                     null,
                     script,
-                    1280,
-                    720,
+                    1080,
+                    1920,
                     backgroundUrl != null && !backgroundUrl.isBlank(),
                     null,
                     null
@@ -838,8 +838,8 @@ public class VideoReportService {
                     avatarId,
                     null,
                     personalizeMessage(messageTemplate, item),
-                    1280,
-                    720,
+                    1080,
+                    1920,
                     backgroundUrl != null && !backgroundUrl.isBlank(),
                     null,
                     null

@@ -1013,8 +1013,8 @@ public class LearningSchedulerExecutionService {
                 avatarId,
             null,
                 script,
-                null,
-                null,
+            1080,
+            1920,
                 false,
                 null,
                 null

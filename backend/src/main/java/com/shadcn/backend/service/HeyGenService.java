@@ -720,12 +720,10 @@ public class HeyGenService {
             body.put("callback_url", callbackUrl.trim());
         }
         body.put("video_inputs", List.of(videoInput));
-        if (width != null && height != null && width > 0 && height > 0) {
-            Map<String, Object> dimension = new HashMap<>();
-            dimension.put("width", width);
-            dimension.put("height", height);
-            body.put("dimension", dimension);
-        }
+        Map<String, Object> dimension = new HashMap<>();
+        dimension.put("width", 1080);
+        dimension.put("height", 1920);
+        body.put("dimension", dimension);
 
         JsonNode root;
         try {

@@ -58,7 +58,7 @@ public class VideoBackgroundCompositeService {
     @Value("${app.video.audio.boost-enabled:true}")
     private boolean audioBoostEnabled;
 
-    @Value("${app.video.audio.filter:loudnorm=I=-9:TP=-1.0:LRA=7,alimiter=limit=0.99}")
+    @Value("${app.video.audio.filter:loudnorm=I=-6:TP=-1.0:LRA=6,alimiter=limit=0.99}")
     private String audioBoostFilter;
 
     @Value("${app.video.audio.bitrate:320k}")
