@@ -24,6 +24,18 @@ public class GeminiService {
     private final String apiKey;
     private final String model;
 
+        private static final Pattern MARKDOWN_BOLD = Pattern.compile("\\*\\*(.+?)\\*\\*");
+        private static final Pattern SPEAKER_PREFIX = Pattern.compile(
+            "^(?:PEMBICARA|NARATOR|NARRATOR|HOST|SPEAKER)\\s*:\\s*",
+            Pattern.CASE_INSENSITIVE
+        );
+        private static final Pattern BULLET_PREFIX = Pattern.compile("^\\s*(?:[-*]|\\d+\\.)\\s+");
+        private static final Pattern BRACKETED_LINE = Pattern.compile("^\\s*(?:\\([^)]*\\)|\\[[^\\]]*\\])\\s*$");
+        private static final Pattern INLINE_SFX = Pattern.compile(
+            "\\[(?:SFX|MUSIC|MUSIK|SOUND|AUDIO)[^\\]]*\\]",
+            Pattern.CASE_INSENSITIVE
+        );
+
     public GeminiService(
             ObjectMapper objectMapper,
             @Value("${gemini.api.key:}") String apiKey,
@@ -104,6 +116,80 @@ public class GeminiService {
                 ),
                 resolvedModel
         );
+    }
+
+    public com.shadcn.backend.dto.GeminiTranslateResponse translate(
+            String text,
+            String targetLanguageCode,
+            String targetLanguageName
+    ) {
+        if (apiKey == null || apiKey.trim().isEmpty()) {
+            throw new IllegalStateException("Missing gemini.api.key");
+        }
+
+        String safeText = text == null ? "" : text.trim();
+        if (safeText.isEmpty()) {
+            throw new IllegalArgumentException("Text is required");
+        }
+
+        String lang = (targetLanguageName == null || targetLanguageName.trim().isEmpty())
+                ? (targetLanguageCode == null ? "" : targetLanguageCode.trim())
+                : targetLanguageName.trim();
+        if (lang.isEmpty()) {
+            throw new IllegalArgumentException("Target language is required");
+        }
+
+        String prompt = String.join("\n",
+                "Anda adalah penerjemah profesional.",
+                "Terjemahkan teks di bawah ini ke bahasa: " + lang + ".",
+                "Aturan WAJIB:",
+                "- Output hanya hasil terjemahan (tanpa penjelasan, tanpa markdown, tanpa tanda kutip).",
+                "- Pertahankan placeholder persis sama, jangan diubah: token seperti :name, :linkvideo, atau pola :[A-Za-z0-9_]+.",
+                "- Pertahankan baris baru (newline) sebisa mungkin.",
+                "\nTEKS:",
+                safeText
+        );
+
+        Map<String, Object> body = new HashMap<>();
+        body.put("contents", new Object[]{
+                Map.of("parts", new Object[]{Map.of("text", prompt)})
+        });
+        body.put("generationConfig", Map.of(
+                "temperature", 0.2,
+                "topP", 0.9
+        ));
+
+        String resolvedModel = resolveModel(model);
+
+        String raw;
+        try {
+            raw = callGenerateContent(resolvedModel, body);
+        } catch (WebClientResponseException e) {
+            if (e.getStatusCode().value() == 404) {
+                String fallback = discoverGenerateContentModel();
+                if (fallback != null && !fallback.equalsIgnoreCase(resolvedModel)) {
+                    try {
+                        resolvedModel = fallback;
+                        raw = callGenerateContent(resolvedModel, body);
+                    } catch (WebClientResponseException retryEx) {
+                        throw toSafeException(retryEx);
+                    }
+                } else {
+                    throw toSafeException(e);
+                }
+            } else {
+                throw toSafeException(e);
+            }
+        } catch (Exception e) {
+            throw new IllegalStateException("Gemini request failed");
+        }
+
+        String out = raw == null ? "" : extractText(raw);
+        out = cleanTranslationOutput(out);
+        if (out.isEmpty()) {
+            return new com.shadcn.backend.dto.GeminiTranslateResponse("", resolvedModel);
+        }
+        return new com.shadcn.backend.dto.GeminiTranslateResponse(out, resolvedModel);
     }
 
     private String resolveModel(String configuredModel) {
@@ -214,18 +300,6 @@ public class GeminiService {
         );
     }
 
-        private static final Pattern MARKDOWN_BOLD = Pattern.compile("\\*\\*(.+?)\\*\\*");
-        private static final Pattern SPEAKER_PREFIX = Pattern.compile(
-            "^(?:PEMBICARA|NARATOR|NARRATOR|HOST|SPEAKER)\\s*:\\s*",
-            Pattern.CASE_INSENSITIVE
-        );
-        private static final Pattern BULLET_PREFIX = Pattern.compile("^\\s*(?:[-*]|\\d+\\.)\\s+");
-        private static final Pattern BRACKETED_LINE = Pattern.compile("^\\s*(?:\\([^)]*\\)|\\[[^\\]]*\\])\\s*$");
-        private static final Pattern INLINE_SFX = Pattern.compile(
-            "\\[(?:SFX|MUSIC|MUSIK|SOUND|AUDIO)[^\\]]*\\]",
-            Pattern.CASE_INSENSITIVE
-        );
-
     private String cleanGeneratedText(String text) {
         if (text == null) return "";
 
@@ -258,6 +332,28 @@ public class GeminiService {
         String joined = String.join("\n", kept);
         joined = joined.replaceAll("\\n{3,}", "\n\n").trim();
         return joined;
+    }
+
+    private String cleanTranslationOutput(String text) {
+        if (text == null) {
+            return "";
+        }
+
+        String t = text.replace("\r\n", "\n").replace("\r", "\n").trim();
+
+        // Remove code fences if model returns them.
+        if (t.startsWith("```")) {
+            t = t.replaceAll("(?s)^```[a-zA-Z0-9_-]*\\n", "");
+            t = t.replaceAll("(?s)\\n```$", "");
+            t = t.trim();
+        }
+
+        // Remove surrounding quotes if any.
+        if ((t.startsWith("\"") && t.endsWith("\"")) || (t.startsWith("'") && t.endsWith("'"))) {
+            t = t.substring(1, t.length() - 1).trim();
+        }
+
+        return t;
     }
 
     private String extractText(String rawJson) {

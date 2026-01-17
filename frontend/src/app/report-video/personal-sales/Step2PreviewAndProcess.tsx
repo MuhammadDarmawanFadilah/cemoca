@@ -65,6 +65,7 @@ interface Step2PreviewAndProcessProps {
   reportName: string;
   messageTemplate: string;
   waMessageTemplate: string;
+  videoLanguageCode: string;
   useBackground: boolean;
   backgroundName: string;
   setStep: (step: 1 | 2 | 3) => void;
@@ -90,6 +91,7 @@ export function Step2PreviewAndProcess({
   reportName,
   messageTemplate,
   waMessageTemplate,
+  videoLanguageCode,
   useBackground,
   backgroundName,
   setStep,
@@ -163,6 +165,7 @@ export function Step2PreviewAndProcess({
 
       const start = await videoReportAPI.startPreview({
         messageTemplate,
+        videoLanguageCode,
         useBackground,
         backgroundName,
         rowNumber: firstRow.rowNumber,
@@ -207,7 +210,7 @@ export function Step2PreviewAndProcess({
             const resultUrl = statusResp.resultUrl;
             const err = statusResp.error;
 
-            if (rawStatus === "done" && resultUrl) {
+            if ((rawStatus === "done" || rawStatus === "completed") && resultUrl) {
               setPreviewVideoUrl(resultUrl);
               setPreviewVideoDialogStatus("ready");
               setPreviewVideoDialogMessage("");
@@ -297,6 +300,7 @@ export function Step2PreviewAndProcess({
       const request: VideoReportRequest = {
         reportName,
         messageTemplate,
+        videoLanguageCode,
         waMessageTemplate,
         useBackground,
         backgroundName,

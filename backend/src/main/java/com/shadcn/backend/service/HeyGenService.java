@@ -2,6 +2,7 @@ package com.shadcn.backend.service;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.time.Duration;
@@ -25,7 +26,6 @@ import org.springframework.web.reactive.function.client.ExchangeStrategies;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
 import reactor.netty.http.client.HttpClient;
-import jakarta.annotation.PostConstruct;
 
 @Service
 public class HeyGenService {
@@ -52,23 +52,10 @@ public class HeyGenService {
 
     private final boolean includePublicAvatars;
     private final boolean includePremiumAvatars;
+    private final boolean useAvatarGroupsForOwned;
 
     private volatile CachedValue<List<Map<String, Object>>> avatarCacheOwned;
     private volatile CachedValue<List<Map<String, Object>>> avatarCacheAll;
-
-    @PostConstruct
-    void prewarmAvatarCaches() {
-        if (apiKey == null || apiKey.isBlank()) {
-            return;
-        }
-
-        CompletableFuture.runAsync(() -> {
-            try {
-                listAvatarsInternal(true);
-            } catch (Exception ignore) {
-            }
-        });
-    }
 
     public HeyGenService(
             @Value("${heygen.api.base-url:https://api.heygen.com}") String baseUrl,
@@ -77,6 +64,7 @@ public class HeyGenService {
             @Value("${heygen.api.avatar-cache-ttl-seconds:300}") int avatarCacheTtlSeconds,
             @Value("${heygen.api.avatars.include-public:false}") boolean includePublicAvatars,
             @Value("${heygen.api.avatars.include-premium:false}") boolean includePremiumAvatars,
+            @Value("${heygen.api.avatars.use-groups:true}") boolean useAvatarGroupsForOwned,
             ObjectMapper objectMapper
     ) {
         this.apiKey = apiKey == null ? "" : apiKey.trim();
@@ -89,6 +77,7 @@ public class HeyGenService {
 
         this.includePublicAvatars = includePublicAvatars;
         this.includePremiumAvatars = includePremiumAvatars;
+        this.useAvatarGroupsForOwned = useAvatarGroupsForOwned;
 
         String effectiveBaseUrl = baseUrl == null ? "" : baseUrl.trim();
         if (effectiveBaseUrl.isBlank()) {
@@ -130,6 +119,15 @@ public class HeyGenService {
         }
 
         this.webClient = builder.build();
+
+        if (!this.apiKey.isBlank()) {
+            CompletableFuture.runAsync(() -> {
+                try {
+                    listAvatarsInternal(false);
+                } catch (Exception ignore) {
+                }
+            });
+        }
     }
 
     private JsonNode parseJsonOrNull(String body) {
@@ -153,21 +151,6 @@ public class HeyGenService {
     }
 
     private List<Map<String, Object>> listAvatarsInternal(boolean includeAll) {
-        if (!includeAll) {
-            CachedValue<List<Map<String, Object>>> owned = avatarCacheOwned;
-            long now = System.currentTimeMillis();
-            if (owned != null && (now - owned.createdAtMs) < avatarCacheTtlMs && owned.value != null && !owned.value.isEmpty()) {
-                return deepCopyAvatarList(owned.value);
-            }
-
-            CachedValue<List<Map<String, Object>>> all = avatarCacheAll;
-            if (all != null && (now - all.createdAtMs) < avatarCacheTtlMs && all.value != null && !all.value.isEmpty()) {
-                List<Map<String, Object>> derived = filterOwnedAvatars(all.value);
-                avatarCacheOwned = new CachedValue<>(System.currentTimeMillis(), deepCopyAvatarList(derived));
-                return derived;
-            }
-        }
-
         CachedValue<List<Map<String, Object>>> cached = includeAll ? avatarCacheAll : avatarCacheOwned;
         long now = System.currentTimeMillis();
         if (cached != null && (now - cached.createdAtMs) < avatarCacheTtlMs && cached.value != null && !cached.value.isEmpty()) {
@@ -176,20 +159,109 @@ public class HeyGenService {
 
         long startNs = System.nanoTime();
         try {
-            String body = webClient.get()
-                .uri("/v2/avatars")
-                .retrieve()
-                .bodyToMono(String.class)
-                .timeout(heygenRequestTimeout)
-                .block(heygenRequestTimeout);
+            if (includeAll) {
+                List<Map<String, Object>> all = fetchAllAvatarsFromV2();
+                List<Map<String, Object>> owned = filterOwnedAvatars(all);
 
-            JsonNode root = parseJsonOrNull(body);
+                long cachedAtMs = System.currentTimeMillis();
+                avatarCacheAll = new CachedValue<>(cachedAtMs, deepCopyAvatarList(all));
+                avatarCacheOwned = new CachedValue<>(cachedAtMs, deepCopyAvatarList(owned));
 
-            List<Map<String, Object>> result = new ArrayList<>();
-
-            if (root == null || root.isNull() || root.isMissingNode()) {
-                return result;
+                long tookMs = (System.nanoTime() - startNs) / 1_000_000L;
+                logger.info("[HEYGEN] listAvatars: {} items (includeAll=true) in {} ms", all.size(), tookMs);
+                return all;
             }
+
+            List<Map<String, Object>> ownedFromGroups = null;
+            if (useAvatarGroupsForOwned) {
+                try {
+                    ownedFromGroups = fetchOwnedAvatarsFromGroups();
+                } catch (Exception e) {
+                    logger.warn("[HEYGEN] avatar groups listing failed, falling back to /v2/avatars: {}", e.toString());
+                }
+            }
+
+            if (ownedFromGroups != null && !ownedFromGroups.isEmpty()) {
+                long cachedAtMs = System.currentTimeMillis();
+                avatarCacheOwned = new CachedValue<>(cachedAtMs, deepCopyAvatarList(ownedFromGroups));
+
+                long tookMs = (System.nanoTime() - startNs) / 1_000_000L;
+                logger.info("[HEYGEN] listAvatars: {} items (owned via groups) in {} ms", ownedFromGroups.size(), tookMs);
+                return ownedFromGroups;
+            }
+
+            List<Map<String, Object>> owned = fetchOwnedAvatarsFromV2();
+            if (owned == null || owned.isEmpty()) {
+                List<Map<String, Object>> all = fetchAllAvatarsFromV2();
+                owned = filterOwnedAvatars(all);
+            }
+
+            long cachedAtMs = System.currentTimeMillis();
+            avatarCacheOwned = new CachedValue<>(cachedAtMs, deepCopyAvatarList(owned));
+
+            long tookMs = (System.nanoTime() - startNs) / 1_000_000L;
+            logger.info("[HEYGEN] listAvatars: {} items (owned via filter fallback) in {} ms", owned.size(), tookMs);
+            return owned;
+        } catch (Exception e) {
+            long tookMs = (System.nanoTime() - startNs) / 1_000_000L;
+            logger.error("[HEYGEN] listAvatars failed after {} ms: {}", tookMs, e.toString());
+
+            if (cached != null && cached.value != null && !cached.value.isEmpty()) {
+                return deepCopyAvatarList(cached.value);
+            }
+            throw e;
+        }
+    }
+
+    private List<Map<String, Object>> fetchOwnedAvatarsFromV2() {
+        String body = webClient.get()
+            .uri("/v2/avatars")
+            .retrieve()
+            .bodyToMono(String.class)
+            .timeout(heygenRequestTimeout)
+            .block(heygenRequestTimeout);
+
+        JsonNode root = parseJsonOrNull(body);
+        if (root == null || root.isNull() || root.isMissingNode()) {
+            return new ArrayList<>();
+        }
+
+        List<JsonNode> privateAvatars = new ArrayList<>();
+        privateAvatars.addAll(extractArray(root, "data", "private_avatars"));
+        privateAvatars.addAll(extractArray(root, "data", "privateAvatars"));
+        privateAvatars.addAll(extractArray(root, "data", "owned_avatars"));
+        privateAvatars.addAll(extractArray(root, "data", "my_avatars"));
+        privateAvatars.addAll(extractArray(root, "data", "avatars_private"));
+
+        if (privateAvatars.isEmpty()) {
+            return new ArrayList<>();
+        }
+
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (JsonNode a : privateAvatars) {
+            Map<String, Object> item = toAvatarOptionMap(a, "avatar");
+            if (item.get("avatar_id") != null) {
+                result.add(item);
+            }
+        }
+
+        return filterOwnedAvatars(result);
+    }
+
+    private List<Map<String, Object>> fetchAllAvatarsFromV2() {
+        String body = webClient.get()
+            .uri("/v2/avatars")
+            .retrieve()
+            .bodyToMono(String.class)
+            .timeout(heygenRequestTimeout)
+            .block(heygenRequestTimeout);
+
+        JsonNode root = parseJsonOrNull(body);
+        List<Map<String, Object>> result = new ArrayList<>();
+
+        if (root == null || root.isNull() || root.isMissingNode()) {
+            return result;
+        }
 
         JsonNode data = root.path("data");
         if (data.isMissingNode() || data.isNull()) {
@@ -233,24 +305,84 @@ public class HeyGenService {
             }
         }
 
-            List<Map<String, Object>> ownedList = filterOwnedAvatars(result);
-            long cachedAtMs = System.currentTimeMillis();
-            avatarCacheAll = new CachedValue<>(cachedAtMs, deepCopyAvatarList(result));
-            avatarCacheOwned = new CachedValue<>(cachedAtMs, deepCopyAvatarList(ownedList));
+        return result;
+    }
 
-            long tookMs = (System.nanoTime() - startNs) / 1_000_000L;
-            List<Map<String, Object>> out = includeAll ? result : ownedList;
-            logger.info("[HEYGEN] listAvatars: {} items (includeAll={}) in {} ms", out.size(), includeAll, tookMs);
-            return out;
-        } catch (Exception e) {
-            long tookMs = (System.nanoTime() - startNs) / 1_000_000L;
-            logger.error("[HEYGEN] listAvatars failed after {} ms: {}", tookMs, e.toString());
+    private List<Map<String, Object>> fetchOwnedAvatarsFromGroups() {
+        String groupBody = webClient.get()
+            .uri(uriBuilder -> uriBuilder
+                .path("/v2/avatar_group.list")
+                .queryParam("include_public", false)
+                .build())
+            .retrieve()
+            .bodyToMono(String.class)
+            .timeout(heygenRequestTimeout)
+            .block(heygenRequestTimeout);
 
-            if (cached != null && cached.value != null && !cached.value.isEmpty()) {
-                return deepCopyAvatarList(cached.value);
-            }
-            throw e;
+        JsonNode groupRoot = parseJsonOrNull(groupBody);
+
+        List<JsonNode> groups = extractArray(groupRoot, "data", "avatar_groups");
+        if (groups.isEmpty()) {
+            groups = extractArray(groupRoot, "data", "groups");
         }
+
+        List<String> groupIds = new ArrayList<>();
+        for (JsonNode g : groups) {
+            String gid = firstNonBlank(
+                textOrNull(g, "group_id"),
+                textOrNull(g, "avatar_group_id"),
+                textOrNull(g, "id")
+            );
+            if (gid != null && !gid.isBlank()) {
+                groupIds.add(gid);
+            }
+        }
+
+        if (groupIds.isEmpty()) {
+            return new ArrayList<>();
+        }
+
+        LinkedHashMap<String, Map<String, Object>> byId = new LinkedHashMap<>();
+        for (String groupId : groupIds) {
+            String body = webClient.get()
+                .uri("/v2/avatar_group/{group_id}/avatars", groupId)
+                .retrieve()
+                .bodyToMono(String.class)
+                .timeout(heygenRequestTimeout)
+                .block(heygenRequestTimeout);
+
+            JsonNode root = parseJsonOrNull(body);
+            if (root == null || root.isNull() || root.isMissingNode()) {
+                continue;
+            }
+
+            JsonNode data = root.path("data");
+            if (data.isMissingNode() || data.isNull()) {
+                data = root;
+            }
+
+            List<JsonNode> avatars;
+            if (data.isArray()) {
+                avatars = toList(data);
+            } else {
+                avatars = extractArray(root, "data", "avatars");
+                if (avatars.isEmpty()) {
+                    avatars = extractArray(root, "data", "data");
+                }
+            }
+
+            for (JsonNode a : avatars) {
+                Map<String, Object> item = toAvatarOptionMap(a, "avatar");
+                Object aid = item.get("avatar_id");
+                if (aid == null) {
+                    continue;
+                }
+                String key = String.valueOf(aid);
+                byId.putIfAbsent(key, item);
+            }
+        }
+
+        return new ArrayList<>(byId.values());
     }
 
     private List<Map<String, Object>> filterOwnedAvatars(List<Map<String, Object>> avatars) {
@@ -467,8 +599,19 @@ public class HeyGenService {
         );
         item.put("preview_url", previewUrl);
 
-        item.put("is_public", boolOrNull(a, "is_public"));
+        Boolean isPublic = boolOrNull(a, "is_public");
+        if (isPublic == null) {
+            isPublic = boolOrNull(a, "isPublic");
+        }
+        if (isPublic == null) {
+            isPublic = boolOrNull(a, "public");
+        }
+        item.put("is_public", isPublic);
+
         Boolean isPremium = boolOrNull(a, "is_premium");
+        if (isPremium == null) {
+            isPremium = boolOrNull(a, "isPremium");
+        }
         if (isPremium == null) {
             isPremium = boolOrNull(a, "premium");
         }
@@ -756,6 +899,68 @@ public class HeyGenService {
             result.put("error", textOrNull(data, "error"));
         }
 
+        return result;
+    }
+
+    public Map<String, Object> createVideoTranslation(String videoUrl, String outputLanguage) {
+        if (videoUrl == null || videoUrl.trim().isEmpty()) {
+            throw new IllegalArgumentException("videoUrl is required");
+        }
+        if (outputLanguage == null || outputLanguage.trim().isEmpty()) {
+            throw new IllegalArgumentException("outputLanguage is required");
+        }
+
+        Map<String, Object> body = new HashMap<>();
+        body.put("video_url", videoUrl.trim());
+        body.put("output_language", outputLanguage.trim());
+
+        JsonNode root = webClient.post()
+                .uri("/v2/video_translate")
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(body)
+                .retrieve()
+                .bodyToMono(String.class)
+                .map(this::parseJsonOrNull)
+                .timeout(heygenRequestTimeout)
+                .block(heygenRequestTimeout);
+
+        JsonNode data = root == null ? null : (root.hasNonNull("data") ? root.path("data") : root);
+
+        Map<String, Object> result = new HashMap<>();
+        if (data != null) {
+            String id = firstNonBlank(
+                    textOrNull(data, "video_translate_id"),
+                    textOrNull(data, "videoTranslateId"),
+                    textOrNull(data, "id")
+            );
+            result.put("video_translate_id", id);
+            result.put("status", textOrNull(data, "status"));
+            result.put("video_url", textOrNull(data, "video_url"));
+            result.put("error", textOrNull(data, "error"));
+        }
+        return result;
+    }
+
+    public Map<String, Object> getVideoTranslationStatus(String videoTranslateId) {
+        if (videoTranslateId == null || videoTranslateId.trim().isEmpty()) {
+            throw new IllegalArgumentException("videoTranslateId is required");
+        }
+
+        JsonNode root = webClient.get()
+                .uri("/v2/video_translate/{video_translate_id}", videoTranslateId.trim())
+                .retrieve()
+                .bodyToMono(String.class)
+                .map(this::parseJsonOrNull)
+                .timeout(heygenRequestTimeout)
+                .block(heygenRequestTimeout);
+
+        JsonNode data = root == null ? null : (root.hasNonNull("data") ? root.path("data") : root);
+        Map<String, Object> result = new HashMap<>();
+        if (data != null) {
+            result.put("status", textOrNull(data, "status"));
+            result.put("video_url", textOrNull(data, "video_url"));
+            result.put("error", textOrNull(data, "error"));
+        }
         return result;
     }
 

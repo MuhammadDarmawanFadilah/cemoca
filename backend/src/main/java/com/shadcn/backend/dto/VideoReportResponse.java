@@ -14,6 +14,7 @@ public class VideoReportResponse {
     private Long id;
     private String reportName;
     private String messageTemplate;
+    private String videoLanguageCode;
     private String waMessageTemplate;
     private Boolean useBackground;
     private String backgroundName;

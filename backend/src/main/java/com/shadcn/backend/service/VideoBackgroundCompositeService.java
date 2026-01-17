@@ -58,15 +58,23 @@ public class VideoBackgroundCompositeService {
     @Value("${app.video.audio.boost-enabled:true}")
     private boolean audioBoostEnabled;
 
-    @Value("${app.video.audio.filter:loudnorm=I=-10:TP=-1.0:LRA=7}")
+    @Value("${app.video.audio.filter:loudnorm=I=-9:TP=-1.0:LRA=7,alimiter=limit=0.99}")
     private String audioBoostFilter;
 
-    @Value("${app.video.audio.bitrate:192k}")
+    @Value("${app.video.audio.bitrate:320k}")
     private String audioBitrate;
 
     public VideoBackgroundCompositeService(ImageService imageService, VideoBackgroundService videoBackgroundService) {
         this.imageService = imageService;
         this.videoBackgroundService = videoBackgroundService;
+    }
+
+    public boolean isAudioBoostEnabled() {
+        return audioBoostEnabled;
+    }
+
+    public String getAudioBoostFilter() {
+        return audioBoostFilter;
     }
 
     public Optional<String> compositeToStoredVideoUrl(String inputVideoUrl, String backgroundName, String publicBaseUrl, String serverContextPath) {

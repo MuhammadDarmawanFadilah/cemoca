@@ -24,6 +24,8 @@ public class VideoReport {
 
     @Column(columnDefinition = "TEXT")
     private String messageTemplate;
+
+    private String videoLanguageCode;
     
     @Column(columnDefinition = "TEXT")
     private String waMessageTemplate; // WhatsApp message template with :linkvideo parameter

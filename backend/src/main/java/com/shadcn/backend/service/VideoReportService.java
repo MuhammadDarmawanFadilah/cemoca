@@ -260,6 +260,146 @@ public class VideoReportService {
         }
     }
 
+    private Path audioBoostMetaPath(String token) {
+        try {
+            return Paths.get(videoShareDir, token + ".mp4.audio-boost.meta");
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private String currentAudioBoostSignature() {
+        try {
+            if (videoBackgroundCompositeService == null) {
+                return null;
+            }
+            if (!videoBackgroundCompositeService.isAudioBoostEnabled()) {
+                return null;
+            }
+            String filter = videoBackgroundCompositeService.getAudioBoostFilter();
+            if (filter == null || filter.isBlank()) {
+                return null;
+            }
+            return filter.trim();
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private boolean isAudioBoostUpToDate(String token) {
+        String sig = currentAudioBoostSignature();
+        if (sig == null || sig.isBlank()) {
+            return true;
+        }
+
+        Path meta = audioBoostMetaPath(token);
+        if (meta == null) {
+            return false;
+        }
+
+        try {
+            if (!Files.exists(meta) || !Files.isReadable(meta)) {
+                return false;
+            }
+            String existing = Files.readString(meta);
+            return sig.equals(existing == null ? "" : existing.trim());
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private void writeAudioBoostMeta(String token) {
+        String sig = currentAudioBoostSignature();
+        if (sig == null || sig.isBlank()) {
+            return;
+        }
+
+        Path meta = audioBoostMetaPath(token);
+        if (meta == null) {
+            return;
+        }
+
+        try {
+            Files.createDirectories(meta.getParent());
+        } catch (Exception ignore) {
+        }
+
+        try {
+            Files.writeString(meta, sig);
+        } catch (Exception ignore) {
+        }
+    }
+
+    public void ensureCachedVideoAudioBoostedIfNeeded(String token, Path cachedMp4) {
+        if (token == null || token.isBlank()) {
+            return;
+        }
+        if (cachedMp4 == null) {
+            return;
+        }
+
+        String sig = currentAudioBoostSignature();
+        if (sig == null || sig.isBlank()) {
+            return;
+        }
+
+        try {
+            if (!Files.exists(cachedMp4) || !Files.isReadable(cachedMp4) || Files.size(cachedMp4) <= 0) {
+                return;
+            }
+        } catch (Exception e) {
+            return;
+        }
+
+        if (isAudioBoostUpToDate(token)) {
+            return;
+        }
+
+        Path lockPath = cacheLockPath(token);
+        if (!tryAcquireCacheLock(lockPath)) {
+            return;
+        }
+
+        try {
+            if (isAudioBoostUpToDate(token)) {
+                return;
+            }
+            if (videoBackgroundCompositeService == null) {
+                return;
+            }
+            if (!videoBackgroundCompositeService.isAudioBoostEnabled()) {
+                return;
+            }
+
+            Path boostedPath = Paths.get(videoShareDir, token + ".mp4.reboost." + UUID.randomUUID());
+            boolean boosted;
+            try {
+                boosted = videoBackgroundCompositeService.boostAudioToMp4(cachedMp4, boostedPath);
+            } catch (Exception ignore) {
+                boosted = false;
+            }
+
+            if (boosted) {
+                try {
+                    Files.move(boostedPath, cachedMp4, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+                    writeAudioBoostMeta(token);
+                } catch (Exception e) {
+                    try {
+                        Files.deleteIfExists(boostedPath);
+                    } catch (Exception ignore) {
+                    }
+                }
+            } else {
+                try {
+                    Files.deleteIfExists(boostedPath);
+                } catch (Exception ignore) {
+                }
+            }
+        } finally {
+            releaseCacheLock(lockPath);
+        }
+    }
+
     @PostConstruct
     void validateVideoStorageConfig() {
         if (videoGenerationParallelism <= 0) {
@@ -442,6 +582,7 @@ public class VideoReportService {
             waMessageTemplate = getDefaultWaMessageTemplate();
         }
         report.setWaMessageTemplate(waMessageTemplate);
+        report.setVideoLanguageCode(request.getVideoLanguageCode());
         report.setUseBackground(Boolean.TRUE.equals(request.getUseBackground()));
         report.setBackgroundName(request.getBackgroundName());
         report.setStatus("PENDING");
@@ -613,6 +754,7 @@ public class VideoReportService {
      */
     private VideoReportItem processVideoItem(VideoReportItem item, String backgroundUrl, String messageTemplate) {
         try {
+            item.setProviderTranslateId(null);
             String avatarId = resolveAvatarId(item.getAvatar());
             if (avatarId == null || avatarId.isBlank()) {
                 item.setStatus("FAILED");
@@ -680,6 +822,7 @@ public class VideoReportService {
             item.setVideoUrl(null);
             item.setErrorMessage(null);
             item.setProviderVideoId(null);
+            item.setProviderTranslateId(null);
             videoReportItemRepository.save(item);
 
             String avatarId = resolveAvatarId(item.getAvatar());
@@ -753,6 +896,7 @@ public class VideoReportService {
         item.setStatus("PENDING");
         item.setVideoUrl(null);
         item.setProviderVideoId(null);
+        item.setProviderTranslateId(null);
         item.setErrorMessage(null);
         videoReportItemRepository.save(item);
         
@@ -772,6 +916,7 @@ public class VideoReportService {
             item.setStatus("PENDING");
             item.setVideoUrl(null);
             item.setProviderVideoId(null);
+            item.setProviderTranslateId(null);
             item.setErrorMessage(null);
             videoReportItemRepository.save(item);
         }
@@ -1502,6 +1647,75 @@ public class VideoReportService {
         if (item.getProviderVideoId() == null) return;
         
         try {
+            String translateId = item.getProviderTranslateId();
+            if (translateId != null && !translateId.isBlank()) {
+                Map<String, Object> trStatus = heyGenService.getVideoTranslationStatus(translateId.trim());
+                String ts = trStatus.get("status") == null ? null : String.valueOf(trStatus.get("status"));
+                String tUrl = trStatus.get("video_url") == null ? null : String.valueOf(trStatus.get("video_url"));
+                String tErr = trStatus.get("error") == null ? null : String.valueOf(trStatus.get("error"));
+
+                if (ts != null && ts.trim().equalsIgnoreCase("completed")) {
+                    if (tUrl == null || tUrl.isBlank()) {
+                        item.setStatus("FAILED");
+                        item.setErrorMessage("HeyGen translate completed but video_url is empty");
+                        videoReportItemRepository.save(item);
+                        return;
+                    }
+
+                    VideoReport report = null;
+                    try {
+                        report = videoReportRepository.findById(reportId).orElse(null);
+                    } catch (Exception ignore) {
+                    }
+
+                    String finalUrl = tUrl;
+                    try {
+                        if (report != null && Boolean.TRUE.equals(report.getUseBackground())) {
+                            String bgName = report.getBackgroundName();
+                            boolean shouldComposite = bgName != null && !bgName.isBlank();
+                            if (shouldComposite) {
+                                java.util.Optional<String> composited = videoBackgroundCompositeService
+                                        .compositeToStoredVideoUrl(tUrl, bgName, backendUrl, serverContextPath);
+                                if (composited.isPresent() && !composited.get().isBlank()) {
+                                    finalUrl = composited.get();
+                                    logger.debug("[CHECK CLIPS] Item {} - composited background URL: {}", item.getId(), finalUrl);
+                                } else {
+                                    logger.warn("[CHECK CLIPS] Item {} - background composite skipped/failed; using original URL", item.getId());
+                                }
+                            }
+                        }
+                    } catch (Exception e) {
+                        logger.warn("[CHECK CLIPS] Item {} - background composite error: {}", item.getId(), e.getMessage());
+                    }
+
+                    item.setVideoUrl(finalUrl);
+                    item.setStatus("DONE");
+                    item.setVideoGeneratedAt(LocalDateTime.now());
+                    item.setErrorMessage(null);
+                    logger.info("[CHECK CLIPS] Item {} DONE with URL: {}", item.getId(), finalUrl);
+
+                    enqueueShareCacheDownloadIfNeeded(reportId, item.getId(), finalUrl);
+                    videoReportItemRepository.save(item);
+                    return;
+                }
+
+                if (ts != null && (ts.trim().equalsIgnoreCase("failed") || ts.trim().equalsIgnoreCase("error"))) {
+                    item.setStatus("FAILED");
+                    item.setErrorMessage(tErr == null || tErr.isBlank() ? "HeyGen translate failed" : tErr);
+                    videoReportItemRepository.save(item);
+                    return;
+                }
+
+                if (!"PROCESSING".equals(item.getStatus())) {
+                    item.setStatus("PROCESSING");
+                }
+                if (tErr != null && !tErr.isBlank()) {
+                    item.setErrorMessage(tErr);
+                }
+                videoReportItemRepository.save(item);
+                return;
+            }
+
             String videoId = item.getProviderVideoId();
             logger.debug("[CHECK CLIPS] Checking HeyGen status for video: {} (item: {})", videoId, item.getId());
 
@@ -1522,16 +1736,54 @@ public class VideoReportService {
                     item.setErrorMessage("HeyGen completed but video_url is empty");
                     logger.warn("[CHECK CLIPS] Item {} FAILED: {}", item.getId(), item.getErrorMessage());
                 } else {
-                    String finalUrl = videoUrl;
+                    VideoReport report = null;
+                    try {
+                        report = videoReportRepository.findById(reportId).orElse(null);
+                    } catch (Exception ignore) {
+                    }
+
+                    String sourceUrl = videoUrl;
+                    String targetLang = report == null ? null : report.getVideoLanguageCode();
+                    if (targetLang != null) {
+                        targetLang = targetLang.trim();
+                    }
+
+                    boolean shouldTranslate = targetLang != null
+                            && !targetLang.isBlank()
+                            && !"id".equalsIgnoreCase(targetLang);
+
+                    if (shouldTranslate) {
+                        if (translateId == null || translateId.isBlank()) {
+                            Map<String, Object> tr = heyGenService.createVideoTranslation(sourceUrl, targetLang);
+                            String newId = tr.get("video_translate_id") == null ? null : String.valueOf(tr.get("video_translate_id"));
+                            if (newId == null || newId.isBlank()) {
+                                item.setStatus("FAILED");
+                                item.setErrorMessage("HeyGen translate started but id is empty");
+                                videoReportItemRepository.save(item);
+                                return;
+                            }
+                            item.setProviderTranslateId(newId);
+                            item.setStatus("PROCESSING");
+                            item.setErrorMessage(null);
+                            videoReportItemRepository.save(item);
+                            return;
+                        }
+
+                        item.setStatus("PROCESSING");
+                        item.setErrorMessage(null);
+                        videoReportItemRepository.save(item);
+                        return;
+                    }
+
+                    String finalUrl = sourceUrl;
 
                     try {
-                        VideoReport report = videoReportRepository.findById(reportId).orElse(null);
                         if (report != null && Boolean.TRUE.equals(report.getUseBackground())) {
                             String bgName = report.getBackgroundName();
                             boolean shouldComposite = bgName != null && !bgName.isBlank();
                             if (shouldComposite) {
                                 java.util.Optional<String> composited = videoBackgroundCompositeService
-                                        .compositeToStoredVideoUrl(videoUrl, bgName, backendUrl, serverContextPath);
+                                        .compositeToStoredVideoUrl(sourceUrl, bgName, backendUrl, serverContextPath);
                                 if (composited.isPresent() && !composited.get().isBlank()) {
                                     finalUrl = composited.get();
                                     logger.debug("[CHECK CLIPS] Item {} - composited background URL: {}", item.getId(), finalUrl);
@@ -1730,6 +1982,10 @@ public class VideoReportService {
                 }
 
                 Files.move(tmpPath, targetPath, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+                try {
+                    writeAudioBoostMeta(token);
+                } catch (Exception ignore) {
+                }
                 logger.info("[VIDEO CACHE] Cached video token {} ({} bytes)", token, copied);
             } catch (Exception e) {
                 // best-effort tmp cleanup is handled per tmpPath scope
@@ -1879,6 +2135,10 @@ public class VideoReportService {
             }
 
             Files.move(tmpPath, targetPath, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+            try {
+                writeAudioBoostMeta(token);
+            } catch (Exception ignore) {
+            }
             logger.info("[VIDEO CACHE] Cached video token {} ({} bytes) [blocking]", token, copied);
             return true;
         } catch (Exception e) {
@@ -2267,6 +2527,7 @@ public class VideoReportService {
         response.setId(report.getId());
         response.setReportName(report.getReportName());
         response.setMessageTemplate(report.getMessageTemplate());
+        response.setVideoLanguageCode(report.getVideoLanguageCode());
         response.setWaMessageTemplate(report.getWaMessageTemplate());
         response.setUseBackground(Boolean.TRUE.equals(report.getUseBackground()));
         response.setBackgroundName(report.getBackgroundName());
@@ -2303,6 +2564,7 @@ public class VideoReportService {
         response.setId(report.getId());
         response.setReportName(report.getReportName());
         response.setMessageTemplate(report.getMessageTemplate());
+        response.setVideoLanguageCode(report.getVideoLanguageCode());
         response.setWaMessageTemplate(report.getWaMessageTemplate());
         response.setUseBackground(Boolean.TRUE.equals(report.getUseBackground()));
         response.setBackgroundName(report.getBackgroundName());

@@ -2871,6 +2871,7 @@ export interface VideoReportItemRequest {
 export interface VideoReportRequest {
   reportName: string;
   messageTemplate: string;
+  videoLanguageCode?: string;
   waMessageTemplate?: string;
   useBackground?: boolean;
   backgroundName?: string;
@@ -2928,6 +2929,7 @@ export interface VideoReportResponse {
 
 export interface VideoPreviewRequest {
   messageTemplate: string;
+  videoLanguageCode?: string;
   useBackground?: boolean;
   backgroundName?: string;
   rowNumber?: number;
@@ -2962,6 +2964,25 @@ export interface LanguageOption {
   name: string;
   isDefault: boolean;
 }
+
+export interface GeminiTranslateRequest {
+  text: string;
+  targetLanguageCode: string;
+  targetLanguageName?: string;
+}
+
+export interface GeminiTranslateResponse {
+  text: string;
+  model?: string;
+}
+
+export const geminiAPI = {
+  translate: (request: GeminiTranslateRequest): Promise<GeminiTranslateResponse> =>
+    apiCall<GeminiTranslateResponse>('/ai/gemini/translate', {
+      method: 'POST',
+      body: JSON.stringify(request),
+    }),
+};
 
 // Message Template API
 export const messageTemplateAPI = {

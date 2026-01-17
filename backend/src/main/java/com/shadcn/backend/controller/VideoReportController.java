@@ -82,14 +82,26 @@ public class VideoReportController {
     private static final class PreviewContext {
         private final boolean useBackground;
         private final String backgroundName;
+        private final String videoLanguageCode;
         private final long createdAtMs;
         private volatile String compositedUrl;
+        private volatile String translatedUrl;
+        private volatile String providerTranslateId;
 
-        private PreviewContext(boolean useBackground, String backgroundName) {
+        private PreviewContext(boolean useBackground, String backgroundName, String videoLanguageCode) {
             this.useBackground = useBackground;
             this.backgroundName = backgroundName;
+            this.videoLanguageCode = videoLanguageCode;
             this.createdAtMs = System.currentTimeMillis();
         }
+    }
+
+    private static boolean shouldTranslateVideoLanguage(String videoLanguageCode) {
+        if (videoLanguageCode == null) {
+            return false;
+        }
+        String v = videoLanguageCode.trim();
+        return !v.isBlank() && !"id".equalsIgnoreCase(v);
     }
 
     private final VideoReportService videoReportService;
@@ -176,6 +188,7 @@ public class VideoReportController {
             String name = request.getName() == null ? "" : request.getName().trim();
             String avatar = request.getAvatar() == null ? "" : request.getAvatar().trim();
             String messageTemplate = request.getMessageTemplate() == null ? "" : request.getMessageTemplate();
+            String videoLanguageCode = request.getVideoLanguageCode() == null ? null : request.getVideoLanguageCode().trim();
 
             if (name.isBlank()) {
                 return ResponseEntity.badRequest().body(new VideoPreviewResponse(false, null, null, null, null, "Nama wajib diisi"));
@@ -192,6 +205,7 @@ public class VideoReportController {
                 VideoReportRequest temp = new VideoReportRequest();
                 temp.setReportName("__PREVIEW__");
                 temp.setMessageTemplate(messageTemplate);
+                temp.setVideoLanguageCode(videoLanguageCode);
                 temp.setWaMessageTemplate(videoReportService.getDefaultWaMessageTemplate());
                 temp.setUseBackground(Boolean.TRUE.equals(request.getUseBackground()));
                 temp.setBackgroundName(request.getBackgroundName());
@@ -222,7 +236,9 @@ public class VideoReportController {
                 boolean useBg = Boolean.TRUE.equals(request.getUseBackground());
                 String bgName = request.getBackgroundName();
                 if (useBg && bgName != null && !bgName.isBlank()) {
-                    previewContexts.put(providerVideoId, new PreviewContext(true, bgName));
+                    previewContexts.put(providerVideoId, new PreviewContext(true, bgName, videoLanguageCode));
+                } else {
+                    previewContexts.put(providerVideoId, new PreviewContext(false, null, videoLanguageCode));
                 }
 
                 return ResponseEntity.ok(new VideoPreviewResponse(true, providerVideoId, "processing", "clip", null, null));
@@ -261,15 +277,55 @@ public class VideoReportController {
 
             if ("completed".equalsIgnoreCase(s) && resultUrl != null && !resultUrl.isBlank()) {
                 PreviewContext ctx = previewContexts.get(videoId.trim());
-                if (ctx != null && ctx.useBackground && ctx.backgroundName != null && !ctx.backgroundName.isBlank()) {
-                    if (ctx.compositedUrl != null && !ctx.compositedUrl.isBlank()) {
-                        resultUrl = ctx.compositedUrl;
-                    } else {
-                        java.util.Optional<String> composited = videoBackgroundCompositeService
-                                .compositeToStoredVideoUrl(resultUrl, ctx.backgroundName, backendUrl, serverContextPath);
-                        if (composited.isPresent() && !composited.get().isBlank()) {
-                            ctx.compositedUrl = composited.get();
+                if (ctx != null) {
+                    String targetLang = ctx.videoLanguageCode;
+                    if (targetLang != null) {
+                        targetLang = targetLang.trim();
+                    }
+
+                    if (shouldTranslateVideoLanguage(targetLang)) {
+                        if (ctx.translatedUrl != null && !ctx.translatedUrl.isBlank()) {
+                            resultUrl = ctx.translatedUrl;
+                        } else {
+                            if (ctx.providerTranslateId == null || ctx.providerTranslateId.isBlank()) {
+                                Map<String, Object> tr = heyGenService.createVideoTranslation(resultUrl, targetLang);
+                                String newId = tr.get("video_translate_id") == null ? null : String.valueOf(tr.get("video_translate_id"));
+                                if (newId == null || newId.isBlank()) {
+                                    return ResponseEntity.ok(new VideoPreviewResponse(true, videoId, "failed", type, null, "HeyGen translate started but id is empty"));
+                                }
+                                ctx.providerTranslateId = newId;
+                                return ResponseEntity.ok(new VideoPreviewResponse(true, videoId, "processing", type, null, null));
+                            }
+
+                            Map<String, Object> trStatus = heyGenService.getVideoTranslationStatus(ctx.providerTranslateId);
+                            String ts = trStatus.get("status") == null ? null : String.valueOf(trStatus.get("status"));
+                            String tUrl = trStatus.get("video_url") == null ? null : String.valueOf(trStatus.get("video_url"));
+                            String tErr = trStatus.get("error") == null ? null : String.valueOf(trStatus.get("error"));
+
+                            if (ts != null && ts.trim().equalsIgnoreCase("completed")) {
+                                if (tUrl == null || tUrl.isBlank()) {
+                                    return ResponseEntity.ok(new VideoPreviewResponse(true, videoId, "failed", type, null, "HeyGen translate completed but video_url is empty"));
+                                }
+                                ctx.translatedUrl = tUrl;
+                                resultUrl = tUrl;
+                            } else if (ts != null && (ts.trim().equalsIgnoreCase("failed") || ts.trim().equalsIgnoreCase("error"))) {
+                                return ResponseEntity.ok(new VideoPreviewResponse(true, videoId, "failed", type, null, tErr == null || tErr.isBlank() ? "HeyGen translate failed" : tErr));
+                            } else {
+                                return ResponseEntity.ok(new VideoPreviewResponse(true, videoId, "processing", type, null, tErr));
+                            }
+                        }
+                    }
+
+                    if (ctx.useBackground && ctx.backgroundName != null && !ctx.backgroundName.isBlank()) {
+                        if (ctx.compositedUrl != null && !ctx.compositedUrl.isBlank()) {
                             resultUrl = ctx.compositedUrl;
+                        } else {
+                            java.util.Optional<String> composited = videoBackgroundCompositeService
+                                    .compositeToStoredVideoUrl(resultUrl, ctx.backgroundName, backendUrl, serverContextPath);
+                            if (composited.isPresent() && !composited.get().isBlank()) {
+                                ctx.compositedUrl = composited.get();
+                                resultUrl = ctx.compositedUrl;
+                            }
                         }
                     }
                 }
@@ -1128,6 +1184,11 @@ public class VideoReportController {
             if (!Files.exists(filePath) || !Files.isReadable(filePath)) {
                 redirectToSource(response, sourceUrl);
                 return;
+            }
+
+            try {
+                videoReportService.ensureCachedVideoAudioBoostedIfNeeded(token, filePath);
+            } catch (Exception ignore) {
             }
 
             long fileSize = Files.size(filePath);

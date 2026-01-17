@@ -35,7 +35,7 @@ import {
   Globe,
 } from "lucide-react";
 import { toast } from "sonner";
-import { VideoAvatarOption, messageTemplateAPI, LanguageOption } from "@/lib/api";
+import { VideoAvatarOption, messageTemplateAPI, LanguageOption, geminiAPI } from "@/lib/api";
 import { config } from "@/lib/config";
 import { AVATARS_PER_PAGE } from "./types";
 import { useLanguage } from "@/contexts/LanguageContext";
@@ -47,6 +47,8 @@ interface Step1InputDataProps {
   setMessageTemplate: (value: string) => void;
   waMessageTemplate: string;
   setWaMessageTemplate: (value: string) => void;
+  videoLanguageCode: string;
+  setVideoLanguageCode: (value: string) => void;
   selectedFile: File | null;
   handleFileChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
   presenters: VideoAvatarOption[];
@@ -72,6 +74,8 @@ export function Step1InputData({
   setMessageTemplate,
   waMessageTemplate,
   setWaMessageTemplate,
+  videoLanguageCode,
+  setVideoLanguageCode,
   selectedFile,
   handleFileChange,
   presenters,
@@ -92,9 +96,10 @@ export function Step1InputData({
   const { t } = useLanguage();
   const [videoLanguages, setVideoLanguages] = useState<LanguageOption[]>([]);
   const [waLanguages, setWaLanguages] = useState<LanguageOption[]>([]);
-  const [selectedVideoLang, setSelectedVideoLang] = useState<string>("en");
+  const [selectedVideoLang, setSelectedVideoLang] = useState<string>(videoLanguageCode || "en");
   const [selectedWaLang, setSelectedWaLang] = useState<string>("en");
   const [loadingLang, setLoadingLang] = useState(false);
+  const [translatingWa, setTranslatingWa] = useState(false);
 
   useEffect(() => {
     loadLanguages();
@@ -111,6 +116,7 @@ export function Step1InputData({
       const defaultVideoLang = langs.video.find(l => l.isDefault)?.code || "en";
       const defaultWaLang = langs.whatsapp.find(l => l.isDefault)?.code || "en";
       setSelectedVideoLang(defaultVideoLang);
+      setVideoLanguageCode(defaultVideoLang);
       setSelectedWaLang(defaultWaLang);
       
       // Load default templates based on actual default language
@@ -141,8 +147,7 @@ export function Step1InputData({
   const handleVideoLanguageChange = async (langCode: string) => {
     try {
       setSelectedVideoLang(langCode);
-      const template = await messageTemplateAPI.getTemplate("VIDEO", langCode);
-      setMessageTemplate(template.template);
+      setVideoLanguageCode(langCode);
     } catch (error) {
       toast.error(t("reportVideo.failedLoadTemplate"));
     }
@@ -151,10 +156,25 @@ export function Step1InputData({
   const handleWaLanguageChange = async (langCode: string) => {
     try {
       setSelectedWaLang(langCode);
-      const template = await messageTemplateAPI.getTemplate("WHATSAPP", langCode);
-      setWaMessageTemplate(template.template);
+      const langName = waLanguages.find(l => l.code === langCode)?.name;
+      const text = (waMessageTemplate || "").trim();
+      if (!text) {
+        const template = await messageTemplateAPI.getTemplate("WHATSAPP", langCode);
+        setWaMessageTemplate(template.template);
+        return;
+      }
+
+      setTranslatingWa(true);
+      const res = await geminiAPI.translate({
+        text,
+        targetLanguageCode: langCode,
+        targetLanguageName: langName,
+      });
+      setWaMessageTemplate(res.text);
     } catch (error) {
       toast.error(t("reportVideo.failedLoadTemplate"));
+    } finally {
+      setTranslatingWa(false);
     }
   };
 
@@ -348,7 +368,7 @@ export function Step1InputData({
           <TabsContent value="whatsapp" className="mt-3 space-y-2">
             <div className="flex items-center gap-2">
               <Globe className="h-3.5 w-3.5 text-slate-400" />
-              <Select value={selectedWaLang} onValueChange={handleWaLanguageChange} disabled={loadingLang}>
+              <Select value={selectedWaLang} onValueChange={handleWaLanguageChange} disabled={loadingLang || translatingWa}>
                 <SelectTrigger className="h-8 text-xs w-[180px]">
                   <SelectValue placeholder={t("reportVideo.chooseLanguage")} />
                 </SelectTrigger>

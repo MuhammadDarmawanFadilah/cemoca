@@ -38,6 +38,7 @@ export default function PersonalSalesPage() {
   const [reportName, setReportName] = useState("Personal Notification");
   const [messageTemplate, setMessageTemplate] = useState("");
   const [waMessageTemplate, setWaMessageTemplate] = useState("");
+  const [videoLanguageCode, setVideoLanguageCode] = useState<string>("en");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [presenters, setPresenters] = useState<VideoAvatarOption[]>([]);
   const [loadingPresenters, setLoadingPresenters] = useState(false);
@@ -208,6 +209,8 @@ export default function PersonalSalesPage() {
                 setMessageTemplate={setMessageTemplate}
                 waMessageTemplate={waMessageTemplate}
                 setWaMessageTemplate={setWaMessageTemplate}
+                videoLanguageCode={videoLanguageCode}
+                setVideoLanguageCode={setVideoLanguageCode}
                 selectedFile={selectedFile}
                 handleFileChange={handleFileChange}
                 presenters={presenters}
@@ -246,6 +249,7 @@ export default function PersonalSalesPage() {
                 reportName={reportName}
                 messageTemplate={messageTemplate}
                 waMessageTemplate={waMessageTemplate}
+                videoLanguageCode={videoLanguageCode}
                 useBackground={useBackground}
                 backgroundName={backgroundName}
                 setStep={setStep}

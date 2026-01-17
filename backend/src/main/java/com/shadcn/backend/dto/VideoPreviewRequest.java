@@ -9,6 +9,7 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 public class VideoPreviewRequest {
     private String messageTemplate;
+    private String videoLanguageCode;
     private Boolean useBackground;
     private String backgroundName;
 

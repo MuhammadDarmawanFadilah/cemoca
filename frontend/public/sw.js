@@ -1,11 +1,11 @@
 // Service Worker for CEMOCA PWA - Auto-generated
-// Generated at: 2026-01-15T14:19:41.544Z
-// Deployment ID: gat7or
+// Generated at: 2026-01-16T10:36:55.198Z
+// Deployment ID: oiakiz
 
 // Dynamic cache name with timestamp for development
 const VERSION = '0.1.0';
-const BUILD_TIME = 1768486781524;
-const DEPLOYMENT_ID = 'gat7or';
+const BUILD_TIME = 1768559815177;
+const DEPLOYMENT_ID = 'oiakiz';
 const isDev = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
 const CACHE_NAME = isDev ? `cemoca-system-dev-${BUILD_TIME}` : `cemoca-system-v${VERSION}-${DEPLOYMENT_ID}`;
 const OFFLINE_URL = '/offline';

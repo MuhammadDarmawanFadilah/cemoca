@@ -39,7 +39,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\deploy-frontend-local.ps1
 ```
 
 **Apa yang dilakukan**:
-- Download `.env.prod` dari server (untuk build yang sesuai production)
+- Pakai env production dari lokal (`frontend/.env.production` jika ada; jika tidak, gunakan `frontend/.env.prod` untuk build)
 - `pnpm install` + `pnpm run build` di lokal
 - Pack `.next` + `public` → upload ke server
 - Restart `cemoca-frontend` + reload nginx

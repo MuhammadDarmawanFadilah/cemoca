@@ -1,9 +1,16 @@
+param(
+  [string]$SshPassword
+)
+
 Set-StrictMode -Version Latest
+$ErrorActionPreference = "Stop"
 
 $hostName = "72.61.208.104"
 $userName = "root"
 $remoteFrontendDir = "/opt/cemoca/app/frontend"
-$remoteEnvProdPath = "/opt/cemoca/app/frontend/.env.prod"
+
+$ppkPath = Join-Path $PSScriptRoot "afan2.ppk"
+$useKeyAuth = Test-Path $ppkPath
 
 if (-not (Get-Command plink -ErrorAction SilentlyContinue)) {
   Write-Error "plink not found. Install PuTTY and ensure plink.exe is in PATH."
@@ -20,17 +27,54 @@ if (-not (Test-Path "c:\PROJEK\CEMOCAPPS\frontend")) {
   exit 1
 }
 
-$pw = Read-Host -Prompt "SSH Password"
+function Get-AuthArgs {
+  if ($useKeyAuth) {
+    return @("-i", $ppkPath)
+  }
 
-# Pull production env file for a build that matches server configuration
+  if ($SshPassword) {
+    return @("-pw", $SshPassword)
+  }
+
+  if ($env:SSH_PASSWORD) {
+    return @("-pw", $env:SSH_PASSWORD)
+  }
+
+  $securePw = Read-Host -Prompt "SSH Password" -AsSecureString
+  $bstr = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($securePw)
+  try {
+    $plainPw = [System.Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr)
+  }
+  finally {
+    [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr)
+  }
+
+  return @("-pw", $plainPw)
+}
+
+$authArgs = Get-AuthArgs
+$puttyBatchArgs = @("-batch")
+
+function Assert-LastExitCode([string]$message) {
+  if ($LASTEXITCODE -ne 0) {
+    throw $message
+  }
+}
+
 $localFrontendDir = "c:\PROJEK\CEMOCAPPS\frontend"
-$localEnvProd = Join-Path $localFrontendDir ".env.production"
+$localEnvProductionPath = Join-Path $localFrontendDir ".env.production"
+$localEnvProdPath = Join-Path $localFrontendDir ".env.prod"
+$createdEnvProductionTemp = $false
 
 try {
-  if (Test-Path $localEnvProd) { Remove-Item -Force $localEnvProd }
+  if (-not (Test-Path $localEnvProductionPath)) {
+    if (-not (Test-Path $localEnvProdPath)) {
+      throw "Missing local prod env. Expected either $localEnvProductionPath or $localEnvProdPath"
+    }
 
-  Write-Host "Downloading production .env.prod ..."
-  pscp -pw $pw ("$userName@$hostName:$remoteEnvProdPath") $localEnvProd | Out-String | Write-Host
+    Copy-Item -Force $localEnvProdPath $localEnvProductionPath
+    $createdEnvProductionTemp = $true
+  }
 
   Write-Host "Building frontend locally ..."
   Push-Location $localFrontendDir
@@ -38,41 +82,49 @@ try {
   $env:NODE_OPTIONS = "--max-old-space-size=4096"
 
   pnpm install
+  Assert-LastExitCode "pnpm install failed"
   pnpm run build
+  Assert-LastExitCode "pnpm build failed"
 
   $tarPath = "c:\PROJEK\CEMOCAPPS\frontend-build.tgz"
   if (Test-Path $tarPath) { Remove-Item -Force $tarPath }
 
   # Package only build output + public assets
   tar -czf $tarPath -C $localFrontendDir .next public
+  Assert-LastExitCode "Failed to create frontend build artifact"
   Pop-Location
 
   Write-Host "Uploading build artifact ..."
-  pscp -pw $pw $tarPath ("$userName@$hostName:$remoteFrontendDir/frontend-build.tgz") | Out-String | Write-Host
+  pscp @puttyBatchArgs @authArgs $tarPath ("${userName}@${hostName}:${remoteFrontendDir}/frontend-build.tgz") | Out-String | Write-Host
+  Assert-LastExitCode "Failed to upload frontend build artifact to server"
 
   Write-Host "Deploying on server (no server-side build) ..."
-  $remoteCmd = @(
-    "set -e",
-    "sudo systemctl stop cemoca-frontend || true",
-    "cd $remoteFrontendDir",
-    "rm -rf .next",
-    "tar -xzf frontend-build.tgz",
-    "rm -f frontend-build.tgz",
-    "sudo systemctl start cemoca-frontend",
-    "sudo systemctl is-active --quiet cemoca-frontend",
-    "for i in 1 2 3 4 5; do curl -fsS http://localhost:3008 >/dev/null && break; sleep 2; done",
-    "sudo nginx -t",
-    "sudo systemctl reload nginx",
-    "echo 'OK'"
-  ) -join "; "
+  $remoteCmd = (@'
+set -e;
+sudo systemctl stop cemoca-frontend || true;
+cd {0};
+rm -rf .next;
+tar -xzf frontend-build.tgz;
+rm -f frontend-build.tgz;
+sudo systemctl start cemoca-frontend;
+sudo systemctl is-active --quiet cemoca-frontend;
+ok=0; for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do if curl -fsS http://localhost:3008 >/dev/null; then ok=1; break; fi; sleep 3; done; if [ "$ok" -ne 1 ]; then echo 'Frontend healthcheck failed (localhost:3008)'; sudo systemctl status cemoca-frontend --no-pager || true; sudo journalctl -u cemoca-frontend -n 200 --no-pager || true; sudo ss -ltnp | grep -E ':3008|:3000' || true; exit 1; fi;
+sudo nginx -t;
+sudo systemctl reload nginx;
+echo 'OK'
+'@) -f $remoteFrontendDir
+  $remoteCmd = $remoteCmd -replace "`r", ""
 
-  echo y | plink -ssh "$userName@$hostName" -pw $pw $remoteCmd
+  plink @puttyBatchArgs -ssh "$userName@$hostName" @authArgs $remoteCmd
+  Assert-LastExitCode "Remote deploy command failed"
 
   Write-Host "Frontend deployed successfully."
 }
 finally {
   # Cleanup local secrets/artifacts
-  if (Test-Path $localEnvProd) { Remove-Item -Force $localEnvProd }
+  if ($createdEnvProductionTemp -and (Test-Path $localEnvProductionPath)) {
+    Remove-Item -Force $localEnvProductionPath
+  }
   $tarPath = "c:\PROJEK\CEMOCAPPS\frontend-build.tgz"
   if (Test-Path $tarPath) { Remove-Item -Force $tarPath }
 }

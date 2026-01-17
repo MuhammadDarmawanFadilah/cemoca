@@ -12,6 +12,7 @@ import java.util.List;
 public class VideoReportRequest {
     private String reportName;
     private String messageTemplate;
+    private String videoLanguageCode;
     private String waMessageTemplate; // WhatsApp message template with :linkvideo parameter
     private Boolean useBackground;
     private String backgroundName;

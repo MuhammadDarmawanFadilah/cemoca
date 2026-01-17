@@ -45,6 +45,10 @@ public class VideoReportItem {
 
     @Column(name = "did_clip_id")
     private String providerVideoId;
+
+    @Column(columnDefinition = "TEXT")
+    private String providerTranslateId;
+
     private String status; // PENDING, PROCESSING, DONE, FAILED
     
     @Column(columnDefinition = "TEXT")
