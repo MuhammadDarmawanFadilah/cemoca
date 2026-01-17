@@ -101,7 +101,17 @@ public class VideoReportController {
             return false;
         }
         String v = videoLanguageCode.trim();
-        return !v.isBlank() && !"id".equalsIgnoreCase(v);
+        if (v.isBlank()) {
+            return false;
+        }
+        if ("id".equalsIgnoreCase(v)) {
+            return false;
+        }
+        // If the script is already English, don't call the Video Translate API for English.
+        if (v.equalsIgnoreCase("en") || v.toLowerCase(java.util.Locale.ROOT).startsWith("en-")) {
+            return false;
+        }
+        return true;
     }
 
     private final VideoReportService videoReportService;

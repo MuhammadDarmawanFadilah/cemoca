@@ -1748,9 +1748,7 @@ public class VideoReportService {
                         targetLang = targetLang.trim();
                     }
 
-                    boolean shouldTranslate = targetLang != null
-                            && !targetLang.isBlank()
-                            && !"id".equalsIgnoreCase(targetLang);
+                        boolean shouldTranslate = shouldTranslateVideoLanguage(targetLang);
 
                     if (shouldTranslate) {
                         if (translateId == null || translateId.isBlank()) {
@@ -1838,6 +1836,23 @@ public class VideoReportService {
 
             logger.error("[CHECK CLIPS] Exception checking item {} (video: {}): {}", item.getId(), item.getProviderVideoId(), e.getMessage(), e);
         }
+    }
+
+    private static boolean shouldTranslateVideoLanguage(String videoLanguageCode) {
+        if (videoLanguageCode == null) {
+            return false;
+        }
+        String v = videoLanguageCode.trim();
+        if (v.isBlank()) {
+            return false;
+        }
+        if ("id".equalsIgnoreCase(v)) {
+            return false;
+        }
+        if (v.equalsIgnoreCase("en") || v.toLowerCase(java.util.Locale.ROOT).startsWith("en-")) {
+            return false;
+        }
+        return true;
     }
 
     private boolean isHttpsUrl(String url) {
