@@ -113,7 +113,7 @@ export default function VideoViewPage() {
           <button
             type="button"
             onClick={() => seekBySeconds(-10)}
-            className="inline-flex items-center gap-2 rounded-lg bg-white/10 px-3 py-2 text-sm text-white backdrop-blur hover:bg-white/20"
+            className="hidden sm:inline-flex items-center gap-2 rounded-lg bg-white/10 px-3 py-2 text-sm text-white backdrop-blur hover:bg-white/20"
             aria-label="Back 10 seconds"
           >
             <SkipBack className="h-4 w-4" />
@@ -122,18 +122,31 @@ export default function VideoViewPage() {
           <button
             type="button"
             onClick={() => seekBySeconds(10)}
-            className="inline-flex items-center gap-2 rounded-lg bg-white/10 px-3 py-2 text-sm text-white backdrop-blur hover:bg-white/20"
+            className="hidden sm:inline-flex items-center gap-2 rounded-lg bg-white/10 px-3 py-2 text-sm text-white backdrop-blur hover:bg-white/20"
             aria-label="Next 10 seconds"
           >
             <SkipForward className="h-4 w-4" />
             Next
           </button>
+
           <a
             href={downloadUrl}
             target="_blank"
             rel="noreferrer"
             download
-            className="inline-flex items-center gap-2 rounded-lg bg-white px-3 py-2 text-sm font-medium text-black hover:bg-gray-200"
+            className="inline-flex sm:hidden items-center justify-center rounded-lg bg-white p-2 text-black hover:bg-gray-200"
+            aria-label="Download video"
+            title="Download"
+          >
+            <Download className="h-4 w-4" />
+          </a>
+
+          <a
+            href={downloadUrl}
+            target="_blank"
+            rel="noreferrer"
+            download
+            className="hidden sm:inline-flex items-center gap-2 rounded-lg bg-white px-3 py-2 text-sm font-medium text-black hover:bg-gray-200"
             aria-label="Download video"
           >
             <Download className="h-4 w-4" />
