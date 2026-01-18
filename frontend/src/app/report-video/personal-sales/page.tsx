@@ -39,6 +39,8 @@ export default function PersonalSalesPage() {
   const [messageTemplate, setMessageTemplate] = useState("");
   const [waMessageTemplate, setWaMessageTemplate] = useState("");
   const [videoLanguageCode, setVideoLanguageCode] = useState<string>("en");
+  const [voiceSpeed, setVoiceSpeed] = useState<number>(1.0);
+  const [voicePitch, setVoicePitch] = useState<number>(0);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [presenters, setPresenters] = useState<VideoAvatarOption[]>([]);
   const [loadingPresenters, setLoadingPresenters] = useState(false);
@@ -211,6 +213,10 @@ export default function PersonalSalesPage() {
                 setWaMessageTemplate={setWaMessageTemplate}
                 videoLanguageCode={videoLanguageCode}
                 setVideoLanguageCode={setVideoLanguageCode}
+                voiceSpeed={voiceSpeed}
+                setVoiceSpeed={setVoiceSpeed}
+                voicePitch={voicePitch}
+                setVoicePitch={setVoicePitch}
                 selectedFile={selectedFile}
                 handleFileChange={handleFileChange}
                 presenters={presenters}
@@ -250,6 +256,8 @@ export default function PersonalSalesPage() {
                 messageTemplate={messageTemplate}
                 waMessageTemplate={waMessageTemplate}
                 videoLanguageCode={videoLanguageCode}
+                voiceSpeed={voiceSpeed}
+                voicePitch={voicePitch}
                 useBackground={useBackground}
                 backgroundName={backgroundName}
                 setStep={setStep}

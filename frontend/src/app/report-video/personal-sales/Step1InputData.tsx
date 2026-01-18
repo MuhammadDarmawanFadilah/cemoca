@@ -49,6 +49,10 @@ interface Step1InputDataProps {
   setWaMessageTemplate: (value: string) => void;
   videoLanguageCode: string;
   setVideoLanguageCode: (value: string) => void;
+  voiceSpeed: number;
+  setVoiceSpeed: (value: number) => void;
+  voicePitch: number;
+  setVoicePitch: (value: number) => void;
   selectedFile: File | null;
   handleFileChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
   presenters: VideoAvatarOption[];
@@ -76,6 +80,10 @@ export function Step1InputData({
   setWaMessageTemplate,
   videoLanguageCode,
   setVideoLanguageCode,
+  voiceSpeed,
+  setVoiceSpeed,
+  voicePitch,
+  setVoicePitch,
   selectedFile,
   handleFileChange,
   presenters,
@@ -189,6 +197,61 @@ export function Step1InputData({
       <div className="space-y-1.5">
         <Label className="text-xs font-medium text-slate-700 dark:text-slate-300">{t("reportVideo.reportName")}</Label>
         <Input value={reportName} onChange={e => setReportName(e.target.value)} placeholder="Personal Notification" className="h-9 text-sm" />
+      </div>
+
+      {/* Voice Control Settings */}
+      <div className="space-y-3 p-4 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50">
+        <Label className="text-xs font-medium text-slate-700 dark:text-slate-300">
+          Voice Settings
+        </Label>
+        
+        {/* Voice Speed */}
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <Label className="text-xs text-slate-600 dark:text-slate-400">Speed</Label>
+            <span className="text-xs font-mono text-slate-600 dark:text-slate-400">{voiceSpeed.toFixed(1)}x</span>
+          </div>
+          <input
+            type="range"
+            min="0.5"
+            max="2.0"
+            step="0.1"
+            value={voiceSpeed}
+            onChange={(e) => setVoiceSpeed(parseFloat(e.target.value))}
+            className="w-full h-2 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-blue-600"
+          />
+          <div className="flex justify-between text-[10px] text-slate-400">
+            <span>Slower (0.5x)</span>
+            <span>Normal (1.0x)</span>
+            <span>Faster (2.0x)</span>
+          </div>
+        </div>
+
+        {/* Voice Pitch */}
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <Label className="text-xs text-slate-600 dark:text-slate-400">Pitch</Label>
+            <span className="text-xs font-mono text-slate-600 dark:text-slate-400">{voicePitch > 0 ? '+' : ''}{voicePitch}</span>
+          </div>
+          <input
+            type="range"
+            min="-12"
+            max="12"
+            step="1"
+            value={voicePitch}
+            onChange={(e) => setVoicePitch(parseInt(e.target.value))}
+            className="w-full h-2 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-blue-600"
+          />
+          <div className="flex justify-between text-[10px] text-slate-400">
+            <span>Lower (-12)</span>
+            <span>Normal (0)</span>
+            <span>Higher (+12)</span>
+          </div>
+        </div>
+
+        <p className="text-[10px] text-slate-400 italic">
+          Adjust voice speed and pitch for more natural delivery. Default: 1.0x speed, 0 pitch.
+        </p>
       </div>
 
       {/* Background */}

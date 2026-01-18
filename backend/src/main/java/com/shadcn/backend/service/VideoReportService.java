@@ -711,6 +711,8 @@ public class VideoReportService {
         }
         report.setWaMessageTemplate(waMessageTemplate);
         report.setVideoLanguageCode(request.getVideoLanguageCode());
+        report.setVoiceSpeed(request.getVoiceSpeed());
+        report.setVoicePitch(request.getVoicePitch());
         report.setUseBackground(Boolean.TRUE.equals(request.getUseBackground()));
         report.setBackgroundName(request.getBackgroundName());
         report.setStatus("PENDING");
