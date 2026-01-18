@@ -713,6 +713,7 @@ public class VideoReportService {
         report.setVideoLanguageCode(request.getVideoLanguageCode());
         report.setVoiceSpeed(request.getVoiceSpeed());
         report.setVoicePitch(request.getVoicePitch());
+        report.setEnableCaption(request.getEnableCaption());
         report.setUseBackground(Boolean.TRUE.equals(request.getUseBackground()));
         report.setBackgroundName(request.getBackgroundName());
         report.setStatus("PENDING");
@@ -908,7 +909,8 @@ public class VideoReportService {
                     null,
                     null,
                     report != null ? report.getVoiceSpeed() : null,
-                    report != null ? report.getVoicePitch() : null
+                    report != null ? report.getVoicePitch() : null,
+                    report != null ? report.getEnableCaption() : null
             );
 
             String videoId = result.get("video_id") == null ? null : String.valueOf(result.get("video_id"));
@@ -979,7 +981,8 @@ public class VideoReportService {
                     null,
                     null,
                     report.getVoiceSpeed(),
-                    report.getVoicePitch()
+                    report.getVoicePitch(),
+                    report.getEnableCaption()
             );
 
             String videoId = result.get("video_id") == null ? null : String.valueOf(result.get("video_id"));

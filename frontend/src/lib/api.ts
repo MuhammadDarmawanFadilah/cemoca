@@ -2874,6 +2874,7 @@ export interface VideoReportRequest {
   videoLanguageCode?: string;
   voiceSpeed?: number;
   voicePitch?: number;
+  enableCaption?: boolean;
   waMessageTemplate?: string;
   useBackground?: boolean;
   backgroundName?: string;

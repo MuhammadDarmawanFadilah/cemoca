@@ -41,6 +41,7 @@ export default function PersonalSalesPage() {
   const [videoLanguageCode, setVideoLanguageCode] = useState<string>("en");
   const [voiceSpeed, setVoiceSpeed] = useState<number>(1.0);
   const [voicePitch, setVoicePitch] = useState<number>(0);
+  const [enableCaption, setEnableCaption] = useState<boolean>(true);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [presenters, setPresenters] = useState<VideoAvatarOption[]>([]);
   const [loadingPresenters, setLoadingPresenters] = useState(false);
@@ -217,6 +218,8 @@ export default function PersonalSalesPage() {
                 setVoiceSpeed={setVoiceSpeed}
                 voicePitch={voicePitch}
                 setVoicePitch={setVoicePitch}
+                enableCaption={enableCaption}
+                setEnableCaption={setEnableCaption}
                 selectedFile={selectedFile}
                 handleFileChange={handleFileChange}
                 presenters={presenters}
@@ -258,6 +261,7 @@ export default function PersonalSalesPage() {
                 videoLanguageCode={videoLanguageCode}
                 voiceSpeed={voiceSpeed}
                 voicePitch={voicePitch}
+                enableCaption={enableCaption}
                 useBackground={useBackground}
                 backgroundName={backgroundName}
                 setStep={setStep}

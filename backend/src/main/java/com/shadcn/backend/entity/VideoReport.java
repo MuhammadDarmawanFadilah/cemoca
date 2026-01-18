@@ -41,6 +41,7 @@ public class VideoReport {
     
     private Double voiceSpeed; // Voice speed control (0.5 - 1.5 recommended)
     private Double voicePitch; // Voice pitch control (-10 to 10 recommended)
+    private Boolean enableCaption; // Enable video captions/subtitles
     
     @Column(columnDefinition = "TEXT")
     private String waMessageTemplate; // WhatsApp message template with :linkvideo parameter

@@ -53,6 +53,8 @@ interface Step1InputDataProps {
   setVoiceSpeed: (value: number) => void;
   voicePitch: number;
   setVoicePitch: (value: number) => void;
+  enableCaption: boolean;
+  setEnableCaption: (value: boolean) => void;
   selectedFile: File | null;
   handleFileChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
   presenters: VideoAvatarOption[];
@@ -84,6 +86,8 @@ export function Step1InputData({
   setVoiceSpeed,
   voicePitch,
   setVoicePitch,
+  enableCaption,
+  setEnableCaption,
   selectedFile,
   handleFileChange,
   presenters,
@@ -252,6 +256,15 @@ export function Step1InputData({
         <p className="text-[10px] text-slate-400 italic">
           Adjust voice speed and pitch for more natural delivery. Default: 1.0x speed, 0 pitch.
         </p>
+      </div>
+
+      {/* Caption/Subtitle Toggle */}
+      <div className="flex items-center justify-between p-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50">
+        <div className="flex-1">
+          <Label className="text-xs font-medium text-slate-700 dark:text-slate-300">Enable Subtitles</Label>
+          <p className="text-[10px] text-slate-400 mt-0.5">Display text captions in the video</p>
+        </div>
+        <Switch checked={enableCaption} onCheckedChange={setEnableCaption} />
       </div>
 
       {/* Background */}

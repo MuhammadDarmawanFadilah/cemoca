@@ -68,6 +68,7 @@ interface Step2PreviewAndProcessProps {
   videoLanguageCode: string;
   voiceSpeed: number;
   voicePitch: number;
+  enableCaption: boolean;
   useBackground: boolean;
   backgroundName: string;
   setStep: (step: 1 | 2 | 3) => void;
@@ -96,6 +97,7 @@ export function Step2PreviewAndProcess({
   videoLanguageCode,
   voiceSpeed,
   voicePitch,
+  enableCaption,
   useBackground,
   backgroundName,
   setStep,
@@ -307,6 +309,7 @@ export function Step2PreviewAndProcess({
         videoLanguageCode,
         voiceSpeed,
         voicePitch,
+        enableCaption,
         waMessageTemplate,
         useBackground,
         backgroundName,
