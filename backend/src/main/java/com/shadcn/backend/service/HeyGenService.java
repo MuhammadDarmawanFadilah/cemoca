@@ -1248,12 +1248,16 @@ public class HeyGenService {
                     root == null ? null : textOrNull(root, "status"),
                     findTextRecursive(root, "status")
             );
-            String videoUrl = firstNonBlank(
+                String videoUrl = firstNonBlank(
                     textOrNull(data, "video_url"),
+                    textOrNull(data, "url"),
                     findTextRecursive(data, "video_url"),
+                    findTextRecursive(data, "url"),
                     root == null ? null : textOrNull(root, "video_url"),
-                    findTextRecursive(root, "video_url")
-            );
+                    root == null ? null : textOrNull(root, "url"),
+                    findTextRecursive(root, "video_url"),
+                    findTextRecursive(root, "url")
+                );
             String err = firstNonBlank(
                     textOrNull(data, "error"),
                     findTextRecursive(data, "error"),

@@ -1713,7 +1713,11 @@ public class VideoReportService {
                     }
                 }
 
-                if (ts != null && ts.trim().equalsIgnoreCase("completed")) {
+                if (ts != null && (
+                        ts.trim().equalsIgnoreCase("completed")
+                                || ts.trim().equalsIgnoreCase("success")
+                                || ts.trim().equalsIgnoreCase("succeeded")
+                )) {
                     if (tUrl == null || tUrl.isBlank()) {
                         item.setStatus("FAILED");
                         item.setErrorMessage("HeyGen translate completed but video_url is empty");
@@ -1752,7 +1756,11 @@ public class VideoReportService {
                     return;
                 }
 
-                if (ts != null && (ts.trim().equalsIgnoreCase("failed") || ts.trim().equalsIgnoreCase("error"))) {
+                if (ts != null && (
+                        ts.trim().equalsIgnoreCase("failed")
+                                || ts.trim().equalsIgnoreCase("error")
+                                || ts.trim().equalsIgnoreCase("failure")
+                )) {
                     item.setStatus("FAILED");
                     item.setErrorMessage(tErr == null || tErr.isBlank() ? "HeyGen translate failed" : tErr);
                     videoReportItemRepository.save(item);
