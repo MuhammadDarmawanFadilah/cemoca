@@ -1853,33 +1853,13 @@ public class VideoReportService {
                         return;
                     }
 
-                    String finalUrl = tUrl;
-                    try {
-                        if (report != null && Boolean.TRUE.equals(report.getUseBackground())) {
-                            String bgName = report.getBackgroundName();
-                            boolean shouldComposite = bgName != null && !bgName.isBlank();
-                            if (shouldComposite) {
-                                java.util.Optional<String> composited = videoBackgroundCompositeService
-                                        .compositeToStoredVideoUrl(tUrl, bgName, backendUrl, serverContextPath);
-                                if (composited.isPresent() && !composited.get().isBlank()) {
-                                    finalUrl = composited.get();
-                                    logger.debug("[CHECK CLIPS] Item {} - composited background URL: {}", item.getId(), finalUrl);
-                                } else {
-                                    logger.warn("[CHECK CLIPS] Item {} - background composite skipped/failed; using original URL", item.getId());
-                                }
-                            }
-                        }
-                    } catch (Exception e) {
-                        logger.warn("[CHECK CLIPS] Item {} - background composite error: {}", item.getId(), e.getMessage());
-                    }
-
-                    item.setVideoUrl(finalUrl);
+                    item.setVideoUrl(tUrl);
                     item.setStatus("DONE");
                     item.setVideoGeneratedAt(LocalDateTime.now());
                     item.setErrorMessage(null);
-                    logger.info("[CHECK CLIPS] Item {} DONE with URL: {}", item.getId(), finalUrl);
+                    logger.info("[CHECK CLIPS] Item {} DONE with translated URL: {}", item.getId(), tUrl);
 
-                    enqueueShareCacheDownloadIfNeeded(reportId, item.getId(), finalUrl);
+                    enqueueShareCacheDownloadIfNeeded(reportId, item.getId(), tUrl);
                     videoReportItemRepository.save(item);
                     return;
                 }
