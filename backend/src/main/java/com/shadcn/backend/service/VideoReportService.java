@@ -881,6 +881,9 @@ public class VideoReportService {
      * Process a single video item (called in parallel)
      */
     private VideoReportItem processVideoItem(VideoReportItem item, String backgroundUrl, String messageTemplate) {
+        Long reportId = item.getVideoReport() != null ? item.getVideoReport().getId() : null;
+        VideoReport report = reportId != null ? videoReportRepository.findById(reportId).orElse(null) : null;
+        
         try {
             item.setProviderTranslateId(null);
             String avatarId = resolveAvatarId(item.getAvatar());
@@ -902,8 +905,8 @@ public class VideoReportService {
                     backgroundUrl != null && !backgroundUrl.isBlank(),
                     null,
                     null,
-                    report.getVoiceSpeed(),
-                    report.getVoicePitch()
+                    report != null ? report.getVoiceSpeed() : null,
+                    report != null ? report.getVoicePitch() : null
             );
 
             String videoId = result.get("video_id") == null ? null : String.valueOf(result.get("video_id"));
