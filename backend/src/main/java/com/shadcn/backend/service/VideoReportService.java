@@ -1694,6 +1694,25 @@ public class VideoReportService {
                 String tUrl = trStatus.get("video_url") == null ? null : String.valueOf(trStatus.get("video_url"));
                 String tErr = trStatus.get("error") == null ? null : String.valueOf(trStatus.get("error"));
 
+                if ((ts == null || ts.isBlank()) && tErr != null && !tErr.isBlank()) {
+                    String low = tErr.toLowerCase(java.util.Locale.ROOT);
+                    boolean notFound = low.contains("not found") || low.contains("404") || low.contains("does not exist") || low.contains("invalid");
+                    if (notFound) {
+                        logger.warn("[CHECK CLIPS] Item {} - translate id invalid ({}), restarting translation", item.getId(), tErr);
+                        item.setProviderTranslateId(null);
+                        item.setErrorMessage(tErr);
+                        videoReportItemRepository.save(item);
+                        translateId = null;
+                    } else {
+                        if (!"PROCESSING".equals(item.getStatus())) {
+                            item.setStatus("PROCESSING");
+                        }
+                        item.setErrorMessage(tErr);
+                        videoReportItemRepository.save(item);
+                        return;
+                    }
+                }
+
                 if (ts != null && ts.trim().equalsIgnoreCase("completed")) {
                     if (tUrl == null || tUrl.isBlank()) {
                         item.setStatus("FAILED");
@@ -2380,6 +2399,11 @@ public class VideoReportService {
                 logger.info("[VIDEO STATUS] Report {} marked as COMPLETED. WA blast will be triggered automatically.", reportId);
             } else {
                 logger.warn("[VIDEO STATUS] Report {} marked as FAILED (failedCount={}). WA blast will not be triggered automatically.", reportId, failedCount);
+            }
+        } else if (processingCount > 0) {
+            if (!"PROCESSING".equals(report.getStatus())) {
+                report.setStatus("PROCESSING");
+                report.setCompletedAt(null);
             }
         }
         

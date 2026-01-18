@@ -1242,9 +1242,31 @@ public class HeyGenService {
         JsonNode data = root == null ? null : (root.hasNonNull("data") ? root.path("data") : root);
         Map<String, Object> result = new HashMap<>();
         if (data != null) {
-            result.put("status", textOrNull(data, "status"));
-            result.put("video_url", textOrNull(data, "video_url"));
-            result.put("error", textOrNull(data, "error"));
+            String status = firstNonBlank(
+                    textOrNull(data, "status"),
+                    findTextRecursive(data, "status"),
+                    root == null ? null : textOrNull(root, "status"),
+                    findTextRecursive(root, "status")
+            );
+            String videoUrl = firstNonBlank(
+                    textOrNull(data, "video_url"),
+                    findTextRecursive(data, "video_url"),
+                    root == null ? null : textOrNull(root, "video_url"),
+                    findTextRecursive(root, "video_url")
+            );
+            String err = firstNonBlank(
+                    textOrNull(data, "error"),
+                    findTextRecursive(data, "error"),
+                    root == null ? null : textOrNull(root, "error"),
+                    findTextRecursive(root, "error"),
+                    root == null ? null : textOrNull(root, "message"),
+                    findTextRecursive(root, "message"),
+                    root == null ? null : textOrNull(root, "msg")
+            );
+
+            result.put("status", status);
+            result.put("video_url", videoUrl);
+            result.put("error", err);
         }
         return result;
     }
