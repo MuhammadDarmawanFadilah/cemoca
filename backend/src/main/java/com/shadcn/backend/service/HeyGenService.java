@@ -912,6 +912,21 @@ public class HeyGenService {
             String title,
             String callbackUrl
     ) {
+        return generateAvatarVideo(avatarId, voiceId, inputText, width, height, greenScreenBackground, title, callbackUrl, null, null);
+    }
+
+    public Map<String, Object> generateAvatarVideo(
+            String avatarId,
+            String voiceId,
+            String inputText,
+            Integer width,
+            Integer height,
+            boolean greenScreenBackground,
+            String title,
+            String callbackUrl,
+            Double voiceSpeed,
+            Double voicePitch
+    ) {
         if (avatarId == null || avatarId.trim().isEmpty()) {
             throw new IllegalArgumentException("avatarId is required");
         }
@@ -940,6 +955,12 @@ public class HeyGenService {
         voice.put("input_text", trimmedText);
         if (effectiveVoiceId != null && !effectiveVoiceId.isBlank()) {
             voice.put("voice_id", effectiveVoiceId);
+        }
+        if (voiceSpeed != null && voiceSpeed > 0) {
+            voice.put("speed", voiceSpeed);
+        }
+        if (voicePitch != null) {
+            voice.put("pitch", voicePitch);
         }
 
         Map<String, Object> background = new HashMap<>();

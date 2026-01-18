@@ -39,6 +39,9 @@ public class VideoReport {
 
     private String videoLanguageCode;
     
+    private Double voiceSpeed; // Voice speed control (0.5 - 1.5 recommended)
+    private Double voicePitch; // Voice pitch control (-10 to 10 recommended)
+    
     @Column(columnDefinition = "TEXT")
     private String waMessageTemplate; // WhatsApp message template with :linkvideo parameter
 

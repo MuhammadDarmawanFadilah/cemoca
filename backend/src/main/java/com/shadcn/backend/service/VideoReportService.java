@@ -901,7 +901,9 @@ public class VideoReportService {
                     1280,
                     backgroundUrl != null && !backgroundUrl.isBlank(),
                     null,
-                    null
+                    null,
+                    report.getVoiceSpeed(),
+                    report.getVoicePitch()
             );
 
             String videoId = result.get("video_id") == null ? null : String.valueOf(result.get("video_id"));
@@ -970,7 +972,9 @@ public class VideoReportService {
                     1280,
                     backgroundUrl != null && !backgroundUrl.isBlank(),
                     null,
-                    null
+                    null,
+                    report.getVoiceSpeed(),
+                    report.getVoicePitch()
             );
 
             String videoId = result.get("video_id") == null ? null : String.valueOf(result.get("video_id"));
