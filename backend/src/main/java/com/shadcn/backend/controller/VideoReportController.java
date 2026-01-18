@@ -309,13 +309,21 @@ public class VideoReportController {
                             String tUrl = trStatus.get("video_url") == null ? null : String.valueOf(trStatus.get("video_url"));
                             String tErr = trStatus.get("error") == null ? null : String.valueOf(trStatus.get("error"));
 
-                            if (ts != null && ts.trim().equalsIgnoreCase("completed")) {
+                            if (ts != null && (
+                                    ts.trim().equalsIgnoreCase("completed")
+                                            || ts.trim().equalsIgnoreCase("success")
+                                            || ts.trim().equalsIgnoreCase("succeeded")
+                            )) {
                                 if (tUrl == null || tUrl.isBlank()) {
                                     return ResponseEntity.ok(new VideoPreviewResponse(true, videoId, "failed", type, null, "HeyGen translate completed but video_url is empty"));
                                 }
                                 ctx.translatedUrl = tUrl;
                                 resultUrl = tUrl;
-                            } else if (ts != null && (ts.trim().equalsIgnoreCase("failed") || ts.trim().equalsIgnoreCase("error"))) {
+                            } else if (ts != null && (
+                                    ts.trim().equalsIgnoreCase("failed")
+                                            || ts.trim().equalsIgnoreCase("error")
+                                            || ts.trim().equalsIgnoreCase("failure")
+                            )) {
                                 return ResponseEntity.ok(new VideoPreviewResponse(true, videoId, "failed", type, null, tErr == null || tErr.isBlank() ? "HeyGen translate failed" : tErr));
                             } else {
                                 return ResponseEntity.ok(new VideoPreviewResponse(true, videoId, "processing", type, null, tErr));
