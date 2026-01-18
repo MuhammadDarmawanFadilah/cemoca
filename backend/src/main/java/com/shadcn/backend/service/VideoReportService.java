@@ -268,6 +268,104 @@ public class VideoReportService {
         }
     }
 
+    private Path sourceUrlMetaPath(String token) {
+        try {
+            return Paths.get(videoShareDir, token + ".mp4.source-url.meta");
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private String normalizeSourceUrlForMeta(String url) {
+        if (url == null) {
+            return null;
+        }
+        String v = url.trim();
+        return v.isEmpty() ? null : v;
+    }
+
+    private boolean isCachedVideoForSourceUrl(String token, String sourceUrl) {
+        String expected = normalizeSourceUrlForMeta(sourceUrl);
+        if (expected == null) {
+            return true;
+        }
+
+        Path meta = sourceUrlMetaPath(token);
+        if (meta == null) {
+            return false;
+        }
+
+        try {
+            if (!Files.exists(meta) || !Files.isReadable(meta)) {
+                return false;
+            }
+            String existing = Files.readString(meta);
+            existing = existing == null ? null : existing.trim();
+            if (existing == null || existing.isEmpty()) {
+                return false;
+            }
+            return expected.equals(existing);
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private void writeCachedVideoSourceUrlMeta(String token, String sourceUrl) {
+        String v = normalizeSourceUrlForMeta(sourceUrl);
+        if (v == null) {
+            return;
+        }
+        Path meta = sourceUrlMetaPath(token);
+        if (meta == null) {
+            return;
+        }
+        try {
+            Files.createDirectories(meta.getParent());
+        } catch (Exception ignore) {
+        }
+        try {
+            Files.writeString(meta, v);
+        } catch (Exception ignore) {
+        }
+    }
+
+    public void invalidateCachedVideoByTokenIfAny(String token) {
+        if (token == null || token.isBlank()) {
+            return;
+        }
+        if (videoShareDir == null || videoShareDir.isBlank()) {
+            return;
+        }
+
+        try {
+            Files.deleteIfExists(Paths.get(videoShareDir, token + ".mp4"));
+        } catch (Exception ignore) {
+        }
+        try {
+            Files.deleteIfExists(Paths.get(videoShareDir, token + ".mp4.lock"));
+        } catch (Exception ignore) {
+        }
+        try {
+            Files.deleteIfExists(Paths.get(videoShareDir, token + ".mp4.audio-boost.meta"));
+        } catch (Exception ignore) {
+        }
+        try {
+            Files.deleteIfExists(Paths.get(videoShareDir, token + ".mp4.source-url.meta"));
+        } catch (Exception ignore) {
+        }
+    }
+
+    public void invalidateCachedVideoIfAny(Long reportId, Long itemId) {
+        if (reportId == null || itemId == null) {
+            return;
+        }
+        String token = VideoLinkEncryptor.encryptVideoLinkShort(reportId, itemId);
+        if (token == null || token.isBlank()) {
+            return;
+        }
+        invalidateCachedVideoByTokenIfAny(token);
+    }
+
     private String currentAudioBoostSignature() {
         try {
             if (videoBackgroundCompositeService == null) {
@@ -1943,8 +2041,12 @@ public class VideoReportService {
 
         try {
             if (Files.exists(targetPath) && Files.size(targetPath) > 0) {
-                videoCacheInFlight.remove(token);
-                return;
+                if (isCachedVideoForSourceUrl(token, sourceUrl)) {
+                    videoCacheInFlight.remove(token);
+                    return;
+                }
+                // cached file exists but was produced from a different sourceUrl (e.g. before translation/regeneration)
+                invalidateCachedVideoByTokenIfAny(token);
             }
         } catch (Exception ignore) {
         }
@@ -2045,6 +2147,10 @@ public class VideoReportService {
 
                 Files.move(tmpPath, targetPath, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
                 try {
+                    writeCachedVideoSourceUrlMeta(token, sourceUrl);
+                } catch (Exception ignore) {
+                }
+                try {
                     writeAudioBoostMeta(token);
                 } catch (Exception ignore) {
                 }
@@ -2092,7 +2198,10 @@ public class VideoReportService {
 
         try {
             if (Files.exists(targetPath) && Files.size(targetPath) > 0) {
-                return true;
+                if (isCachedVideoForSourceUrl(token, sourceUrl)) {
+                    return true;
+                }
+                invalidateCachedVideoByTokenIfAny(token);
             }
         } catch (Exception ignore) {
         }
@@ -2104,7 +2213,10 @@ public class VideoReportService {
 
         try {
             if (Files.exists(targetPath) && Files.size(targetPath) > 0) {
-                return true;
+                if (isCachedVideoForSourceUrl(token, sourceUrl)) {
+                    return true;
+                }
+                invalidateCachedVideoByTokenIfAny(token);
             }
         } catch (Exception ignore) {
         }
@@ -2197,6 +2309,10 @@ public class VideoReportService {
             }
 
             Files.move(tmpPath, targetPath, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+            try {
+                writeCachedVideoSourceUrlMeta(token, sourceUrl);
+            } catch (Exception ignore) {
+            }
             try {
                 writeAudioBoostMeta(token);
             } catch (Exception ignore) {

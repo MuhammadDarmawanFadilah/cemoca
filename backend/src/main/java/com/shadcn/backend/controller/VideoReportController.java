@@ -1178,6 +1178,47 @@ public class VideoReportController {
             }
 
             Path filePath = Paths.get(videoShareDir, token + ".mp4");
+
+            try {
+                if (Files.exists(filePath) && Files.isReadable(filePath) && Files.size(filePath) > 0) {
+                    Path meta = Paths.get(videoShareDir, token + ".mp4.source-url.meta");
+                    boolean metaMatches = false;
+                    if (Files.exists(meta) && Files.isReadable(meta)) {
+                        try {
+                            String existing = Files.readString(meta);
+                            existing = existing == null ? null : existing.trim();
+                            String expected = sourceUrl == null ? null : sourceUrl.trim();
+                            metaMatches = expected != null && !expected.isEmpty() && expected.equals(existing);
+                        } catch (Exception ignore) {
+                            metaMatches = false;
+                        }
+                    }
+
+                    if (!metaMatches) {
+                        boolean stale = true;
+                        try {
+                            if (item.getVideoGeneratedAt() != null) {
+                                java.nio.file.attribute.FileTime ft = Files.getLastModifiedTime(filePath);
+                                if (ft != null) {
+                                    java.time.LocalDateTime lm = java.time.LocalDateTime.ofInstant(ft.toInstant(), java.time.ZoneId.systemDefault());
+                                    stale = lm.isBefore(item.getVideoGeneratedAt().minusSeconds(30));
+                                }
+                            }
+                        } catch (Exception ignore) {
+                            stale = true;
+                        }
+
+                        if (stale) {
+                            try {
+                                videoReportService.invalidateCachedVideoByTokenIfAny(token);
+                            } catch (Exception ignore) {
+                            }
+                        }
+                    }
+                }
+            } catch (Exception ignore) {
+            }
+
             if (!Files.exists(filePath) || !Files.isReadable(filePath)) {
                 boolean cached;
                 try {
