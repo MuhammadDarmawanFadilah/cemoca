@@ -115,13 +115,19 @@ export function Step1InputData({
       // Set default language
       const defaultVideoLang = langs.video.find(l => l.isDefault)?.code || "en";
       const defaultWaLang = langs.whatsapp.find(l => l.isDefault)?.code || "en";
-      setSelectedVideoLang(defaultVideoLang);
-      setVideoLanguageCode(defaultVideoLang);
-      setSelectedWaLang(defaultWaLang);
+      const currentVideoLang = (videoLanguageCode || selectedVideoLang || "").trim();
+      const currentWaLang = (selectedWaLang || "").trim();
+
+      const effectiveVideoLang = langs.video.some(l => l.code === currentVideoLang) ? currentVideoLang : defaultVideoLang;
+      const effectiveWaLang = langs.whatsapp.some(l => l.code === currentWaLang) ? currentWaLang : defaultWaLang;
+
+      setSelectedVideoLang(effectiveVideoLang);
+      setVideoLanguageCode(effectiveVideoLang);
+      setSelectedWaLang(effectiveWaLang);
       
       // Load default templates based on actual default language
       try {
-        const videoTemplate = await messageTemplateAPI.getTemplate("VIDEO", defaultVideoLang);
+        const videoTemplate = await messageTemplateAPI.getTemplate("VIDEO", effectiveVideoLang);
         if (!messageTemplate || !messageTemplate.trim()) {
           setMessageTemplate(videoTemplate.template);
         }
@@ -130,7 +136,7 @@ export function Step1InputData({
       }
       
       try {
-        const waTemplate = await messageTemplateAPI.getTemplate("WHATSAPP", defaultWaLang);
+        const waTemplate = await messageTemplateAPI.getTemplate("WHATSAPP", effectiveWaLang);
         if (!waMessageTemplate || !waMessageTemplate.trim()) {
           setWaMessageTemplate(waTemplate.template);
         }

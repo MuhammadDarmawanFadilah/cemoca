@@ -1189,29 +1189,38 @@ public class HeyGenService {
         }
 
         String key = v.toLowerCase(java.util.Locale.ROOT);
+        String primary = key;
+        int dash = key.indexOf('-');
+        if (dash > 0) {
+            primary = key.substring(0, dash);
+        }
 
-        if (key.equals("english") || key.contains("english") || key.equals("en") || key.startsWith("en-")) {
+        if (key.equals("english") || key.contains("english") || primary.equals("en")) {
             return "English";
         }
 
-        if (key.equals("indonesian") || key.contains("indonesia") || key.contains("bahasa") || key.equals("id") || key.equals("in") || key.startsWith("id-") || key.startsWith("in-")) {
+        if (key.equals("indonesian") || key.contains("indonesia") || key.contains("bahasa") || primary.equals("id") || primary.equals("in")) {
             return "Indonesian";
         }
 
-        if (key.equals("japanese") || key.equals("ja") || key.equals("jp") || key.startsWith("ja-") || key.startsWith("jp-")) {
+        if (key.equals("japanese") || key.contains("japan") || key.contains("jepan") || primary.equals("ja") || primary.equals("jp")) {
             return "Japanese";
         }
 
-        if (key.equals("thai") || key.equals("th") || key.startsWith("th-")) {
+        if (key.equals("thai") || key.contains("thailand") || primary.equals("th")) {
             return "Thai";
         }
 
-        if (key.equals("vietnamese") || key.equals("vi") || key.startsWith("vi-")) {
+        if (key.equals("vietnamese") || key.contains("viet") || key.contains("vietname") || primary.equals("vi")) {
             return "Vietnamese";
         }
 
-        if (key.equals("khmer") || key.equals("km") || key.startsWith("km-")) {
+        if (key.equals("khmer") || key.contains("khmer") || key.contains("khamer") || primary.equals("km")) {
             return "Khmer";
+        }
+
+        if (key.equals("chinese") || key.contains("china") || key.contains("mandarin") || primary.equals("zh") || primary.equals("cn")) {
+            return "Chinese";
         }
 
         return v;
