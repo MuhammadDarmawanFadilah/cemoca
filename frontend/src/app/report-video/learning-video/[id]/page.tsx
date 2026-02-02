@@ -45,6 +45,7 @@ import {
   Loader2,
   Download,
   Send,
+  Edit,
 } from "lucide-react";
 import {
   videoReportAPI,
@@ -449,6 +450,10 @@ export default function ReportDetailPage({ params }: { params: Promise<{ id: str
             <Button size="sm" variant="outline" onClick={handleExportExcel} disabled={exporting} className="h-8 text-xs">
               {exporting ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Download className="h-3.5 w-3.5 mr-1.5" />}
               Export Excel
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => router.push(`/report-video/learning-video/${currentReport.id}/edit`)} className="h-8 text-xs">
+              <Edit className="h-3.5 w-3.5 mr-1.5" />
+              Edit
             </Button>
             <Button size="sm" variant="outline" onClick={backToHistory} className="h-8 text-xs">
               <ArrowLeft className="h-3.5 w-3.5 mr-1.5" /> {t("reportVideo.backToHistory")}

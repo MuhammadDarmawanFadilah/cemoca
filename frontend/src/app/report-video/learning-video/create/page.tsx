@@ -3,21 +3,26 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { ChevronRight, ArrowLeft } from "lucide-react";
+import {
+  ChevronRight,
+  ArrowLeft,
+} from "lucide-react";
 import {
   videoReportAPI,
   VideoAvatarOption,
   ExcelValidationResult,
   VideoReportResponse,
+  VideoReportRequest,
 } from "@/lib/api";
 import { toast } from "sonner";
-import { Step } from "../types";
 import { Step1BasicSettings } from "../Step1BasicSettings";
 import { Step2DataInput } from "../Step2DataInput";
 import { Step3PreviewAndProcess } from "../Step3PreviewAndProcess";
 import { useLanguage } from "@/contexts/LanguageContext";
 
-export default function NewLearningVideoPage() {
+type Step = 1 | 2 | 3;
+
+export default function CreateLearningVideoPage() {
   const { t } = useLanguage();
   const router = useRouter();
   const [step, setStep] = useState<Step>(1);
@@ -27,13 +32,10 @@ export default function NewLearningVideoPage() {
   const [reportName, setReportName] = useState("Learning Video Notification");
   const [learningVideoCode, setLearningVideoCode] = useState<string>("");
   const [learningVideoLanguage, setLearningVideoLanguage] = useState<string>("en");
-  const [messageTemplate, setMessageTemplate] = useState("");
-  const [waMessageTemplate, setWaMessageTemplate] = useState("");
   const [videoLanguageCode, setVideoLanguageCode] = useState<string>("en");
   const [voiceSpeed, setVoiceSpeed] = useState<number>(1.0);
   const [voicePitch, setVoicePitch] = useState<number>(0);
   const [enableCaption, setEnableCaption] = useState<boolean>(true);
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [presenters, setPresenters] = useState<VideoAvatarOption[]>([]);
   const [loadingPresenters, setLoadingPresenters] = useState(false);
   const [avatarPage, setAvatarPage] = useState(1);
@@ -46,13 +48,16 @@ export default function NewLearningVideoPage() {
   const [loadingBackgrounds, setLoadingBackgrounds] = useState(false);
 
   // Step 2
+  const [messageTemplate, setMessageTemplate] = useState("");
+  const [waMessageTemplate, setWaMessageTemplate] = useState("");
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [validationResult, setValidationResult] = useState<ExcelValidationResult | null>(null);
   const [validating, setValidating] = useState(false);
+
+  // Step 3
   const [previewPage, setPreviewPage] = useState(0);
   const [previewFilter, setPreviewFilter] = useState<"all" | "valid" | "error">("all");
   const [previewSearch, setPreviewSearch] = useState("");
-
-  // Report
   const [currentReport, setCurrentReport] = useState<VideoReportResponse | null>(null);
   const [generating, setGenerating] = useState(false);
 
@@ -69,15 +74,18 @@ export default function NewLearningVideoPage() {
         videoReportAPI.getPresenters(),
         videoReportAPI.getBackgrounds(),
       ]);
-      setMessageTemplate(templateRes.template);
       setWaMessageTemplate(templateRes.waTemplate || "Hello :name, here is your personal video: :linkvideo");
       setPresenters(presentersList);
       setBackgrounds(backgroundsList);
       if (!backgroundName && backgroundsList.length > 0) {
         setBackgroundName(backgroundsList[0]);
       }
-    } catch { toast.error(t("reportVideo.failedLoadData")); }
-    finally { setLoadingPresenters(false); setLoadingBackgrounds(false); }
+    } catch { 
+      toast.error(t("reportVideo.failedLoadData")); 
+    } finally { 
+      setLoadingPresenters(false); 
+      setLoadingBackgrounds(false); 
+    }
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -93,48 +101,57 @@ export default function NewLearningVideoPage() {
   };
 
   const validateAndProceed = async () => {
-    if (!selectedFile) { toast.error(t("reportVideo.selectExcelFile")); return; }
-    if (!reportName.trim()) { toast.error(t("reportVideo.enterReportName")); return; }
+    if (!selectedFile) { 
+      toast.error(t("reportVideo.selectExcelFile")); 
+      return; 
+    }
+    if (!reportName.trim()) { 
+      toast.error(t("reportVideo.enterReportName")); 
+      return; 
+    }
     try {
       setValidating(true);
       const result = await videoReportAPI.validateExcel(selectedFile);
       setValidationResult(result);
       setStep(3);
-    } catch { toast.error(t("reportVideo.failedValidate")); }
-    finally { setValidating(false); }
-  };
-
-  const backToHistory = () => {
-    router.push("/report-video/learning-video");
+    } catch { 
+      toast.error(t("reportVideo.failedValidate")); 
+    } finally { 
+      setValidating(false); 
+    }
   };
 
   const goToReportDetail = (reportId: number) => {
     router.push(`/report-video/learning-video/${reportId}`);
   };
 
+  const backToList = () => {
+    router.push("/report-video/learning-video");
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-slate-50 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950">
       {/* Header */}
-      <div className="sticky top-0 z-10 border-b border-slate-200/50 dark:border-slate-800/50 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4">
+      <div className="border-b border-slate-200/50 dark:border-slate-800/50 bg-white/80 dark:bg-slate-900/80 backdrop-blur-sm sticky top-0 z-10">
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 py-4">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-3">
               <Button 
                 variant="ghost" 
                 size="sm" 
-                onClick={backToHistory} 
-                className="h-9 px-3 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                onClick={backToList}
+                className="h-9 px-3"
               >
                 <ArrowLeft className="h-4 w-4 mr-2" />
-                <span className="hidden sm:inline">Back to List</span>
+                Back
               </Button>
-              <div className="h-8 w-px bg-slate-200 dark:bg-slate-800"></div>
+              <div className="h-8 w-px bg-slate-200 dark:bg-slate-700" />
               <div>
-                <h1 className="text-xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
+                <h1 className="text-lg font-semibold text-slate-900 dark:text-slate-100">
                   Create Learning Video Report
                 </h1>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                  Generate AI-powered video notifications from learning content
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Generate AI-powered video notifications
                 </p>
               </div>
             </div>
@@ -142,72 +159,53 @@ export default function NewLearningVideoPage() {
         </div>
       </div>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
+      <div className="max-w-5xl mx-auto px-4 sm:px-6 py-8">
         {/* Progress Steps */}
         <div className="mb-8">
-          <div className="flex items-center justify-center gap-4">
-            {/* Step 1 */}
-            <div className={`flex items-center ${step >= 1 ? "" : "opacity-40"}`}>
-              <div className={`relative flex items-center gap-3 px-6 py-3 rounded-xl transition-all duration-300 ${
-                step === 1 
-                  ? "bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-lg shadow-blue-500/30" 
-                  : step > 1 
-                    ? "bg-gradient-to-r from-emerald-500 to-emerald-600 text-white shadow-md" 
-                    : "bg-white dark:bg-slate-800 border-2 border-slate-200 dark:border-slate-700 text-slate-500"
-              }`}>
-                <div className={`flex items-center justify-center w-8 h-8 rounded-full font-semibold ${
-                  step === 1 ? "bg-white/20" : step > 1 ? "bg-white/20" : "bg-slate-100 dark:bg-slate-700"
+          <div className="flex items-center justify-center">
+            <div className="flex items-center gap-2">
+              {/* Step 1 */}
+              <div className={`flex items-center gap-2 ${step >= 1 ? "text-blue-600 dark:text-blue-400" : "text-slate-400"}`}>
+                <div className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-semibold transition-all ${
+                  step === 1 
+                    ? "bg-blue-600 text-white shadow-lg shadow-blue-600/30" 
+                    : step > 1 
+                    ? "bg-emerald-500 text-white" 
+                    : "bg-slate-200 dark:bg-slate-800 text-slate-400"
                 }`}>
                   {step > 1 ? "✓" : "1"}
                 </div>
-                <div className="hidden sm:block">
-                  <div className="text-xs font-medium opacity-90">Step 1</div>
-                  <div className="text-sm font-semibold">Basic Settings</div>
-                </div>
+                <span className="text-sm font-medium hidden sm:inline">Settings</span>
               </div>
-            </div>
 
-            <ChevronRight className={`h-5 w-5 ${step >= 2 ? "text-slate-400" : "text-slate-300"}`} />
+              <ChevronRight className="h-5 w-5 text-slate-300 mx-2" />
 
-            {/* Step 2 */}
-            <div className={`flex items-center ${step >= 2 ? "" : "opacity-40"}`}>
-              <div className={`relative flex items-center gap-3 px-6 py-3 rounded-xl transition-all duration-300 ${
-                step === 2 
-                  ? "bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-lg shadow-blue-500/30" 
-                  : step > 2 
-                    ? "bg-gradient-to-r from-emerald-500 to-emerald-600 text-white shadow-md" 
-                    : "bg-white dark:bg-slate-800 border-2 border-slate-200 dark:border-slate-700 text-slate-500"
-              }`}>
-                <div className={`flex items-center justify-center w-8 h-8 rounded-full font-semibold ${
-                  step === 2 ? "bg-white/20" : step > 2 ? "bg-white/20" : "bg-slate-100 dark:bg-slate-700"
+              {/* Step 2 */}
+              <div className={`flex items-center gap-2 ${step >= 2 ? "text-blue-600 dark:text-blue-400" : "text-slate-400"}`}>
+                <div className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-semibold transition-all ${
+                  step === 2 
+                    ? "bg-blue-600 text-white shadow-lg shadow-blue-600/30" 
+                    : step > 2 
+                    ? "bg-emerald-500 text-white" 
+                    : "bg-slate-200 dark:bg-slate-800 text-slate-400"
                 }`}>
                   {step > 2 ? "✓" : "2"}
                 </div>
-                <div className="hidden sm:block">
-                  <div className="text-xs font-medium opacity-90">Step 2</div>
-                  <div className="text-sm font-semibold">Data & Templates</div>
-                </div>
+                <span className="text-sm font-medium hidden sm:inline">Data</span>
               </div>
-            </div>
 
-            <ChevronRight className={`h-5 w-5 ${step >= 3 ? "text-slate-400" : "text-slate-300"}`} />
+              <ChevronRight className="h-5 w-5 text-slate-300 mx-2" />
 
-            {/* Step 3 */}
-            <div className={`flex items-center ${step >= 3 ? "" : "opacity-40"}`}>
-              <div className={`relative flex items-center gap-3 px-6 py-3 rounded-xl transition-all duration-300 ${
-                step === 3 
-                  ? "bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-lg shadow-blue-500/30" 
-                  : "bg-white dark:bg-slate-800 border-2 border-slate-200 dark:border-slate-700 text-slate-500"
-              }`}>
-                <div className={`flex items-center justify-center w-8 h-8 rounded-full font-semibold ${
-                  step === 3 ? "bg-white/20" : "bg-slate-100 dark:bg-slate-700"
+              {/* Step 3 */}
+              <div className={`flex items-center gap-2 ${step >= 3 ? "text-blue-600 dark:text-blue-400" : "text-slate-400"}`}>
+                <div className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-semibold transition-all ${
+                  step === 3 
+                    ? "bg-blue-600 text-white shadow-lg shadow-blue-600/30" 
+                    : "bg-slate-200 dark:bg-slate-800 text-slate-400"
                 }`}>
                   3
                 </div>
-                <div className="hidden sm:block">
-                  <div className="text-xs font-medium opacity-90">Step 3</div>
-                  <div className="text-sm font-semibold">Preview & Process</div>
-                </div>
+                <span className="text-sm font-medium hidden sm:inline">Process</span>
               </div>
             </div>
           </div>
@@ -215,7 +213,6 @@ export default function NewLearningVideoPage() {
 
         {/* Step Content */}
         <div className="space-y-6">
-          {/* Step 1 - Basic Settings */}
           {step === 1 && (
             <Step1BasicSettings
               reportName={reportName}
@@ -248,7 +245,6 @@ export default function NewLearningVideoPage() {
             />
           )}
 
-          {/* Step 2 - Data Input */}
           {step === 2 && (
             <Step2DataInput
               learningVideoCode={learningVideoCode}
@@ -267,7 +263,6 @@ export default function NewLearningVideoPage() {
             />
           )}
 
-          {/* Step 3 - Preview & Process */}
           {step === 3 && (
             <Step3PreviewAndProcess
               validationResult={validationResult}
@@ -293,7 +288,7 @@ export default function NewLearningVideoPage() {
               useBackground={useBackground}
               backgroundName={backgroundName}
               setStep={setStep}
-              backToHistory={backToHistory}
+              backToHistory={backToList}
               loadHistory={() => {}}
               goToReportDetail={goToReportDetail}
             />
