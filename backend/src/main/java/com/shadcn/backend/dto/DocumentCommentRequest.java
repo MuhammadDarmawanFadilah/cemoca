@@ -1,13 +1,12 @@
 package com.shadcn.backend.dto;
 
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import lombok.Data;
 
 @Data
 public class DocumentCommentRequest {
-      private Long dokumentId;
+  private Long dokumentId;
     
     @NotBlank(message = "Nama tidak boleh kosong")
     @Size(max = 100, message = "Nama maksimal 100 karakter")

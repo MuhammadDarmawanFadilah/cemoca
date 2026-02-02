@@ -67,7 +67,7 @@ public class DocumentFileController {
                         .body(resource);
             }
             return ResponseEntity.notFound().build();
-        } catch (Exception e) {
+        } catch (IOException | IllegalArgumentException e) {
             log.error("Error serving document file: {}", e.getMessage());
             return ResponseEntity.internalServerError().build();
         }
@@ -95,15 +95,11 @@ public class DocumentFileController {
         if (dot >= 0 && dot < filename.length() - 1) {
             ext = filename.substring(dot + 1).toLowerCase(Locale.ROOT);
         }
-        switch (ext) {
-            case "pdf":
-                return MediaType.APPLICATION_PDF_VALUE;
-            case "ppt":
-                return "application/vnd.ms-powerpoint";
-            case "pptx":
-                return "application/vnd.openxmlformats-officedocument.presentationml.presentation";
-            default:
-                return MediaType.APPLICATION_OCTET_STREAM_VALUE;
-        }
+        return switch (ext) {
+            case "pdf" -> MediaType.APPLICATION_PDF_VALUE;
+            case "ppt" -> "application/vnd.ms-powerpoint";
+            case "pptx" -> "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+            default -> MediaType.APPLICATION_OCTET_STREAM_VALUE;
+        };
     }
 }

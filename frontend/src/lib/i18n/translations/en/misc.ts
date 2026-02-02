@@ -63,14 +63,13 @@ export const time = {
 } as const;
 
 export const languages = {
-  en: "English",
   id: "Indonesian",
-  zh: "Chinese",
+  en: "English",
   ja: "Japanese",
-  ko: "Korean",
   th: "Thai",
   vi: "Vietnamese",
-  ms: "Malay",
-  tl: "Filipino",
+  km: "Khmer (Cambodia)",
+  zh: "Chinese (Mandarin)",
+  tl: "Filipino (Tagalog)",
   hi: "Hindi",
 } as const;

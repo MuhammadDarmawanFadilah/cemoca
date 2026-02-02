@@ -11,7 +11,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Optional;
 
 @Service
 @Transactional
@@ -167,15 +166,17 @@ public class MemberService {
     public List<Member> getMembersByWilayah(String provinsi, String kota, String kecamatan, String kelurahan) {
         if (kelurahan != null) {
             return memberRepository.findByKelurahan(kelurahan);
-        } else if (kecamatan != null) {
-            return memberRepository.findByKecamatan(kecamatan);
-        } else if (kota != null) {
-            return memberRepository.findByKota(kota);
-        } else if (provinsi != null) {
-            return memberRepository.findByProvinsi(provinsi);
-        } else {
-            return memberRepository.findAll();
         }
+        if (kecamatan != null) {
+            return memberRepository.findByKecamatan(kecamatan);
+        }
+        if (kota != null) {
+            return memberRepository.findByKota(kota);
+        }
+        if (provinsi != null) {
+            return memberRepository.findByProvinsi(provinsi);
+        }
+        return memberRepository.findAll();
     }
     
     private void validateMember(Member member) {

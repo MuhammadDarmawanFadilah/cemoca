@@ -2,7 +2,6 @@ package com.shadcn.backend.service;
 
 import com.lowagie.text.*;
 import com.lowagie.text.pdf.PdfWriter;
-import com.lowagie.text.pdf.BaseFont;
 import com.lowagie.text.pdf.PdfPCell;
 import com.lowagie.text.pdf.PdfPTable;
 import com.lowagie.text.pdf.draw.LineSeparator;
@@ -78,18 +77,22 @@ public class PdfGeneratorService {
             // Replace placeholders in template
             String personalizedContent = messageTemplate
                     .replace(":name", name)
-                    .replace(":date", LocalDate.now().format(DateTimeFormatter.ofPattern("d MMMM yyyy", new Locale("id", "ID"))));
+                    .replace(":date", LocalDate.now().format(DateTimeFormatter.ofPattern("d MMMM yyyy", Locale.of("id", "ID"))));
             
             // Create PDF document
             Document document = new Document(PageSize.A4, 50, 50, 50, 50);
-            PdfWriter.getInstance(document, new FileOutputStream(filePath.toFile()));
-            
-            document.open();
-            
-            // Add content
-            addDocumentContent(document, personalizedContent, name, allRecipients);
-            
-            document.close();
+            try (FileOutputStream fos = new FileOutputStream(filePath.toFile())) {
+                PdfWriter.getInstance(document, fos);
+                
+                document.open();
+                
+                // Add content
+                addDocumentContent(document, personalizedContent, name, allRecipients);
+            } finally {
+                if (document.isOpen()) {
+                    document.close();
+                }
+            }
             
             logger.info("[PDF GEN] Generated PDF for item {} at {}", itemId, filePath);
             
@@ -161,7 +164,7 @@ public class PdfGeneratorService {
         document.add(new Paragraph(" "));
         
         // Add date
-        String currentDate = LocalDate.now().format(DateTimeFormatter.ofPattern("d MMMM yyyy", new Locale("id", "ID")));
+        String currentDate = LocalDate.now().format(DateTimeFormatter.ofPattern("d MMMM yyyy", Locale.of("id", "ID")));
         Paragraph datePara = new Paragraph(currentDate, smallFont);
         datePara.setAlignment(Element.ALIGN_RIGHT);
         document.add(datePara);

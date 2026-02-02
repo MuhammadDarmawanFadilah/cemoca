@@ -90,13 +90,6 @@ public class LearningSchedulerExecutionService {
     @Value("${whatsapp.api.max-media-bytes}")
     private long wablasMaxMediaBytes;
 
-    @PostConstruct
-    private void validateWablasMaxMediaBytes() {
-        if (wablasMaxMediaBytes <= 0) {
-            throw new IllegalStateException("whatsapp.api.max-media-bytes must be > 0");
-        }
-    }
-
     @Transactional
     public LearningScheduleHistory executeConfig(LearningScheduleConfig config) {
         LearningScheduleHistory history = new LearningScheduleHistory();

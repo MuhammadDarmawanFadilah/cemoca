@@ -13,6 +13,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.time.Duration;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
@@ -220,7 +221,7 @@ public class VideoReportService {
 
         try {
             Files.createDirectories(lockPath.getParent());
-        } catch (Exception ignore) {
+        } catch (java.io.IOException ignore) {
         }
 
         try {
@@ -232,7 +233,7 @@ public class VideoReportService {
                         if (ft != null && ft.toMillis() < cutoffMs) {
                             Files.deleteIfExists(lockPath);
                         }
-                    } catch (Exception ignore) {
+                    } catch (java.io.IOException ignore) {
                     }
                 }
             }
@@ -240,12 +241,12 @@ public class VideoReportService {
             Files.createFile(lockPath);
             try {
                 Files.setLastModifiedTime(lockPath, java.nio.file.attribute.FileTime.fromMillis(System.currentTimeMillis()));
-            } catch (Exception ignore) {
+            } catch (java.io.IOException ignore) {
             }
             return true;
         } catch (java.nio.file.FileAlreadyExistsException ignore) {
             return false;
-        } catch (Exception e) {
+        } catch (java.io.IOException e) {
             return false;
         }
     }
@@ -317,12 +318,12 @@ public class VideoReportService {
 
         try {
             Files.createDirectories(meta.getParent());
-        } catch (Exception ignore) {
+        } catch (java.io.IOException ignore) {
         }
 
         try {
             Files.writeString(meta, sourceUrl.trim());
-        } catch (Exception ignore) {
+        } catch (java.io.IOException ignore) {
         }
     }
 
@@ -336,15 +337,15 @@ public class VideoReportService {
 
         try {
             Files.deleteIfExists(Paths.get(videoShareDir, token + ".mp4"));
-        } catch (Exception ignore) {
+        } catch (java.io.IOException ignore) {
         }
         try {
             Files.deleteIfExists(Paths.get(videoShareDir, token + ".mp4.lock"));
-        } catch (Exception ignore) {
+        } catch (java.io.IOException ignore) {
         }
         try {
             Files.deleteIfExists(Paths.get(videoShareDir, token + ".mp4.audio-boost.meta"));
-        } catch (Exception ignore) {
+        } catch (java.io.IOException ignore) {
         }
         try {
             Files.deleteIfExists(Paths.get(videoShareDir, token + ".mp4.source-url.meta"));
@@ -503,7 +504,7 @@ public class VideoReportService {
             boolean boosted;
             try {
                 boosted = videoBackgroundCompositeService.boostAudioToMp4(cachedMp4, boostedPath);
-            } catch (Exception ignore) {
+            } catch (RuntimeException ignore) {
                 boosted = false;
             }
 
@@ -511,16 +512,16 @@ public class VideoReportService {
                 try {
                     Files.move(boostedPath, cachedMp4, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
                     writeAudioBoostMeta(token);
-                } catch (Exception e) {
+                } catch (java.io.IOException e) {
                     try {
                         Files.deleteIfExists(boostedPath);
-                    } catch (Exception ignore) {
+                    } catch (java.io.IOException ignore) {
                     }
                 }
             } else {
                 try {
                     Files.deleteIfExists(boostedPath);
-                } catch (Exception ignore) {
+                } catch (java.io.IOException ignore) {
                 }
             }
         } finally {
@@ -699,6 +700,7 @@ public class VideoReportService {
     public VideoReport createVideoReport(VideoReportRequest request, User user) {
         VideoReport report = new VideoReport();
         report.setReportName(request.getReportName());
+        report.setReportType(request.getReportType() != null ? request.getReportType() : "PERSONAL_SALES");
         String messageTemplate = request.getMessageTemplate();
         if (messageTemplate == null || messageTemplate.isBlank()) {
             messageTemplate = getDefaultMessageTemplate();
@@ -839,7 +841,7 @@ public class VideoReportService {
                                     currentReport.setProcessedRecords(done + failed);
                                     videoReportRepository.save(currentReport);
                                 }
-                            } catch (Exception ignore) {
+                            } catch (org.springframework.dao.DataAccessException ignore) {
                             }
                         }
                     }))
@@ -1811,7 +1813,7 @@ public class VideoReportService {
             VideoReport report = null;
             try {
                 report = videoReportRepository.findById(reportId).orElse(null);
-            } catch (Exception ignore) {
+            } catch (org.springframework.dao.DataAccessException ignore) {
             }
 
             String targetLang = report == null ? null : report.getVideoLanguageCode();
@@ -2630,8 +2632,18 @@ public class VideoReportService {
      * Get all video reports paginated
      */
     @Transactional(readOnly = true)
-    public Page<VideoReportResponse> getAllVideoReports(Pageable pageable) {
-        return videoReportRepository.findAllByOrderByCreatedAtDesc(pageable)
+    public Page<VideoReportResponse> getAllVideoReports(Pageable pageable, String reportType, String dateFrom, String dateTo, String status) {
+        LocalDateTime fromDate = null;
+        LocalDateTime toDate = null;
+        
+        if (dateFrom != null && !dateFrom.isEmpty()) {
+            fromDate = LocalDate.parse(dateFrom).atStartOfDay();
+        }
+        if (dateTo != null && !dateTo.isEmpty()) {
+            toDate = LocalDate.parse(dateTo).atTime(23, 59, 59);
+        }
+        
+        return videoReportRepository.findByFilters(reportType, fromDate, toDate, status, pageable)
                 .map(this::mapToResponseWithoutItems);
     }
 

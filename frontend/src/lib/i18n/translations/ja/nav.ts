@@ -20,6 +20,7 @@ export const nav = {
   personalLetter: "個人レター",
   learningModule: "学習モジュール",
   learningModuleVideos: "動画",
+  learningVideo: "学習動画",
   learningModuleImages: "画像",
   learningModulePowerPoints: "Power Point",
   learningModulePdfs: "PDF",

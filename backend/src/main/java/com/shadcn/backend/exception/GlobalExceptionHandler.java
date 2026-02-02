@@ -182,13 +182,13 @@ public class GlobalExceptionHandler {
         
         ErrorResponse error = ErrorResponse.builder()
                 .timestamp(LocalDateTime.now())
-                .status(HttpStatus.PAYLOAD_TOO_LARGE.value())
+            .status(HttpStatus.valueOf(413).value())
                 .error("Payload Too Large")
             .message("File size exceeds the maximum limit (100MB).")
                 .type("FILE_SIZE_EXCEEDED")
                 .build();
                 
-        return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE)
+        return ResponseEntity.status(HttpStatus.valueOf(413))
                 .contentType(MediaType.APPLICATION_JSON)
                 .body(error);
     }

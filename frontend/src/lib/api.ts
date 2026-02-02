@@ -2870,6 +2870,7 @@ export interface VideoReportItemRequest {
 
 export interface VideoReportRequest {
   reportName: string;
+  reportType?: string; // PERSONAL_SALES or LEARNING_VIDEO
   messageTemplate: string;
   videoLanguageCode?: string;
   voiceSpeed?: number;
@@ -3101,8 +3102,14 @@ export const videoReportAPI = {
   },
 
   // Get all video reports
-  getAllVideoReports: (page: number = 0, size: number = 10): Promise<{ content: VideoReportResponse[]; totalPages: number; totalElements: number }> =>
-    apiCall<{ content: VideoReportResponse[]; totalPages: number; totalElements: number }>(`/video-reports?page=${page}&size=${size}`),
+  getAllVideoReports: (page: number = 0, size: number = 10, reportType?: string, dateFrom?: string, dateTo?: string, status?: string): Promise<{ content: VideoReportResponse[]; totalPages: number; totalElements: number }> => {
+    let url = `/video-reports?page=${page}&size=${size}`;
+    if (reportType) url += `&reportType=${reportType}`;
+    if (dateFrom) url += `&dateFrom=${dateFrom}`;
+    if (dateTo) url += `&dateTo=${dateTo}`;
+    if (status && status !== 'ALL') url += `&status=${status}`;
+    return apiCall<{ content: VideoReportResponse[]; totalPages: number; totalElements: number }>(url);
+  },
 
   // Refresh status
   refreshStatus: (id: number): Promise<VideoReportResponse> =>
@@ -3544,4 +3551,23 @@ export const fileManager = {
     }
     return response.json();
   },
+};
+
+export const learningVideoApi = {
+  // Get all learning videos with pagination
+  getAll: (page: number = 0, size: number = 10, search?: string): Promise<any> => {
+    let url = `/learning-videos?page=${page}&size=${size}`;
+    if (search) {
+      url += `&search=${encodeURIComponent(search)}`;
+    }
+    return apiCall<any>(url);
+  },
+
+  // Get learning video by code
+  getByCode: (code: string): Promise<any> =>
+    apiCall<any>(`/learning-videos/${code}`),
+
+  // Get learning video by ID
+  getById: (id: number): Promise<any> =>
+    apiCall<any>(`/learning-videos/id/${id}`),
 };

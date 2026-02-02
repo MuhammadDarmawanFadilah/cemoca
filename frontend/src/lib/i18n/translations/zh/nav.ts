@@ -20,6 +20,7 @@ export const nav = {
   personalLetter: "个人信函",
   learningModule: "学习模块",
   learningModuleVideos: "视频",
+  learningVideo: "学习视频",
   learningModuleImages: "图片",
   learningModulePowerPoints: "Power Point",
   learningModulePdfs: "PDF",

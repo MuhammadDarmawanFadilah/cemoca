@@ -3,7 +3,6 @@ package com.shadcn.backend.model;
 import jakarta.persistence.*;
 import jakarta.validation.constraints.NotBlank;
 import com.fasterxml.jackson.annotation.JsonFormat;
-import com.fasterxml.jackson.annotation.JsonIgnore;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import lombok.AllArgsConstructor;

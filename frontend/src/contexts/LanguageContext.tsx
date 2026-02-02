@@ -32,7 +32,7 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
   // Load saved locale from localStorage on mount
   useEffect(() => {
     const savedLocale = localStorage.getItem(LOCALE_STORAGE_KEY) as SupportedLocale | null;
-    if (savedLocale && ['en', 'id', 'zh', 'ja', 'ko'].includes(savedLocale)) {
+    if (savedLocale && ['id', 'en', 'ja', 'th', 'vi', 'km', 'zh', 'tl', 'hi', 'ko'].includes(savedLocale)) {
       setLocaleState(savedLocale);
     }
     setIsHydrated(true);
@@ -64,7 +64,7 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
     return value;
   }, [translations]);
 
-  const supportedLocales: SupportedLocale[] = ['en', 'id', 'zh', 'ja', 'ko'];
+  const supportedLocales: SupportedLocale[] = ['id', 'en', 'ja', 'th', 'vi', 'km', 'zh', 'tl', 'hi', 'ko'];
 
   const value = useMemo(() => ({
     locale,

@@ -22,7 +22,11 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 @Entity
-@Table(name = "video_reports")
+@Table(name = "video_reports", indexes = {
+    @jakarta.persistence.Index(name = "idx_report_type", columnList = "reportType"),
+    @jakarta.persistence.Index(name = "idx_created_at", columnList = "createdAt"),
+    @jakarta.persistence.Index(name = "idx_status", columnList = "status")
+})
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
@@ -33,6 +37,9 @@ public class VideoReport {
 
     @Column(nullable = false)
     private String reportName;
+
+    @Column(nullable = false)
+    private String reportType; // PERSONAL_SALES or LEARNING_VIDEO
 
     @Column(columnDefinition = "TEXT")
     private String messageTemplate;

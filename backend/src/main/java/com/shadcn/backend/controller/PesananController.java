@@ -6,21 +6,15 @@ import com.shadcn.backend.model.Member;
 import com.shadcn.backend.model.User;
 import com.shadcn.backend.model.Barang;
 import com.shadcn.backend.service.PesananService;
-import com.shadcn.backend.service.MemberService;
-import com.shadcn.backend.service.UserService;
-import com.shadcn.backend.service.BarangService;
 import com.shadcn.backend.dto.PesananDto;
 import com.shadcn.backend.dto.CreatePesananRequest;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
-import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import java.math.BigDecimal;
-import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -33,15 +27,6 @@ public class PesananController {
     
     @Autowired
     private PesananService pesananService;
-    
-    @Autowired
-    private MemberService memberService;
-    
-    @Autowired
-    private UserService userService;
-    
-    @Autowired
-    private BarangService barangService;
     
     @GetMapping
     public ResponseEntity<List<PesananDto>> getAllPesanan() {

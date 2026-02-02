@@ -13,6 +13,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.LinkedHashSet;
+import java.util.Set;
 import java.util.regex.Pattern;
 
 @Service
@@ -39,7 +41,7 @@ public class GeminiService {
     public GeminiService(
             ObjectMapper objectMapper,
             @Value("${gemini.api.key:}") String apiKey,
-            @Value("${gemini.model:gemini-3}") String model
+            @Value("${gemini.model:gemini-3-pro-preview}") String model
     ) {
         this.objectMapper = objectMapper;
         this.apiKey = apiKey;
@@ -192,6 +194,169 @@ public class GeminiService {
         return new com.shadcn.backend.dto.GeminiTranslateResponse(out, resolvedModel);
     }
 
+    public com.shadcn.backend.dto.GeminiReviewResponse reviewLearningVideoText(String text, String inputLanguage) {
+        if (apiKey == null || apiKey.trim().isEmpty()) {
+            throw new IllegalStateException("Missing gemini.api.key");
+        }
+
+        String safeText = text == null ? "" : text.trim();
+        if (safeText.isEmpty()) {
+            throw new IllegalArgumentException("Text is required");
+        }
+
+        String lang = inputLanguage == null ? "" : inputLanguage.trim();
+
+        String prompt = String.join("\n",
+                "Anda adalah reviewer naskah untuk Learning Module video.",
+            "Evaluasi naskah berikut dan berikan output dalam JSON VALID (tanpa markdown, tanpa penjelasan tambahan).",
+            "Gunakan gaya bahasa yang natural, profesional, dan mudah dipahami (tidak kaku).",
+            "Gunakan bahasa yang sama dengan naskah (atau bahasa yang diminta jika ada).",
+            "Bidang WAJIB di JSON:",
+            "- clarity: string (fokus pada kejelasan, struktur, alur; poin ringkas, tidak bertele-tele)",
+            "- motivationalImpact: string (fokus pada tone/motivasi/semangat; tidak mengulang poin clarity)",
+            "- recommendationForAgency: string (fokus pada kesesuaian standar korporat/agency; tidak mengulang 2 poin di atas)",
+            "- suggestions: string (saran perbaikan yang actionable). Jika naskah sudah bagus, boleh KOSONG (string kosong).",
+            "Aturan WAJIB:",
+            "- Jangan ada duplikasi kalimat/poin antar field. Setiap field harus membahas aspek yang berbeda.",
+            "- Buat poin jelas dan terpisah per baris menggunakan bullet " + "\"- \"" + " di dalam string (contoh: \"- Poin 1\\n- Poin 2\").",
+            "- Jangan ubah placeholder seperti :name, :agentCode, :companyName, atau pola :[A-Za-z0-9_]+ bila ada.",
+                (lang.isBlank() ? "" : ("Bahasa: " + lang)),
+                "\nNASKAH:",
+                safeText
+        );
+
+        Map<String, Object> body = new HashMap<>();
+        body.put("contents", new Object[]{
+                Map.of("parts", new Object[]{Map.of("text", prompt)})
+        });
+        body.put("generationConfig", Map.of(
+                "temperature", 0.2,
+                "topP", 0.9
+        ));
+
+        String resolvedModel = resolveModel(model);
+
+        String raw;
+        try {
+            raw = callGenerateContent(resolvedModel, body);
+        } catch (WebClientResponseException e) {
+            if (e.getStatusCode().value() == 404) {
+                String fallback = discoverGenerateContentModel();
+                if (fallback != null && !fallback.equalsIgnoreCase(resolvedModel)) {
+                    try {
+                        resolvedModel = fallback;
+                        raw = callGenerateContent(resolvedModel, body);
+                    } catch (WebClientResponseException retryEx) {
+                        throw toSafeException(retryEx);
+                    }
+                } else {
+                    throw toSafeException(e);
+                }
+            } else {
+                throw toSafeException(e);
+            }
+        } catch (Exception e) {
+            throw new IllegalStateException("Gemini request failed");
+        }
+
+        String extracted = raw == null ? "" : extractText(raw);
+        String cleaned = extracted == null ? "" : extracted.trim();
+
+        String clarity = "";
+        String motivationalImpact = "";
+        String recommendationForAgency = "";
+        String suggestions = "";
+
+        try {
+            String jsonCandidate = cleaned;
+            try {
+                JsonNode node = objectMapper.readTree(jsonCandidate);
+                clarity = node.path("clarity").asText("");
+                motivationalImpact = node.path("motivationalImpact").asText("");
+                recommendationForAgency = node.path("recommendationForAgency").asText("");
+                suggestions = node.path("suggestions").asText("");
+            } catch (com.fasterxml.jackson.core.JsonProcessingException firstParseFailed) {
+                String extractedJson = extractJsonObject(jsonCandidate);
+                if (!extractedJson.isBlank()) {
+                    JsonNode node = objectMapper.readTree(extractedJson);
+                    clarity = node.path("clarity").asText("");
+                    motivationalImpact = node.path("motivationalImpact").asText("");
+                    recommendationForAgency = node.path("recommendationForAgency").asText("");
+                    suggestions = node.path("suggestions").asText("");
+                    cleaned = extractedJson.trim();
+                } else {
+                    throw firstParseFailed;
+                }
+            }
+        } catch (com.fasterxml.jackson.core.JsonProcessingException ignore) {
+            // Keep raw if parsing fails.
+        }
+
+        Map<String, String> deduped = dedupeReviewFields(clarity, motivationalImpact, recommendationForAgency, suggestions);
+        clarity = deduped.getOrDefault("clarity", "");
+        motivationalImpact = deduped.getOrDefault("motivationalImpact", "");
+        recommendationForAgency = deduped.getOrDefault("recommendationForAgency", "");
+        suggestions = deduped.getOrDefault("suggestions", "");
+
+        return new com.shadcn.backend.dto.GeminiReviewResponse(
+                clarity,
+                motivationalImpact,
+                recommendationForAgency,
+                suggestions,
+                resolvedModel,
+                cleaned
+        );
+    }
+
+    private String extractJsonObject(String text) {
+        if (text == null) return "";
+        String s = text.trim();
+        if (s.isEmpty()) return "";
+        int start = s.indexOf('{');
+        int end = s.lastIndexOf('}');
+        if (start < 0 || end < 0 || end <= start) return "";
+        return s.substring(start, end + 1);
+    }
+
+    private Map<String, String> dedupeReviewFields(
+            String clarity,
+            String motivationalImpact,
+            String recommendationForAgency,
+            String suggestions
+    ) {
+        Set<String> seen = new LinkedHashSet<>();
+        Map<String, String> out = new HashMap<>();
+
+        out.put("clarity", dedupeSectionLines(clarity, seen));
+        out.put("motivationalImpact", dedupeSectionLines(motivationalImpact, seen));
+        out.put("recommendationForAgency", dedupeSectionLines(recommendationForAgency, seen));
+        out.put("suggestions", dedupeSectionLines(suggestions, seen));
+
+        return out;
+    }
+
+    private String dedupeSectionLines(String section, Set<String> seen) {
+        if (section == null) return "";
+        String s = section.replace("\r\n", "\n").replace("\r", "\n").trim();
+        if (s.isEmpty()) return "";
+
+        String[] lines = s.split("\n");
+        List<String> kept = new ArrayList<>();
+        for (String line : lines) {
+            if (line == null) continue;
+            String t = line.trim();
+            if (t.isEmpty()) continue;
+            t = t.replaceFirst("^\\s*(?:[-*]|\\d+\\.)\\s+", "").trim();
+            if (t.isEmpty()) continue;
+            String key = t.toLowerCase();
+            if (seen.contains(key)) continue;
+            seen.add(key);
+            kept.add("- " + t);
+        }
+
+        return String.join("\n", kept).trim();
+    }
+
     private String resolveModel(String configuredModel) {
         if (configuredModel == null || configuredModel.trim().isEmpty()) {
             return "";
@@ -226,6 +391,8 @@ public class GeminiService {
             JsonNode models = root.path("models");
             if (!models.isArray()) return null;
 
+            String bestProPreview = null;
+            String bestPro = null;
             String bestFlash = null;
             String bestAny = null;
 
@@ -250,13 +417,17 @@ public class GeminiService {
                 if (!lower.contains("gemini")) continue;
 
                 if (bestAny == null) bestAny = id;
-                if (bestFlash == null && lower.contains("flash")) {
-                    bestFlash = id;
-                }
+
+                if (bestProPreview == null && lower.contains("gemini-3-pro-preview")) bestProPreview = id;
+                if (bestPro == null && lower.contains("pro") && !lower.contains("preview")) bestPro = id;
+                if (bestFlash == null && lower.contains("flash")) bestFlash = id;
             }
 
-            return bestFlash != null ? bestFlash : bestAny;
-        } catch (Exception ignored) {
+            if (bestProPreview != null) return bestProPreview;
+            if (bestPro != null) return bestPro;
+            if (bestFlash != null) return bestFlash;
+            return bestAny;
+        } catch (com.fasterxml.jackson.core.JsonProcessingException | org.springframework.web.reactive.function.client.WebClientException ignored) {
             return null;
         }
     }
@@ -370,7 +541,7 @@ public class GeminiService {
                 sb.append(t);
             }
             return sb.toString().trim();
-        } catch (Exception e) {
+        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
             return "";
         }
     }

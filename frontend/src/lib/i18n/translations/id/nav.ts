@@ -21,6 +21,7 @@ export const nav = {
   personalLetter: "Surat Personal",
   learningModule: "Learning Modul",
   learningModuleVideos: "Video",
+  learningVideo: "Learning Video",
   learningModuleImages: "Gambar",
   learningModulePowerPoints: "Power Point",
   learningModulePdfs: "PDF",

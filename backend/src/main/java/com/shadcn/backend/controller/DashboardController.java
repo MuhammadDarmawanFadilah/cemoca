@@ -1,15 +1,13 @@
 package com.shadcn.backend.controller;
 
-import com.shadcn.backend.dto.DashboardStatsDTO;
-import com.shadcn.backend.dto.DashboardOverviewDTO;
 import com.shadcn.backend.service.DashboardService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.Map;
 import java.util.HashMap;
+import java.util.Map;
 
 @Slf4j
 @RestController
@@ -18,7 +16,9 @@ import java.util.HashMap;
 @RequiredArgsConstructor
 public class DashboardController {
 
-    private final DashboardService dashboardService;    @GetMapping("/stats")
+    private final DashboardService dashboardService;
+
+    @GetMapping("/stats")
     public ResponseEntity<Map<String, Object>> getDashboardStats() {
         try {
             log.info("Getting dashboard statistics");

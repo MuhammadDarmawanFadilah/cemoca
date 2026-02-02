@@ -23,12 +23,11 @@ import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -73,8 +72,6 @@ import jakarta.servlet.http.HttpServletResponse;
 @RequestMapping("/api/video-reports")
 @CrossOrigin(origins = "*", allowedHeaders = "*", methods = {RequestMethod.GET, RequestMethod.POST, RequestMethod.PUT, RequestMethod.DELETE, RequestMethod.OPTIONS})
 public class VideoReportController {
-
-    private static final Logger logger = LoggerFactory.getLogger(VideoReportController.class);
 
     private static final long PREVIEW_CONTEXT_TTL_MS = 60L * 60L * 1000L;
     private static final ConcurrentHashMap<String, PreviewContext> previewContexts = new ConcurrentHashMap<>();
@@ -686,9 +683,13 @@ public class VideoReportController {
     @GetMapping
     public ResponseEntity<Page<VideoReportResponse>> getAllVideoReports(
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "10") int size) {
-        Pageable pageable = PageRequest.of(page, size);
-        return ResponseEntity.ok(videoReportService.getAllVideoReports(pageable));
+            @RequestParam(defaultValue = "10") int size,
+            @RequestParam(required = false) String reportType,
+            @RequestParam(required = false) String dateFrom,
+            @RequestParam(required = false) String dateTo,
+            @RequestParam(required = false) String status) {
+        Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt"));
+        return ResponseEntity.ok(videoReportService.getAllVideoReports(pageable, reportType, dateFrom, dateTo, status));
     }
 
     /**

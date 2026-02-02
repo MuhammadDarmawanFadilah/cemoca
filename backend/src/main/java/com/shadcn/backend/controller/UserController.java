@@ -54,12 +54,21 @@ public class UserController {
     }
     
     @GetMapping
-    public ResponseEntity<List<User>> getAllUsers() {
+    public ResponseEntity<?> getAllUsers(
+            @RequestParam(required = false) Integer page,
+            @RequestParam(required = false) Integer size) {
         try {
+            // If pagination parameters are provided, return paginated response
+            if (page != null && size != null) {
+                Pageable pageable = PageRequest.of(page, size);
+                Page<User> users = userService.getAllUsersPaginated(pageable);
+                return ResponseEntity.ok(users);
+            }
+            // Otherwise return all users as list
             List<User> users = userService.getAllUsers();
             return ResponseEntity.ok(users);
         } catch (Exception e) {
-            log.error("Error getting all users", e);
+            log.error("Error getting users", e);
             return ResponseEntity.internalServerError().build();
         }
     }

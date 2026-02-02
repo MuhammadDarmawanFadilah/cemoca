@@ -34,7 +34,9 @@ import java.util.Map;
 @CrossOrigin(origins = "${frontend.url}", maxAge = 3600)
 public class DocumentController {
 
-    private final DocumentService documentService;    @GetMapping
+    private final DocumentService documentService;
+
+    @GetMapping
     public ResponseEntity<Map<String, Object>> getAllDocuments(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size,
@@ -46,18 +48,27 @@ public class DocumentController {
             @RequestParam(required = false) String title) {
           try {
             // Handle sort parameter mapping
-            if ("newest".equals(sort)) {
-                sortBy = "createdAt";
-                sortDir = "desc";
-            } else if ("oldest".equals(sort)) {
-                sortBy = "createdAt";
-                sortDir = "asc";
-            } else if ("mostDownloaded".equals(sort)) {
-                sortBy = "downloadCount";
-                sortDir = "desc";
-            } else if ("title".equals(sort)) {
-                sortBy = "title";
-                sortDir = "asc";
+            if (sort != null) {
+                switch (sort) {
+                    case "newest" -> {
+                        sortBy = "createdAt";
+                        sortDir = "desc";
+                    }
+                    case "oldest" -> {
+                        sortBy = "createdAt";
+                        sortDir = "asc";
+                    }
+                    case "mostDownloaded" -> {
+                        sortBy = "downloadCount";
+                        sortDir = "desc";
+                    }
+                    case "title" -> {
+                        sortBy = "title";
+                        sortDir = "asc";
+                    }
+                    default -> {
+                    }
+                }
             }
               Page<DocumentResponse> documentsPage = documentService.getAllDocumentsWithFilters(
                 page, size, sortBy, sortDir, fileType, author, title);
@@ -78,7 +89,9 @@ public class DocumentController {
             errorResponse.put("message", e.getMessage());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
         }
-    }    @GetMapping("/search")
+    }
+
+    @GetMapping("/search")
     public ResponseEntity<Map<String, Object>> searchDocuments(
             @RequestParam String keyword,
             @RequestParam(defaultValue = "0") int page,
@@ -90,18 +103,25 @@ public class DocumentController {
           try {
             // Handle legacy sort parameter mapping for backward compatibility
             if (sort != null) {
-                if ("newest".equals(sort)) {
-                    sortBy = "createdAt";
-                    sortDir = "desc";
-                } else if ("oldest".equals(sort)) {
-                    sortBy = "createdAt";
-                    sortDir = "asc";
-                } else if ("mostDownloaded".equals(sort)) {
-                    sortBy = "downloadCount";
-                    sortDir = "desc";
-                } else if ("title".equals(sort)) {
-                    sortBy = "title";
-                    sortDir = "asc";
+                switch (sort) {
+                    case "newest" -> {
+                        sortBy = "createdAt";
+                        sortDir = "desc";
+                    }
+                    case "oldest" -> {
+                        sortBy = "createdAt";
+                        sortDir = "asc";
+                    }
+                    case "mostDownloaded" -> {
+                        sortBy = "downloadCount";
+                        sortDir = "desc";
+                    }
+                    case "title" -> {
+                        sortBy = "title";
+                        sortDir = "asc";
+                    }
+                    default -> {
+                    }
                 }
             }
             

@@ -33,6 +33,10 @@ export default function PersonalSalesPage() {
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyPage, setHistoryPage] = useState(0);
   const [historyTotalPages, setHistoryTotalPages] = useState(0);
+  const [historyPageSize, setHistoryPageSize] = useState(10);
+  const [filterDateFrom, setFilterDateFrom] = useState<string>("");
+  const [filterDateTo, setFilterDateTo] = useState<string>("");
+  const [filterStatus, setFilterStatus] = useState<string>("ALL");
 
   // Step 1
   const [reportName, setReportName] = useState("Personal Notification");
@@ -69,12 +73,12 @@ export default function PersonalSalesPage() {
     loadHistory();
   }, []);
 
-  useEffect(() => { loadHistory(); }, [historyPage]);
+  useEffect(() => { loadHistory(); }, [historyPage, historyPageSize, filterDateFrom, filterDateTo, filterStatus]);
 
   const loadHistory = async () => {
     try {
       setHistoryLoading(true);
-      const res = await videoReportAPI.getAllVideoReports(historyPage, 10);
+      const res = await videoReportAPI.getAllVideoReports(historyPage, historyPageSize, "PERSONAL_SALES", filterDateFrom, filterDateTo, filterStatus);
       setReportHistory(res.content);
       setHistoryTotalPages(res.totalPages);
     } catch { toast.error(t("reportVideo.failedLoadHistory")); }
@@ -177,6 +181,14 @@ export default function PersonalSalesPage() {
             historyPage={historyPage}
             setHistoryPage={setHistoryPage}
             historyTotalPages={historyTotalPages}
+            historyPageSize={historyPageSize}
+            setHistoryPageSize={setHistoryPageSize}
+            filterDateFrom={filterDateFrom}
+            setFilterDateFrom={setFilterDateFrom}
+            filterDateTo={filterDateTo}
+            setFilterDateTo={setFilterDateTo}
+            filterStatus={filterStatus}
+            setFilterStatus={setFilterStatus}
             startNewGeneration={startNewGeneration}
             viewReportDetails={viewReportDetails}
             loadHistory={loadHistory}

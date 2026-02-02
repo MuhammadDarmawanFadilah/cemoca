@@ -16,6 +16,8 @@ if (-not $jdkHome) {
 $env:JAVA_HOME = $jdkHome
 $env:Path = "$env:JAVA_HOME\bin;" + $env:Path
 
+$env:SPRING_PROFILES_ACTIVE = 'local'
+
 if (-not $env:HEYGEN_API_KEY -or [string]::IsNullOrWhiteSpace($env:HEYGEN_API_KEY)) {
 	Write-Warning "HEYGEN_API_KEY env var is not set. HeyGen API calls will fail until it is provided."
 }

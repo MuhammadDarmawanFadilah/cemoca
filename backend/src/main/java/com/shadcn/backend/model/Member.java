@@ -32,6 +32,7 @@ public class Member {
     private String email;
     
     @Column(nullable = false, columnDefinition = "INTEGER DEFAULT 0")
+    @Builder.Default
     private Integer poin = 0;
     
     @Column(length = 100)
@@ -42,6 +43,7 @@ public class Member {
     
     @Enumerated(EnumType.STRING)
     @Column(name = "tingkat_prioritas", nullable = false)
+    @Builder.Default
     private TingkatPrioritas tingkatPrioritas = TingkatPrioritas.MENENGAH;
     
     @Column(columnDefinition = "TEXT")
@@ -49,6 +51,7 @@ public class Member {
     
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
+    @Builder.Default
     private Status status = Status.AKTIF;
     
     @Column(columnDefinition = "TEXT")

@@ -145,7 +145,7 @@ public class DIDService {
             if (db.isPresent()) {
                 name = db.get().getPresenterName();
             }
-        } catch (Exception ignored) {
+        } catch (org.springframework.dao.DataAccessException ignored) {
             // ignore
         }
 
@@ -520,7 +520,7 @@ public class DIDService {
                                     out.put("consentText", ct);
                                 }
                             }
-                        } catch (Exception ignored) {
+                        } catch (RuntimeException ignored) {
                         }
                     }
 
@@ -528,7 +528,7 @@ public class DIDService {
                         return out;
                     }
                 }
-            } catch (Exception ignored) {
+            } catch (org.springframework.dao.DataAccessException ignored) {
             }
         }
 
@@ -720,11 +720,11 @@ public class DIDService {
             if (existing.isEmpty()) {
                 try {
                     refreshPresenters();
-                } catch (Exception ignored) {
+                } catch (RuntimeException ignored) {
                 }
                 existing = avatarRepository.findByPresenterId(presenterId);
             }
-        } catch (Exception ignored) {
+        } catch (org.springframework.dao.DataAccessException ignored) {
         }
 
         DIDAvatar avatar;
@@ -1145,7 +1145,7 @@ public class DIDService {
                 }
             }
             logger.info("Synced {} avatars to database", avatars.size());
-        } catch (Exception e) {
+        } catch (org.springframework.dao.DataAccessException | IllegalArgumentException e) {
             logger.error("Error syncing avatars to database: {}", e.getMessage());
         }
     }
@@ -1326,7 +1326,7 @@ public class DIDService {
         if (!normalizedKeys.isEmpty()) {
             try {
                 match = avatarAudioRepository.findFirstByNormalizedKeyIn(normalizedKeys);
-            } catch (Exception ignored) {
+            } catch (org.springframework.dao.DataAccessException ignored) {
                 // ignore
             }
             if (match.isEmpty()) {

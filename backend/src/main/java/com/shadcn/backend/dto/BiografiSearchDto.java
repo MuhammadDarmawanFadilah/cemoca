@@ -8,7 +8,6 @@ import com.shadcn.backend.model.WorkExperience;
 import com.shadcn.backend.model.SpesialisasiKedokteran;
 import lombok.Data;
 import lombok.NoArgsConstructor;
-import lombok.AllArgsConstructor;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;

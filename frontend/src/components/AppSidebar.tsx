@@ -265,6 +265,11 @@ const AppSidebar = () => {
       url: "/report-video/personal-sales",
       icon: FileVideo,
     },
+    {
+      title: "Learning Video",
+      url: "/report-video/learning-video",
+      icon: FileVideo,
+    },
   ];
 
   // Report PDF items
@@ -296,6 +301,11 @@ const AppSidebar = () => {
   ];
 
   const learningModuleOtherItems = [
+    {
+      title: t('nav.learningVideo'),
+      url: "/learning-module/learning-video",
+      icon: FileVideo,
+    },
     {
       title: t('nav.learningModuleImages'),
       url: "/learning-module/images",

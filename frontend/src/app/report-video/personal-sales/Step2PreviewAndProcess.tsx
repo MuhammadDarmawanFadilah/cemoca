@@ -305,6 +305,7 @@ export function Step2PreviewAndProcess({
       // 1. Create report
       const request: VideoReportRequest = {
         reportName,
+        reportType: "PERSONAL_SALES",
         messageTemplate,
         videoLanguageCode,
         voiceSpeed,

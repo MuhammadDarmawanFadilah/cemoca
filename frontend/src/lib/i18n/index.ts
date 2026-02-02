@@ -1,10 +1,15 @@
 import { en } from './translations/en';
 import { id } from './translations/id';
-import { zh } from './translations/zh';
 import { ja } from './translations/ja';
+import { th } from './translations/th';
+import { vi } from './translations/vi';
+import { km } from './translations/km';
+import { zh } from './translations/zh';
+import { tl } from './translations/tl';
+import { hi } from './translations/hi';
 import { ko } from './translations/ko';
 
-export type SupportedLocale = 'en' | 'id' | 'zh' | 'ja' | 'ko';
+export type SupportedLocale = 'id' | 'en' | 'ja' | 'th' | 'vi' | 'km' | 'zh' | 'tl' | 'hi' | 'ko';
 
 // Define a flexible translation structure type
 type TranslationStructure = {
@@ -15,26 +20,41 @@ type TranslationStructure = {
 export type TranslationKeys = typeof en;
 
 export const translations: Record<SupportedLocale, TranslationStructure> = {
-  en,
   id,
-  zh,
+  en,
   ja,
+  th,
+  vi,
+  km,
+  zh,
+  tl,
+  hi,
   ko,
 };
 
 export const localeNames: Record<SupportedLocale, string> = {
-  en: 'English',
   id: 'Bahasa Indonesia',
-  zh: '中文',
+  en: 'English',
   ja: '日本語',
+  th: 'ไทย',
+  vi: 'Tiếng Việt',
+  km: 'ខ្មែរ',
+  zh: '中文',
+  tl: 'Filipino',
+  hi: 'हिन्दी',
   ko: '한국어',
 };
 
 export const localeFlags: Record<SupportedLocale, string> = {
-  en: '🇺🇸',
   id: '🇮🇩',
-  zh: '🇨🇳',
+  en: '🇺🇸',
   ja: '🇯🇵',
+  th: '🇹🇭',
+  vi: '🇻🇳',
+  km: '🇰🇭',
+  zh: '🇨🇳',
+  tl: '🇵🇭',
+  hi: '🇮🇳',
   ko: '🇰🇷',
 };
 
@@ -79,5 +99,5 @@ export function getNestedValue<T>(obj: T, path: string): string {
   return typeof value === 'string' ? value : path;
 }
 
-export { en, id, zh, ja, ko };
+export { en, id, ja, th, vi, km, zh, tl, hi, ko };
 export type { TranslationStructure };

@@ -6,7 +6,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.UrlResource;
 import org.springframework.http.HttpHeaders;
-import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
@@ -54,19 +53,19 @@ public class ImageController {
         try {
             Path imagePath = imageService.getImagePath(filename);
             Resource resource = new UrlResource(imagePath.toUri());
-            
+
             if (resource.exists() && resource.isReadable()) {
                 String contentType = getContentType(filename);
-                
+
                 return ResponseEntity.ok()
                     .header(HttpHeaders.CONTENT_TYPE, contentType)
                     .header(HttpHeaders.CACHE_CONTROL, "max-age=86400") // Cache for 1 day
                     .body(resource);
-            } else {
-                log.warn("Image not found or not readable: {}", filename);
-                return ResponseEntity.notFound().build();
             }
-        } catch (Exception e) {
+
+            log.warn("Image not found or not readable: {}", filename);
+            return ResponseEntity.notFound().build();
+        } catch (IOException | IllegalArgumentException e) {
             log.error("Error serving image: {}", e.getMessage());
             return ResponseEntity.internalServerError().build();
         }
@@ -92,28 +91,17 @@ public class ImageController {
 
     private String getContentType(String filename) {
         String extension = filename.substring(filename.lastIndexOf('.') + 1).toLowerCase();
-        switch (extension) {
-            case "jpg":
-            case "jpeg":
-                return "image/jpeg";
-            case "png":
-                return "image/png";
-            case "gif":
-                return "image/gif";
-            case "mp4":
-                return "video/mp4";
-            case "avi":
-                return "video/avi";
-            case "mov":
-                return "video/quicktime";
-            case "wmv":
-                return "video/x-ms-wmv";
-            case "flv":
-                return "video/x-flv";
-            case "webm":
-                return "video/webm";
-            default:
-                return "application/octet-stream";
-        }
+        return switch (extension) {
+            case "jpg", "jpeg" -> "image/jpeg";
+            case "png" -> "image/png";
+            case "gif" -> "image/gif";
+            case "mp4" -> "video/mp4";
+            case "avi" -> "video/avi";
+            case "mov" -> "video/quicktime";
+            case "wmv" -> "video/x-ms-wmv";
+            case "flv" -> "video/x-flv";
+            case "webm" -> "video/webm";
+            default -> "application/octet-stream";
+        };
     }
 }
