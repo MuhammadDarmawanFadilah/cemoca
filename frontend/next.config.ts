@@ -26,7 +26,6 @@ const nextConfig: NextConfig = {
   // Performance optimizations
   experimental: {
     optimizePackageImports: ['@radix-ui/react-icons', 'lucide-react'],
-    optimizeCss: true,
   },
   
   // Turbopack configuration
