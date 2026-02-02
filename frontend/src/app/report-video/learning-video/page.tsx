@@ -279,9 +279,7 @@ export default function LearningVideoPage() {
 
             {/* Step 3 - Preview & Process */}
             {step === 3 && (
-              <Step3 2 - Preview & Process */}
-            {step === 2 && (
-              <Step2PreviewAndProcess
+              <Step3PreviewAndProcess
                 validationResult={validationResult}
                 previewPage={previewPage}
                 setPreviewPage={setPreviewPage}
