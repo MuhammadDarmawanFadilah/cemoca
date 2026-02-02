@@ -3,31 +3,15 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import {
-  ChevronRight,
-  Plus,
-  ArrowLeft,
-} from "lucide-react";
-import {
-  videoReportAPI,
-  VideoAvatarOption,
-  ExcelValidationResult,
-  VideoReportResponse,
-} from "@/lib/api";
+import { Plus, Video, Sparkles } from "lucide-react";
+import { videoReportAPI, VideoReportResponse } from "@/lib/api";
 import { toast } from "sonner";
-import { ViewMode, Step, ITEMS_PER_PAGE } from "./types";
 import { ReportHistory } from "./ReportHistory";
-import { Step1BasicSettings } from "./Step1BasicSettings";
-import { Step2DataInput } from "./Step2DataInput";
-import { Step3PreviewAndProcess } from "./Step3PreviewAndProcess";
 import { useLanguage } from "@/contexts/LanguageContext";
 
-export default function LearningVideoPage() {
+export default function LearningVideoListPage() {
   const { t } = useLanguage();
   const router = useRouter();
-  const [viewMode, setViewMode] = useState<ViewMode>("history");
-  const [step, setStep] = useState<Step>(1);
-  const [loading, setLoading] = useState(false);
 
   // History
   const [reportHistory, setReportHistory] = useState<VideoReportResponse[]>([]);
@@ -39,147 +23,125 @@ export default function LearningVideoPage() {
   const [filterDateTo, setFilterDateTo] = useState<string>("");
   const [filterStatus, setFilterStatus] = useState<string>("ALL");
 
-  // Step 1
-  const [reportName, setReportName] = useState("Learning Video Notification");
-  const [learningVideoCode, setLearningVideoCode] = useState<string>("");
-  const [learningVideoLanguage, setLearningVideoLanguage] = useState<string>("en");
-  const [messageTemplate, setMessageTemplate] = useState("");
-  const [waMessageTemplate, setWaMessageTemplate] = useState("");
-  const [videoLanguageCode, setVideoLanguageCode] = useState<string>("en");
-  const [voiceSpeed, setVoiceSpeed] = useState<number>(1.0);
-  const [voicePitch, setVoicePitch] = useState<number>(0);
-  const [enableCaption, setEnableCaption] = useState<boolean>(true);
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [presenters, setPresenters] = useState<VideoAvatarOption[]>([]);
-  const [loadingPresenters, setLoadingPresenters] = useState(false);
-  const [avatarPage, setAvatarPage] = useState(1);
-  const [avatarSearch, setAvatarSearch] = useState("");
-
-  // Background
-  const [useBackground, setUseBackground] = useState(false);
-  const [backgrounds, setBackgrounds] = useState<string[]>([]);
-  const [backgroundName, setBackgroundName] = useState<string>("");
-  const [loadingBackgrounds, setLoadingBackgrounds] = useState(false);
-
-  // Step 2
-  const [validationResult, setValidationResult] = useState<ExcelValidationResult | null>(null);
-  const [validating, setValidating] = useState(false);
-  const [previewPage, setPreviewPage] = useState(0);
-  const [previewFilter, setPreviewFilter] = useState<"all" | "valid" | "error">("all");
-  const [previewSearch, setPreviewSearch] = useState("");
-
-  // Report
-  const [currentReport, setCurrentReport] = useState<VideoReportResponse | null>(null);
-  const [generating, setGenerating] = useState(false);
-
   useEffect(() => {
     loadHistory();
   }, []);
 
-  useEffect(() => { loadHistory(); }, [historyPage, historyPageSize, filterDateFrom, filterDateTo, filterStatus]);
+  useEffect(() => { 
+    loadHistory(); 
+  }, [historyPage, historyPageSize, filterDateFrom, filterDateTo, filterStatus]);
 
   const loadHistory = async () => {
     try {
       setHistoryLoading(true);
-      const res = await videoReportAPI.getAllVideoReports(historyPage, historyPageSize, "LEARNING_VIDEO", filterDateFrom, filterDateTo, filterStatus);
+      const res = await videoReportAPI.getAllVideoReports(
+        historyPage,
+        historyPageSize,
+        "LEARNING_VIDEO",
+        filterDateFrom,
+        filterDateTo,
+        filterStatus
+      );
       setReportHistory(res.content);
       setHistoryTotalPages(res.totalPages);
-    } catch { toast.error(t("reportVideo.failedLoadHistory")); }
-    finally { setHistoryLoading(false); }
-  };
-
-  const loadInitialData = async () => {
-    try {
-      setLoadingPresenters(true);
-      setLoadingBackgrounds(true);
-      const [templateRes, presentersList, backgroundsList] = await Promise.all([
-        videoReportAPI.getDefaultTemplate(),
-        videoReportAPI.getPresenters(),
-        videoReportAPI.getBackgrounds(),
-      ]);
-      setMessageTemplate(templateRes.template);
-      setWaMessageTemplate(templateRes.waTemplate || "Hello :name, here is your personal video: :linkvideo");
-      setPresenters(presentersList);
-      setBackgrounds(backgroundsList);
-      if (!backgroundName && backgroundsList.length > 0) {
-        setBackgroundName(backgroundsList[0]);
-      }
-    } catch { toast.error(t("reportVideo.failedLoadData")); }
-    finally { setLoadingPresenters(false); setLoadingBackgrounds(false); }
-  };
-
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      if (!file.name.endsWith(".xlsx") && !file.name.endsWith(".xls")) {
-        toast.error(t("reportVideo.formatMustBe"));
-        return;
-      }
-      setSelectedFile(file);
-      setValidationResult(null);
+    } catch { 
+      toast.error(t("reportVideo.failedLoadHistory")); 
+    } finally { 
+      setHistoryLoading(false); 
     }
   };
 
-  const validateAndProceed = async () => {
-    if (!selectedFile) { toast.error(t("reportVideo.selectExcelFile")); return; }
-    if (!reportName.trim()) { toast.error(t("reportVideo.enterReportName")); return; }
-    try {
-      setValidating(true);
-      const result = await videoReportAPI.validateExcel(selectedFile);
-      setValidationResult(result);
-      setStep(3);
-    } catch { toast.error(t("reportVideo.failedValidate")); }
-    finally { setValidating(false); }
+  const startNewGeneration = () => {
+    router.push("/report-video/learning-video/new");
   };
 
-  // Navigate to detail page for existing reports
   const viewReportDetails = (id: number) => {
     router.push(`/report-video/learning-video/${id}`);
   };
 
-  const startNewGeneration = () => {
-    setCurrentReport(null); setValidationResult(null); setSelectedFile(null);
-    setStep(1); setViewMode("generate");
-    setUseBackground(false);
-    setMessageTemplate("");
-    setWaMessageTemplate("");
-    loadInitialData();
-  };
-
-  const backToHistory = () => {
-    setViewMode("history"); setCurrentReport(null); setValidationResult(null);
-    setSelectedFile(null); setStep(1); loadHistory();
-  };
-
-  // Navigate to detail page after report created
-  const goToReportDetail = (reportId: number) => {
-    router.push(`/report-video/learning-video/${reportId}`);
-  };
-
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-950">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-slate-50 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950">
       {/* Header */}
-      <div className="border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between">
-          <div>
-            <h1 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Learning Video Notifications</h1>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">AI-powered video notifications from learning content</p>
+      <div className="sticky top-0 z-10 border-b border-slate-200/50 dark:border-slate-800/50 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl shadow-sm">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <div className="relative">
+                <div className="absolute inset-0 bg-gradient-to-r from-blue-500 to-purple-500 rounded-2xl blur-xl opacity-30 animate-pulse"></div>
+                <div className="relative flex items-center justify-center w-14 h-14 bg-gradient-to-br from-blue-500 to-purple-600 rounded-2xl shadow-lg">
+                  <Video className="h-7 w-7 text-white" />
+                </div>
+              </div>
+              <div>
+                <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-600 via-purple-600 to-blue-600 bg-clip-text text-transparent">
+                  Learning Video Reports
+                </h1>
+                <p className="text-sm text-slate-600 dark:text-slate-400 mt-1 flex items-center gap-2">
+                  <Sparkles className="h-3.5 w-3.5 text-yellow-500" />
+                  AI-powered video generation from learning content
+                </p>
+              </div>
+            </div>
+            <Button
+              size="lg"
+              onClick={startNewGeneration}
+              className="h-12 px-6 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white shadow-lg shadow-blue-500/30 hover:shadow-xl hover:shadow-blue-500/40 transition-all duration-300 font-semibold"
+            >
+              <Plus className="h-5 w-5 mr-2" />
+              Create New Report
+            </Button>
           </div>
-          {viewMode === "history" ? (
-            <Button size="sm" onClick={startNewGeneration} className="h-8 text-xs">
-              <Plus className="h-3.5 w-3.5 mr-1.5" /> {t("reportVideo.createNew")}
-            </Button>
-          ) : (
-            <Button size="sm" variant="outline" onClick={backToHistory} className="h-8 text-xs">
-              <ArrowLeft className="h-3.5 w-3.5 mr-1.5" /> {t("reportVideo.backToHistory")}
-            </Button>
-          )}
         </div>
       </div>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6">
-        {/* History View */}
-        {viewMode === "history" && (
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
+        {/* Stats Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+          <div className="bg-white dark:bg-slate-900/50 rounded-2xl p-6 border border-slate-200/50 dark:border-slate-800/50 shadow-sm hover:shadow-md transition-all duration-300">
+            <div className="flex items-center gap-4">
+              <div className="flex items-center justify-center w-12 h-12 bg-blue-100 dark:bg-blue-900/30 rounded-xl">
+                <Video className="h-6 w-6 text-blue-600 dark:text-blue-400" />
+              </div>
+              <div>
+                <p className="text-sm text-slate-500 dark:text-slate-400 font-medium">Total Reports</p>
+                <p className="text-3xl font-bold text-slate-900 dark:text-slate-100">
+                  {reportHistory.length}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white dark:bg-slate-900/50 rounded-2xl p-6 border border-slate-200/50 dark:border-slate-800/50 shadow-sm hover:shadow-md transition-all duration-300">
+            <div className="flex items-center gap-4">
+              <div className="flex items-center justify-center w-12 h-12 bg-emerald-100 dark:bg-emerald-900/30 rounded-xl">
+                <Sparkles className="h-6 w-6 text-emerald-600 dark:text-emerald-400" />
+              </div>
+              <div>
+                <p className="text-sm text-slate-500 dark:text-slate-400 font-medium">Completed</p>
+                <p className="text-3xl font-bold text-slate-900 dark:text-slate-100">
+                  {reportHistory.filter(r => r.status === "COMPLETED").length}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white dark:bg-slate-900/50 rounded-2xl p-6 border border-slate-200/50 dark:border-slate-800/50 shadow-sm hover:shadow-md transition-all duration-300">
+            <div className="flex items-center gap-4">
+              <div className="flex items-center justify-center w-12 h-12 bg-amber-100 dark:bg-amber-900/30 rounded-xl">
+                <div className="h-6 w-6 border-4 border-amber-600 border-t-transparent rounded-full animate-spin"></div>
+              </div>
+              <div>
+                <p className="text-sm text-slate-500 dark:text-slate-400 font-medium">Processing</p>
+                <p className="text-3xl font-bold text-slate-900 dark:text-slate-100">
+                  {reportHistory.filter(r => r.status === "PROCESSING").length}
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Report History */}
+        <div className="bg-white dark:bg-slate-900/50 rounded-2xl border border-slate-200/50 dark:border-slate-800/50 shadow-sm overflow-hidden">
           <ReportHistory
             reportHistory={reportHistory}
             historyLoading={historyLoading}
@@ -198,118 +160,7 @@ export default function LearningVideoPage() {
             viewReportDetails={viewReportDetails}
             loadHistory={loadHistory}
           />
-        )}
-
-        {/* Generate View */}
-        {viewMode === "generate" && (
-          <div className="space-y-4">
-            {/* Steps */}
-            <div className="flex items-center gap-2 text-xs">
-              <div className={`flex items-center gap-1.5 ${step === 1 ? "text-blue-600 dark:text-blue-400" : "text-slate-400"}`}>
-                <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-medium ${step === 1 ? "bg-blue-600 text-white" : step > 1 ? "bg-emerald-500 text-white" : "bg-slate-200 dark:bg-slate-700"}`}>
-                  {step > 1 ? "✓" : "1"}Basic Settings</span>
-              </div>
-              <ChevronRight className="h-3 w-3 text-slate-300" />
-              <div className={`flex items-center gap-1.5 ${step === 2 ? "text-blue-600 dark:text-blue-400" : "text-slate-400"}`}>
-                <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-medium ${step === 2 ? "bg-blue-600 text-white" : step > 2 ? "bg-emerald-500 text-white" : "bg-slate-200 dark:bg-slate-700"}`}>
-                  {step > 2 ? "✓" : "2"}
-                </span>
-                <span className="hidden sm:inline">Data & Templates</span>
-              </div>
-              <ChevronRight className="h-3 w-3 text-slate-300" />
-              <div className={`flex items-center gap-1.5 ${step === 3 ? "text-blue-600 dark:text-blue-400" : "text-slate-400"}`}>
-                <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-medium ${step === 3 ? "bg-blue-600 text-white" : "bg-slate-200 dark:bg-slate-700"}`}>
-                  3
-                </span>
-                <span className="hidden sm:inline">Preview & Process</span>
-              </div>
-            </div>
-
-            {/* Step 1 - Basic Settings */}
-            {step === 1 && (
-              <Step1BasicSettings
-                reportName={reportName}
-                setReportName={setReportName}
-                learningVideoCode={learningVideoCode}
-                setLearningVideoCode={setLearningVideoCode}
-                learningVideoLanguage={learningVideoLanguage}
-                setLearningVideoLanguage={setLearningVideoLanguage}
-                videoLanguageCode={videoLanguageCode}
-                setVideoLanguageCode={setVideoLanguageCode}
-                voiceSpeed={voiceSpeed}
-                setVoiceSpeed={setVoiceSpeed}
-                voicePitch={voicePitch}
-                setVoicePitch={setVoicePitch}
-                enableCaption={enableCaption}
-                setEnableCaption={setEnableCaption}
-                presenters={presenters}
-                loadingPresenters={loadingPresenters}
-                avatarPage={avatarPage}
-                setAvatarPage={setAvatarPage}
-                avatarSearch={avatarSearch}
-                setAvatarSearch={setAvatarSearch}
-                useBackground={useBackground}
-                setUseBackground={setUseBackground}
-                backgrounds={backgrounds}
-                loadingBackgrounds={loadingBackgrounds}
-                backgroundName={backgroundName}
-                setBackgroundName={setBackgroundName}
-                onNext={() => setStep(2)}
-              />
-            )}
-
-            {/* Step 2 - Data Input */}
-            {step === 2 && (
-              <Step2DataInput
-                learningVideoCode={learningVideoCode}
-                learningVideoLanguage={learningVideoLanguage}
-                messageTemplate={messageTemplate}
-                setMessageTemplate={setMessageTemplate}
-                waMessageTemplate={waMessageTemplate}
-                setWaMessageTemplate={setWaMessageTemplate}
-                videoLanguageCode={videoLanguageCode}
-                setVideoLanguageCode={setVideoLanguageCode}
-                selectedFile={selectedFile}
-                handleFileChange={handleFileChange}
-                validating={validating}
-                onBack={() => setStep(1)}
-                validateAndProceed={validateAndProceed}
-              />
-            )}
-
-            {/* Step 3 - Preview & Process */}
-            {step === 3 && (
-              <Step3PreviewAndProcess
-                validationResult={validationResult}
-                previewPage={previewPage}
-                setPreviewPage={setPreviewPage}
-                previewFilter={previewFilter}
-                setPreviewFilter={setPreviewFilter}
-                previewSearch={previewSearch}
-                setPreviewSearch={setPreviewSearch}
-                currentReport={currentReport}
-                setCurrentReport={setCurrentReport}
-                generating={generating}
-                setGenerating={setGenerating}
-                loading={loading}
-                setLoading={setLoading}
-                reportName={reportName}
-                messageTemplate={messageTemplate}
-                waMessageTemplate={waMessageTemplate}
-                videoLanguageCode={videoLanguageCode}
-                voiceSpeed={voiceSpeed}
-                voicePitch={voicePitch}
-                enableCaption={enableCaption}
-                useBackground={useBackground}
-                backgroundName={backgroundName}
-                setStep={setStep}
-                backToHistory={backToHistory}
-                loadHistory={loadHistory}
-                goToReportDetail={goToReportDetail}
-              />
-            )}
-          </div>
-        )}
+        </div>
       </div>
     </div>
   );
