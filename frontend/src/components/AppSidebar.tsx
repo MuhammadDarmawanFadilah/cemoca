@@ -20,6 +20,7 @@ import {
   CalendarClock,
   FolderOpen,
   Music,
+  Award,
 } from "lucide-react";
 import {
   DndContext,
@@ -77,6 +78,7 @@ type SectionId =
   | "reportPdf"
   | "learningModule"
   | "learningSchedule"
+  | "certification"
   | "profile";
 
 function getOrderStorageKey(userId?: number | string | null) {
@@ -143,6 +145,7 @@ const AppSidebar = () => {
     "reportPdf",
     "learningModule",
     "learningSchedule",
+    "certification",
     "profile",
   ];
 
@@ -333,6 +336,14 @@ const AppSidebar = () => {
       title: t('nav.learningScheduleHistory'),
       url: "/learning-schedule/history",
       icon: CalendarClock,
+    },
+  ];
+
+  const certificationItems = [
+    {
+      title: "Certificate Template",
+      url: "/certification/certificate-template",
+      icon: Award,
     },
   ];
 
@@ -556,6 +567,31 @@ const AppSidebar = () => {
       content: (
         <SidebarMenu className={menuListClass}>
           {learningScheduleItems.map((item) => (
+            <SidebarMenuItem key={item.title}>
+              <SidebarMenuButton asChild className="w-full">
+                <Link
+                  href={item.url}
+                  onClick={handleMenuClick}
+                  className={menuLinkClass}
+                >
+                  <item.icon className={menuIconClass} />
+                  <span className={menuTextDesktopClass}>{item.title}</span>
+                  <span className={menuTextMobileClass}>{item.title}</span>
+                </Link>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          ))}
+        </SidebarMenu>
+      ),
+    },
+    {
+      id: "certification",
+      visible: isAuthenticated,
+      label: "Certification",
+      icon: Award,
+      content: (
+        <SidebarMenu className={menuListClass}>
+          {certificationItems.map((item) => (
             <SidebarMenuItem key={item.title}>
               <SidebarMenuButton asChild className="w-full">
                 <Link
