@@ -36,14 +36,9 @@ import {
 } from '@/components/ui/select';
 import Image from 'next/image';
 
-const TEMPLATE_OPTIONS = [
-  { value: 'ACHIEVEMENT', label: 'Certificate of Achievement', variableCount: 4 },
-  { value: 'PARTICIPATION', label: 'Certificate of Participation', variableCount: 3 },
-  { value: 'COMPLETION', label: 'Certificate of Completion', variableCount: 4 },
-];
-
 export default function CertificateTemplatePage() {
   const [templates, setTemplates] = useState<CertificateTemplate[]>([]);
+  const [activeTemplates, setActiveTemplates] = useState<CertificateTemplate[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -59,7 +54,7 @@ export default function CertificateTemplatePage() {
 
   // 2-step form
   const [currentStep, setCurrentStep] = useState(1);
-  const [selectedTemplateType, setSelectedTemplateType] = useState('');
+  const [selectedTemplateId, setSelectedTemplateId] = useState<number | null>(null);
   const [generatedCode, setGeneratedCode] = useState('');
   
   // Form data
@@ -112,6 +107,10 @@ export default function CertificateTemplatePage() {
     loadData();
   }, [currentPage, searchTerm]);
 
+  useEffect(() => {
+    loadActiveTemplates();
+  }, []);
+
   const loadData = async () => {
     try {
       setIsLoading(true);
@@ -128,6 +127,16 @@ export default function CertificateTemplatePage() {
       });
     } finally {
       setIsLoading(false);
+    }
+  };
+Id(null);
+    setGeneratedCode('');
+    setSelectedFile(null);
+    setPreviewUrl('');
+    setMergedImageUrl('');
+    resetFormData();
+    await loadActiveTemplatesr) {
+      console.error('Error loading active templates:', error);
     }
   };
 
@@ -225,22 +234,57 @@ export default function CertificateTemplatePage() {
       variable2Y: 0,
       variable2FontSize: 24,
       variable2Color: '#000000',
-      variable3Name: '',
-      variable3X: 0,
-      variable3Y: 0,
-      variable3FontSize: 24,
-      variable3Color: '#000000',
-      variable4Name: '',
-      variable4X: 0,
-      variable4Y: 0,
-      variable4FontSize: 24,
-      variable4Color: '#000000',
-      isActive: true
-    });
+      variableTemplateSelect = async (templateId: string) => {
+    setSelectedTemplateId(Number(templateId));
+    
+    try {
+      const template = activeTemplates.find(t => t.id === Number(templateId));
+      if (!template) return;
+
+      // Generate new code
+      const codeResponse = await CertificateTemplateService.generateCode('AC');
+      setGeneratedCode(codeResponse.templateCode);
+
+      // Set form data based on selected template
+      setFormData(prev => ({
+        ...prev,
+        templateCode: codeResponse.templateCode,
+        templateName: template.templateName,
+        description: template.description || '',
+        variableCount: template.variableCount,
+        variable1Name: template.variable1Name || '',
+        variable1X: template.variable1X || 0,
+        variable1Y: template.variable1Y || 0,
+        variable1FontSize: template.variable1FontSize || 24,
+        variable1Color: template.variable1Color || '#000000',
+        variable2Name: template.variable2Name || '',
+        variable2X: template.variable2X || 0,
+        variable2Y: template.variable2Y || 0,
+        variable2FontSize: template.variable2FontSize || 24,
+        variable2Color: template.variable2Color || '#000000',
+        variable3Name: template.variable3Name || '',
+        variable3X: template.variable3X || 0,
+        variable3Y: template.variable3Y || 0,
+        variable3FontSize: template.variable3FontSize || 24,
+        variable3Color: template.variable3Color || '#000000',
+        variable4Name: template.variable4Name || '',
+        variable4X: template.variable4X || 0,
+        variable4Y: template.variable4Y || 0,
+        variable4FontSize: template.variable4FontSize || 24,
+        variable4Color: template.variable4Color || '#000000',
+      }));
+    } catch (error) {
+      console.error('Error:', error);
+      toast({
+        title: "Error",
+        description: "Gagal generate kode template",
+        variant: "destructive"
+      });
+    }
   };
 
   const handleStep1Next = async () => {
-    if (!selectedTemplateType) {
+    if (!selectedTemplateId) {
       toast({
         title: "Error",
         description: "Pilih template terlebih dahulu",
@@ -249,44 +293,16 @@ export default function CertificateTemplatePage() {
       return;
     }
 
-    try {
-      const selectedOption = TEMPLATE_OPTIONS.find(opt => opt.value === selectedTemplateType);
-      if (!selectedOption) return;
+    if (!selectedFile) {
+      toast({
+        title: "Error",
+        description: "Upload template image terlebih dahulu",
+        variant: "destructive"
+      });
+      return;
+    }
 
-      // Generate code if creating new
-      if (!editingTemplate) {
-        const codeResponse = await CertificateTemplateService.generateCode('AC');
-        setGeneratedCode(codeResponse.templateCode);
-        setFormData(prev => ({
-          ...prev,
-          templateCode: codeResponse.templateCode,
-          templateName: selectedOption.label,
-          variableCount: selectedOption.variableCount,
-        }));
-      }
-
-      // Set default positions based on template type (Certificate of Achievement)
-      if (selectedTemplateType === 'ACHIEVEMENT') {
-        setFormData(prev => ({
-          ...prev,
-          variable1Name: 'Name',
-          variable1X: 400,
-          variable1Y: 350,
-          variable1FontSize: 32,
-          variable1Color: '#1a5f3e',
-          variable2Name: 'APE Amount',
-          variable2X: 400,
-          variable2Y: 420,
-          variable2FontSize: 28,
-          variable2Color: '#1a5f3e',
-          variable3Name: 'Date',
-          variable3X: 250,
-          variable3Y: 520,
-          variable3FontSize: 18,
-          variable3Color: '#666666',
-          variable4Name: 'Location',
-          variable4X: 550,
-          variable4Y: 520,
+    setCurrentStep(2);     variable4Y: 520,
           variable4FontSize: 18,
           variable4Color: '#666666',
         }));
@@ -406,7 +422,7 @@ export default function CertificateTemplatePage() {
       });
     } finally {
       setIsLoading(false);
-      setUploading(false);
+      setUploading(falsId(null
     }
   };
 
@@ -570,37 +586,67 @@ export default function CertificateTemplatePage() {
           {currentStep === 1 && !editingTemplate && (
             <div className="space-y-4 py-4">
               <div className="space-y-2">
-                <Label htmlFor="templateType">Template Type</Label>
-                <Select value={selectedTemplateType} onValueChange={setSelectedTemplateType}>
+                <Label htmlFor="templateType">Pilih Template Certificate</Label>
+                <Select 
+                  value={selectedTemplateId?.toString() || ''} 
+                  onValueChange={handleTemplateSelect}
+                >
                   <SelectTrigger>
-                    <SelectValue placeholder="Pilih template" />
+                    <SelectValue placeholder="Pilih template certificate" />
                   </SelectTrigger>
                   <SelectContent>
-                    {TEMPLATE_OPTIONS.map(opt => (
-                      <SelectItem key={opt.value} value={opt.value}>
-                        {opt.label}
+                    {activeTemplates.map(template => (
+                      <SelectItem key={template.id} value={template.id.toString()}>
+                        {template.templateName}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
 
-              {selectedTemplateType && (
+              {generatedCode && (
+                <div className="space-y-2">
+                  <Label>Template Certificate Code</Label>
+                  <Input
+                    value={generatedCode}
+                    readOnly
+                    className="bg-muted"
+                  />
+                </div>
+              )}
+
+              <div className="space-y-2">
+                <Label htmlFor="imageFile">Upload Template Image (template1.jpg)</Label>
+                <Input
+                  id="imageFile"
+                  type="file"
+                  accept="image/*"
+                  onChange={handleFileChange}
+                />
+                {previewUrl && (
+                  <div className="mt-2 border rounded-lg p-2">
+                    <img src={previewUrl} alt="Preview" className="w-full max-h-60 object-contain" />
+                  </div>
+                )}
+              </div>
+
+              {selectedTemplateId && formData.variableCount > 0 && (
                 <div className="space-y-2 p-4 bg-muted rounded-lg">
-                  <h3 className="font-semibold">Preview Variables</h3>
+                  <h3 className="font-semibold">Preview Variable Values (untuk demo)</h3>
                   <div className="grid grid-cols-2 gap-4">
-                    {TEMPLATE_OPTIONS.find(opt => opt.value === selectedTemplateType)?.variableCount &&
-                      Array.from({ length: TEMPLATE_OPTIONS.find(opt => opt.value === selectedTemplateType)!.variableCount }).map((_, idx) => (
-                        <div key={idx}>
-                          <Label htmlFor={`preview-var${idx + 1}`}>Variable {idx + 1}</Label>
-                          <Input
-                            id={`preview-var${idx + 1}`}
-                            value={previewVariables[`variable${idx + 1}`]}
-                            onChange={(e) => setPreviewVariables(prev => ({ ...prev, [`variable${idx + 1}`]: e.target.value }))}
-                            placeholder={`Value ${idx + 1}`}
-                          />
-                        </div>
-                      ))}
+                    {Array.from({ length: formData.variableCount }).map((_, idx) => (
+                      <div key={idx}>
+                        <Label htmlFor={`preview-var${idx + 1}`}>
+                          {formData[`variable${idx + 1}Name` as keyof typeof formData] || `Variable ${idx + 1}`}
+                        </Label>
+                        <Input
+                          id={`preview-var${idx + 1}`}
+                          value={previewVariables[`variable${idx + 1}`]}
+                          onChange={(e) => setPreviewVariables(prev => ({ ...prev, [`variable${idx + 1}`]: e.target.value }))}
+                          placeholder={`Value ${idx + 1}`}
+                        />
+                      </div>
+                    ))}
                   </div>
                 </div>
               )}
@@ -609,7 +655,7 @@ export default function CertificateTemplatePage() {
                 <Button variant="outline" onClick={handleCloseDialog}>
                   Batal
                 </Button>
-                <Button onClick={handleStep1Next}>
+                <Button onClick={handleStep1Next} disabled={!selectedTemplateId || !selectedFile}>
                   Next
                   <ArrowRight className="ml-2 h-4 w-4" />
                 </Button>
@@ -620,6 +666,39 @@ export default function CertificateTemplatePage() {
           {currentStep === 2 && (
             <form onSubmit={handleSubmit}>
               <div className="space-y-4 py-4">
+                {/* Preview Section - Main Focus */}
+                {previewUrl && (
+                  <div className="space-y-2 border-2 border-primary rounded-lg p-4 bg-background">
+                    <Label className="text-lg font-semibold">Preview Template (template full)</Label>
+                    <div className="border rounded-lg p-2 bg-white">
+                      <canvas ref={canvasRef} style={{ display: 'none' }} />
+                      {mergedImageUrl && (
+                        <img src={mergedImageUrl} alt="Merged Preview" className="w-full" />
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Variable Values for Preview */}
+                <div className="space-y-2 p-4 bg-muted rounded-lg">
+                  <Label className="font-semibold">Edit Variable Values (untuk preview)</Label>
+                  <div className="grid grid-cols-2 gap-4">
+                    {Array.from({ length: formData.variableCount }).map((_, idx) => (
+                      <div key={idx}>
+                        <Label htmlFor={`edit-var${idx + 1}`}>
+                          {formData[`variable${idx + 1}Name` as keyof typeof formData] || `Variable ${idx + 1}`}
+                        </Label>
+                        <Input
+                          id={`edit-var${idx + 1}`}
+                          value={previewVariables[`variable${idx + 1}`]}
+                          onChange={(e) => setPreviewVariables(prev => ({ ...prev, [`variable${idx + 1}`]: e.target.value }))}
+                          placeholder={`Value ${idx + 1}`}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="templateCode">Kode Template</Label>
@@ -628,7 +707,7 @@ export default function CertificateTemplatePage() {
                       value={formData.templateCode}
                       onChange={(e) => setFormData(prev => ({ ...prev, templateCode: e.target.value }))}
                       required
-                      readOnly={!editingTemplate}
+                      readOnly
                     />
                   </div>
                   <div className="space-y-2">
@@ -651,30 +730,10 @@ export default function CertificateTemplatePage() {
                   />
                 </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="imageFile">Upload Template Image</Label>
-                  <Input
-                    id="imageFile"
-                    type="file"
-                    accept="image/*"
-                    onChange={handleFileChange}
-                  />
-                </div>
-
-                {previewUrl && (
-                  <div className="space-y-2">
-                    <Label>Preview with Variables</Label>
-                    <div className="border rounded-lg p-4 bg-muted">
-                      <canvas ref={canvasRef} style={{ display: 'none' }} />
-                      {mergedImageUrl && (
-                        <img src={mergedImageUrl} alt="Preview" className="w-full" />
-                      )}
-                    </div>
-                  </div>
-                )}
-
+                {/* Variable Configuration - Advanced Settings */}
                 <div className="space-y-4 border-t pt-4">
-                  <h3 className="font-semibold">Variable Configuration</h3>
+                  <h3 className="font-semibold">Variable Configuration (Advanced)</h3>
+                  <p className="text-sm text-muted-foreground">Sesuaikan posisi dan styling variable</p>
                   {Array.from({ length: formData.variableCount }).map((_, idx) => (
                     <div key={idx} className="grid grid-cols-5 gap-2 p-3 bg-muted rounded-lg">
                       <div className="col-span-5 mb-2">
@@ -694,7 +753,7 @@ export default function CertificateTemplatePage() {
                         <Input
                           type="number"
                           value={formData[`variable${idx + 1}X` as keyof typeof formData] as number}
-                          onChange={(e) => setFormData(prev => ({ ...prev, [`variable${idx + 1}X`]: parseInt(e.target.value) }))}
+                          onChange={(e) => setFormData(prev => ({ ...prev, [`variable${idx + 1}X`]: parseInt(e.target.value) || 0 }))}
                           className="text-sm"
                         />
                       </div>
@@ -703,7 +762,7 @@ export default function CertificateTemplatePage() {
                         <Input
                           type="number"
                           value={formData[`variable${idx + 1}Y` as keyof typeof formData] as number}
-                          onChange={(e) => setFormData(prev => ({ ...prev, [`variable${idx + 1}Y`]: parseInt(e.target.value) }))}
+                          onChange={(e) => setFormData(prev => ({ ...prev, [`variable${idx + 1}Y`]: parseInt(e.target.value) || 0 }))}
                           className="text-sm"
                         />
                       </div>
@@ -712,7 +771,7 @@ export default function CertificateTemplatePage() {
                         <Input
                           type="number"
                           value={formData[`variable${idx + 1}FontSize` as keyof typeof formData] as number}
-                          onChange={(e) => setFormData(prev => ({ ...prev, [`variable${idx + 1}FontSize`]: parseInt(e.target.value) }))}
+                          onChange={(e) => setFormData(prev => ({ ...prev, [`variable${idx + 1}FontSize`]: parseInt(e.target.value) || 24 }))}
                           className="text-sm"
                         />
                       </div>
@@ -722,7 +781,7 @@ export default function CertificateTemplatePage() {
                           type="color"
                           value={formData[`variable${idx + 1}Color` as keyof typeof formData] as string}
                           onChange={(e) => setFormData(prev => ({ ...prev, [`variable${idx + 1}Color`]: e.target.value }))}
-                          className="text-sm"
+                          className="text-sm h-8"
                         />
                       </div>
                     </div>
