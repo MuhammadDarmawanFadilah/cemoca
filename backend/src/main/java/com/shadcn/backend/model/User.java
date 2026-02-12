@@ -1,6 +1,7 @@
 package com.shadcn.backend.model;
 
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.DynamicUpdate;
@@ -130,6 +131,16 @@ public class User {
     
     @Column(name = "longitude")
     private Double longitude;
+    
+    @Column(name = "age")
+    private Integer age;
+    
+    @Column(name = "medication_time")
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "HH:mm:ss")
+    private LocalTime medicationTime;
+    
+    @Column(name = "photo_path", length = 500)
+    private String photoPath;
     
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)

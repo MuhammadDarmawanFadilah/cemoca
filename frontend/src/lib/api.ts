@@ -506,8 +506,8 @@ export const imageAPI = {
       return filename;
     }
     
-    // Otherwise, construct the URL
-    return `${API_BASE_URL}/images/${filename}`;
+    // Otherwise, construct the URL - files are served at /api/files/
+    return `${API_BASE_URL}/files/${filename}`;
   },
 
   // Delete image
@@ -835,6 +835,9 @@ export interface User {
   ownerName?: string;
   agencyRange?: string;
   reasonToUse?: string;
+  age?: number;
+  medicationTime?: string;
+  photoPath?: string;
   status: 'ACTIVE' | 'INACTIVE' | 'SUSPENDED' | 'WAITING_APPROVAL' | 'REJECTED';
   role?: Role;
   biografi?: Biografi;

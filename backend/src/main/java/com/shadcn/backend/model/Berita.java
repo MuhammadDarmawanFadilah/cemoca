@@ -1,6 +1,5 @@
 package com.shadcn.backend.model;
 
-import com.fasterxml.jackson.annotation.JsonManagedReference;
 import jakarta.persistence.*;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
@@ -9,7 +8,6 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
-import java.util.List;
 
 @Entity
 @Table(name = "berita")
@@ -72,10 +70,6 @@ public class Berita {
     
     @Column(name = "updated_at")
     private LocalDateTime updatedAt;
-    
-    @OneToMany(mappedBy = "berita", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
-    @JsonManagedReference
-    private List<KomentarBerita> komentar;
     
     @PrePersist
     protected void onCreate() {

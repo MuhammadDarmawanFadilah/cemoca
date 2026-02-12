@@ -282,6 +282,29 @@ public class NotificationService {
         return notificationRepository.findByStatusOrderByCreatedAtDesc(status, pageable);
     }
     
+    // Simple text message sender
+    public boolean sendTextMessage(String phoneNumber, String message) {
+        try {
+            String cleanPhone = formatPhoneForWablas(phoneNumber);
+            if (cleanPhone == null || cleanPhone.isBlank()) {
+                log.warn("Invalid phone number: {}", phoneNumber);
+                return false;
+            }
+            
+            return attemptSendMessageV2(
+                cleanPhone,
+                "/api/v2/send-message",
+                java.util.Map.of(
+                    "phone", cleanPhone,
+                    "message", message
+                )
+            );
+        } catch (Exception e) {
+            log.error("Error sending text message to {}: {}", phoneNumber, e.getMessage(), e);
+            return false;
+        }
+    }
+    
     // Method for simple notification creation
     public Notification createNotification(Long userId, String title, String message) {
         Notification notification = new Notification();

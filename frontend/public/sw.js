@@ -1,4 +1,5 @@
 // Service Worker for CEMOCA PWA - Auto-generated
+<<<<<<< HEAD
 // Generated at: 2026-02-09T15:40:55.498Z
 // Deployment ID: 6kuky3
 
@@ -6,6 +7,15 @@
 const VERSION = '0.1.0';
 const BUILD_TIME = 1770651655471;
 const DEPLOYMENT_ID = '6kuky3';
+=======
+// Generated at: 2026-02-11T14:39:00.903Z
+// Deployment ID: 44xss9
+
+// Dynamic cache name with timestamp for development
+const VERSION = '0.1.0';
+const BUILD_TIME = 1770820740888;
+const DEPLOYMENT_ID = '44xss9';
+>>>>>>> d4d22aa (Redesign histori-minum-obat with professional UI and fix patient query to show all medication patients)
 const isDev = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
 const CACHE_NAME = isDev ? `cemoca-system-dev-${BUILD_TIME}` : `cemoca-system-v${VERSION}-${DEPLOYMENT_ID}`;
 const OFFLINE_URL = '/offline';

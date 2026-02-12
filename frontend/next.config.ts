@@ -76,7 +76,7 @@ const nextConfig: NextConfig = {
         protocol: 'http',
         hostname: 'localhost',
         port: '8080',
-        pathname: '/api/images/**',
+        pathname: '/api/files/**',
       },
       {
         protocol: 'https',
@@ -89,7 +89,7 @@ const nextConfig: NextConfig = {
               protocol: process.env.NEXT_PUBLIC_BACKEND_URL.startsWith('https') ? 'https' as const : 'http' as const,
               hostname: new URL(process.env.NEXT_PUBLIC_BACKEND_URL).hostname,
               port: new URL(process.env.NEXT_PUBLIC_BACKEND_URL).port || '',
-              pathname: '/api/images/**',
+              pathname: '/api/files/**',
             },
           ]
         : []),
@@ -100,7 +100,7 @@ const nextConfig: NextConfig = {
               protocol: process.env.NEXT_PUBLIC_BASE_URL.startsWith('https') ? 'https' as const : 'http' as const,
               hostname: new URL(process.env.NEXT_PUBLIC_BASE_URL).hostname,
               port: new URL(process.env.NEXT_PUBLIC_BASE_URL).port || '',
-              pathname: '/api/images/**',
+              pathname: '/api/files/**',
             },
           ]
         : []),

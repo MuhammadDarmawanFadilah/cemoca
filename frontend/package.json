@@ -5,8 +5,8 @@
   "scripts": {
     "dev": "node scripts/generate-sw.js && next dev --turbopack",
     "dev:pwa": "node scripts/dev-with-pwa.js",
-    "build": "node scripts/generate-sw.js && cross-env NEXT_DISABLE_TURBOPACK=1 next build",
-    "build:verify": "cross-env NODE_ENV=production npm run build && node scripts/verify-production-console.js",
+    "build": "node scripts/generate-sw.js && next build",
+    "build:verify": "node scripts/generate-sw.js && next build && node scripts/verify-production-console.js",
     "start": "next start",
     "lint": "next lint --fix",
     "lint:check": "next lint",

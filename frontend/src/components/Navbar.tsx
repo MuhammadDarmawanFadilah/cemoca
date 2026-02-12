@@ -1,8 +1,26 @@
 "use client";
 
-import { LogOut, Moon, Settings, Sun, User, LogIn, UserCircle, Key, Newspaper, Home, FileText, CreditCard, Database, Users, Shield, MapPin, Building, Briefcase, Heart, Stethoscope, Gift, UserCheck, Mail, MessageCircle, Download, Globe, Check, Building2 } from "lucide-react";
+import {
+  LogOut,
+  Moon,
+  Sun,
+  User,
+  LogIn,
+  Key,
+  Home,
+  FileText,
+  Users,
+  Stethoscope,
+  MessageCircle,
+  Download,
+  Globe,
+  Check,
+  Bell,
+  Clock,
+  Newspaper,
+  History,
+} from "lucide-react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar";
 import {
   DropdownMenu,
@@ -18,325 +36,194 @@ import { SidebarTrigger } from "./ui/sidebar";
 import { useAuth } from "@/contexts/AuthContext";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { usePWAInstall } from "@/hooks/usePWA";
-import { usePathname, useSearchParams } from "next/navigation";
-import { useState, useEffect, useCallback } from "react";
-import { imageAPI, biografiAPI } from "@/lib/api";
-import { Loader2 } from "lucide-react";
+import { usePathname } from "next/navigation";
+import { useState, useEffect } from "react";
+import { imageAPI } from "@/lib/api";
 import { SupportedLocale } from "@/lib/i18n";
 
 const Navbar = () => {
   const { setTheme } = useTheme();
   const { user, isAuthenticated, logout } = useAuth();
-  const { locale, setLocale, t, localeNames, localeFlags, supportedLocales } = useLanguage();
+  const { locale, setLocale, t, localeNames, localeFlags, supportedLocales } =
+    useLanguage();
   const { isInstallable, install } = usePWAInstall();
-  const router = useRouter();
   const pathname = usePathname() || "";
-  const searchParams = useSearchParams();
-  const isBeritaPage = pathname === "/berita" || pathname.startsWith("/berita/");
+
   const hideSidebarTrigger = [
     "/login",
     "/forgot-password",
     "/reset-password",
-    "/register/company-invitation",
+    "/register",
   ].some((p) => pathname === p || pathname.startsWith(`${p}/`));
 
-  // Debug PWA state
-  console.log('PWA Debug - isInstallable:', isInstallable, 'install function:', typeof install);
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
 
-  const [isCategoryLoading, setIsCategoryLoading] = useState(false);
-  const [currentCategory, setCurrentCategory] = useState('Semua');
-  const [biografiPhoto, setBiografiPhoto] = useState<string | null>(null);
+  // ─── Page title resolver ────────────────────────────
+  const getPageInfo = (): { title: string; icon: React.ElementType } => {
+    const routes: { match: string; title: string; icon: React.ElementType }[] = [
+      { match: "/sehat/dashboard", title: "Dashboard", icon: Home },
+      { match: "/sehat/administrasi-profil", title: "Manajemen Pengguna", icon: Users },
+      { match: "/sehat/histori-minum-obat", title: "Histori Minum Obat", icon: History },
+      { match: "/sehat/konsultasi", title: "Konsultasi", icon: MessageCircle },
+      { match: "/sehat/berita", title: "Informasi Berita", icon: Newspaper },
+      { match: "/sehat/eso", title: "Informasi ESO", icon: FileText },
+      { match: "/sehat/histori-pengingat", title: "Histori Pengingat", icon: Clock },
+      { match: "/sehat/pengingat-minum-obat", title: "Pengingat Minum Obat", icon: Bell },
+      { match: "/sehat/profil-pasien", title: "Profil Pasien", icon: Stethoscope },
+      { match: "/reset-password", title: "Ubah Password", icon: Key },
+      { match: "/login", title: "Masuk", icon: LogIn },
+    ];
+    const found = routes.find((r) => pathname.startsWith(r.match));
+    if (found) return { title: found.title, icon: found.icon };
 
-  // Function to get page title and icon based on current path
-  const getPageInfo = () => {
-    if (pathname === "/" || pathname === "/dashboard") return { title: t('nav.dashboard'), icon: Home };
-    if (pathname === "/admin") return { title: "Admin", icon: Users };
-    if (pathname === "/company") return { title: "Company", icon: Building2 };
-    if (pathname === "/documents") return { title: "Document Center", icon: FileText };
-    if (pathname.startsWith("/biografi")) {
-      if (pathname.includes("/edit")) return { title: "Edit Biografi", icon: UserCircle };
-      if (pathname.includes("/create")) return { title: "Buat Biografi", icon: UserCircle };
-      return { title: "Biografi Member", icon: UserCircle };
-    }    if (pathname.startsWith("/berita")) return { title: "Portal Berita", icon: Newspaper };
-    if (pathname.startsWith("/komunikasi")) return { title: "Komunikasi Kita", icon: MessageCircle };
-    if (pathname.startsWith("/alumni-card")) return { title: "Kartu Member", icon: CreditCard };
-    if (pathname.startsWith("/public-biografi")) return { title: "Profil Member", icon: UserCircle };
-    if (pathname.startsWith("/profile")) return { title: t('profile.companyProfile'), icon: Building2 };
-    if (pathname.startsWith("/admin")) {
-      if (pathname.includes("/users")) return { title: "Karyawan Management", icon: Users };
-      if (pathname.includes("/berita")) return { title: "Berita Management", icon: Newspaper };
-      if (pathname.includes("/documents")) return { title: "Dokumen Management", icon: FileText };
-      if (pathname.includes("/biografi")) return { title: "Biografi Management", icon: UserCircle };
-      if (pathname.includes("/invitations")) return { title: "Histori Undangan", icon: Mail };
-      if (pathname.includes("/approvals")) return { title: "Approval Undangan", icon: UserCheck };
-      if (pathname.includes("/birthday")) return { title: "Birthday Admin", icon: Gift };
-      if (pathname.includes("/master-data")) {
-        if (pathname.includes("/agency-list")) return { title: "Agency List", icon: Users };
-        if (pathname.includes("/spesialisasi")) return { title: "Spesialisasi Kedokteran", icon: Stethoscope };
-        if (pathname.includes("/provinsi")) return { title: "Provinsi", icon: MapPin };
-        if (pathname.includes("/kota")) return { title: "Kota/Kabupaten", icon: Building };
-        if (pathname.includes("/posisi")) return { title: "Posisi & Pekerjaan", icon: Briefcase };
-        if (pathname.includes("/hobi")) return { title: "Hobi & Minat", icon: Heart };
-        if (pathname.includes("/agama")) return { title: "Agama", icon: Shield };
-        return { title: "Master Data", icon: Database };
-      }
-      return { title: "Administration", icon: Settings };
-    }
-    if (pathname === "/reset-password") return { title: t('profile.changePassword'), icon: Key };
-    if (pathname === "/login") return { title: t('auth.login'), icon: LogIn };
-    if (pathname === "/register") return { title: t('auth.register'), icon: User };
-    
-    // Default fallback
-    const segments = pathname.split('/').filter(Boolean);
+    // Fallback: extract from path
+    const segments = pathname.split("/").filter(Boolean);
     if (segments.length > 0) {
       const title = segments[segments.length - 1]
-        .split('-')
-        .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-        .join(' ');
+        .split("-")
+        .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+        .join(" ");
       return { title, icon: FileText };
     }
-    
     return { title: "Dashboard", icon: Home };
-  };  // Sync search input with current search state (remove URL dependency)
-  useEffect(() => {
-    if (isBeritaPage && searchParams) {
-      // Reset loading states
-      setIsCategoryLoading(false);
-    }
-  }, [isBeritaPage, searchParams]);
+  };
 
-  // Fetch complete biography photo if user has biography but no photo in login data
-  useEffect(() => {
-    const fetchBiographyPhoto = async () => {
-      if (user && user.biografi && user.fullName && 
-          !user.biografi.fotoProfil && !user.biografi.foto && !user.avatarUrl) {
-        try {
-          const fullBiografi = await biografiAPI.getBiografiByName(user.fullName);
-          if (fullBiografi && (fullBiografi.fotoProfil || fullBiografi.foto)) {
-            setBiografiPhoto(fullBiografi.fotoProfil || fullBiografi.foto || null);
-          }
-        } catch (error) {
-          // Silent error handling
-        }
-      } else {
-        // Reset if user data changes
-        setBiografiPhoto(null);
-      }
-    };
-    
-    fetchBiographyPhoto();
-  }, [user]);
+  const pageInfo = getPageInfo();
+  const PageIcon = pageInfo.icon;
 
-  // Listen for category changes from BeritaPage
-  useEffect(() => {
-    const handleCategoryUpdate = (event: CustomEvent) => {
-      setCurrentCategory(event.detail.category);
-    };
-
-    window.addEventListener('beritaCategoryChanged', handleCategoryUpdate as EventListener);
-    
-    return () => {
-      window.removeEventListener('beritaCategoryChanged', handleCategoryUpdate as EventListener);
-    };
-  }, []);  const handleCategoryClick = useCallback((category: string) => {
-    console.log('Navbar handleCategoryClick called with:', category);
-    
-    // Only work if we're on berita page
-    if (!isBeritaPage) return;
-    
-    setIsCategoryLoading(true);
-    setCurrentCategory(category); // Update local state immediately
-    
-    // Trigger custom event that BeritaPage can listen to
-    const event = new CustomEvent('navbarCategoryChange', { 
-      detail: { category: category } 
-    });
-    window.dispatchEvent(event);
-    
-    // Auto-clear loading state after a short delay
-    setTimeout(() => {
-      setIsCategoryLoading(false);
-    }, 1000);
-  }, [isBeritaPage]);
-  
   return (
-    <nav className={`p-4 flex items-center justify-between sticky top-0 bg-background z-10 border-b ${isBeritaPage ? 'shadow-md' : ''}`}>
+    <nav className="flex items-center justify-between sticky top-0 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 z-30 border-b px-3 py-2.5 md:px-4 md:py-3">
       {/* LEFT */}
-      <div className="flex items-center gap-4">
-        {!hideSidebarTrigger && <SidebarTrigger />}        <div className="hidden sm:block">
-          {/* Removed duplicate Portal Berita Alumni title */}
-        </div>        {/* Quick Navigation Links */}
-        <div className="hidden lg:flex items-center space-x-6 ml-6">
-          <div className="flex items-center text-sm font-medium text-gray-800 dark:text-gray-200">
-            {(() => {
-              const pageInfo = getPageInfo();
-              const IconComponent = pageInfo.icon;
-              return (
-                <>
-                  <IconComponent className="h-4 w-4 mr-2" />
-                  {pageInfo.title}
-                </>
-              );
-            })()}
-          </div>
-        </div>        {/* News specific navigation - only shown on berita pages */}
-        {isBeritaPage && (
-          <div className="hidden md:flex items-center space-x-4 ml-6">
-            {[
-              { key: 'Semua', value: 'Semua' },
-              { key: 'Akademik', value: 'AKADEMIK' },
-              { key: 'Karir', value: 'KARIR' },
-              { key: 'Member', value: 'ALUMNI' },
-              { key: 'Teknologi', value: 'TEKNOLOGI' }
-            ].map(({ key, value }) => {
-              const isActive = currentCategory === value;
-              const isLoadingThis = isCategoryLoading && currentCategory === value;
-              
-              return (
-                <button 
-                  key={key}
-                  onClick={() => handleCategoryClick(value)}
-                  className={`text-sm font-medium transition-colors ${
-                    isActive ? 'text-primary font-semibold border-b-2 border-primary' : 'hover:text-primary'
-                  } ${isCategoryLoading ? 'opacity-50' : ''}`}
-                  disabled={isCategoryLoading}
-                >
-                  {isLoadingThis ? (
-                    <span className="flex items-center">
-                      <Loader2 className="h-3 w-3 mr-1 animate-spin" />
-                      {key}
-                    </span>
-                  ) : (
-                    key
-                  )}
-                </button>
-              );
-            })}
-          </div>
-        )}
+      <div className="flex items-center gap-2 md:gap-3 min-w-0">
+        {!hideSidebarTrigger && <SidebarTrigger className="shrink-0" />}
+        <div className="flex items-center gap-2 text-sm font-medium truncate">
+          <PageIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
+          <span className="truncate">{pageInfo.title}</span>
+        </div>
       </div>
-        {/* RIGHT */}
-      <div className="flex items-center gap-4">
 
-        {/* LANGUAGE SELECTOR */}
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="outline" size="icon" title={t('settings.language')}>
-              <Globe className="h-[1.2rem] w-[1.2rem]" />
-              <span className="sr-only">{t('settings.language')}</span>
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuLabel>{t('settings.language')}</DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            {supportedLocales.map((loc) => (
-              <DropdownMenuItem 
-                key={loc} 
-                onClick={() => setLocale(loc as SupportedLocale)}
-                className="flex items-center justify-between"
-              >
-                <span className="flex items-center gap-2">
-                  <span>{localeFlags[loc as SupportedLocale]}</span>
-                  <span>{localeNames[loc as SupportedLocale]}</span>
-                </span>
-                {locale === loc && <Check className="h-4 w-4 text-primary" />}
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
-
-        {/* PWA INSTALL BUTTON */}
-        <Button 
-          variant="outline" 
-          size="icon" 
-          onClick={() => {
-            console.log('PWA button clicked, isInstallable:', isInstallable);
-            if (install) {
-              install();
-            } else {
-              alert('PWA install function not available');
-            }
-          }} 
-          title={isInstallable ? "Install App" : "PWA Install (Debug)"}
-          className={isInstallable ? "" : "opacity-50 border-red-300"}
-        >
-          <Download className="h-[1.2rem] w-[1.2rem]" />
-          <span className="sr-only">Install App</span>
-        </Button>
-
-        {/* THEME MENU */}
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="outline" size="icon">
-              <Sun className="h-[1.2rem] w-[1.2rem] rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
-              <Moon className="absolute h-[1.2rem] w-[1.2rem] rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
-              <span className="sr-only">{t('nav.toggleTheme')}</span>
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem onClick={() => setTheme("light")}>
-              {t('nav.light')}
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => setTheme("dark")}>
-              {t('nav.dark')}
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => setTheme("system")}>
-              {t('nav.system')}
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-
-        {/* USER MENU */}
-        {isAuthenticated ? (
+      {/* RIGHT */}
+      <div className="flex items-center gap-1.5 md:gap-2 shrink-0">
+        {/* Language */}
+        {mounted && (
           <DropdownMenu>
-            <DropdownMenuTrigger>              <Avatar className="h-8 w-8">
-                <AvatarImage 
-                  src={
-                    (user?.avatarUrl ? imageAPI.getImageUrl(user.avatarUrl) : undefined) ||
-                    (user?.biografi?.fotoProfil ? imageAPI.getImageUrl(user.biografi.fotoProfil) : 
-                     user?.biografi?.foto ? imageAPI.getImageUrl(user.biografi.foto) :
-                     biografiPhoto ? imageAPI.getImageUrl(biografiPhoto) : undefined)
-                  } 
-                  alt={user?.fullName}
-                />
-                <AvatarFallback className="bg-blue-500 text-white">
-                  {user?.fullName?.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
-                </AvatarFallback>
-              </Avatar>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon" className="h-8 w-8">
+                <Globe className="h-4 w-4" />
+                <span className="sr-only">{t("settings.language")}</span>
+              </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent sideOffset={10} align="end" className="w-56">
-              <DropdownMenuLabel>
-                <div className="flex flex-col space-y-1">
-                  <p className="text-sm font-medium leading-none">{user?.fullName}</p>
-                  <p className="text-xs leading-none text-muted-foreground">{user?.email}</p>
-                  <p className="text-xs leading-none text-muted-foreground">
-                    {user?.role?.roleName || 'USER'}
-                  </p>
-                </div>
-              </DropdownMenuLabel>              <DropdownMenuSeparator />              <DropdownMenuItem asChild>
-                <Link href="/profile">
-                  <Building2 className="h-[1.2rem] w-[1.2rem] mr-2" />
-                  {t('profile.companyProfile')}
-                </Link>
+            <DropdownMenuContent align="end">
+              <DropdownMenuLabel>{t("settings.language")}</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              {supportedLocales.map((loc) => (
+                <DropdownMenuItem
+                  key={loc}
+                  onClick={() => setLocale(loc as SupportedLocale)}
+                  className="flex items-center justify-between"
+                >
+                  <span className="flex items-center gap-2">
+                    <span>{localeFlags[loc as SupportedLocale]}</span>
+                    <span>{localeNames[loc as SupportedLocale]}</span>
+                  </span>
+                  {locale === loc && (
+                    <Check className="h-4 w-4 text-primary" />
+                  )}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
+
+        {/* PWA Install - only show when installable */}
+        {isInstallable && (
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8"
+            onClick={() => install?.()}
+            title="Install App"
+          >
+            <Download className="h-4 w-4" />
+          </Button>
+        )}
+
+        {/* Theme */}
+        {mounted && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon" className="h-8 w-8">
+                <Sun className="h-4 w-4 rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
+                <Moon className="absolute h-4 w-4 rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
+                <span className="sr-only">{t("nav.toggleTheme")}</span>
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => setTheme("light")}>
+                {t("nav.light")}
               </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setTheme("dark")}>
+                {t("nav.dark")}
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setTheme("system")}>
+                {t("nav.system")}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
+
+        {/* User menu */}
+        {isAuthenticated && mounted ? (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full">
+                <Avatar className="h-7 w-7">
+                  <AvatarImage
+                    src={(user?.photoPath || user?.avatarUrl) ? imageAPI.getImageUrl(user?.photoPath || user?.avatarUrl || '') : undefined}
+                    alt={user?.fullName}
+                  />
+                  <AvatarFallback className="bg-primary text-primary-foreground text-xs">
+                    {user?.fullName
+                      ?.split(" ")
+                      .map((n) => n[0])
+                      .join("")
+                      .slice(0, 2)
+                      .toUpperCase()}
+                  </AvatarFallback>
+                </Avatar>
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent sideOffset={8} align="end" className="w-52">
+              <DropdownMenuLabel>
+                <div className="flex flex-col space-y-0.5">
+                  <p className="text-sm font-medium truncate">{user?.fullName}</p>
+                  <p className="text-xs text-muted-foreground truncate">{user?.email}</p>
+                  <p className="text-xs text-muted-foreground">{user?.role?.roleName || "USER"}</p>
+                </div>
+              </DropdownMenuLabel>
+              <DropdownMenuSeparator />
               <DropdownMenuItem asChild>
-                <Link href="/reset-password" target="_blank" rel="noopener noreferrer">
-                  <Key className="h-[1.2rem] w-[1.2rem] mr-2" />
-                  {t('nav.changePassword')}
+                <Link href="/reset-password">
+                  <Key className="mr-2 h-4 w-4" />
+                  {t("nav.changePassword")}
                 </Link>
               </DropdownMenuItem>
               <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={logout} className="text-red-600 focus:text-red-600">
-                <LogOut className="h-[1.2rem] w-[1.2rem] mr-2" />
-                {t('nav.logout')}
+              <DropdownMenuItem
+                onClick={logout}
+                className="text-red-600 focus:text-red-600"
+              >
+                <LogOut className="mr-2 h-4 w-4" />
+                {t("nav.logout")}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         ) : (
-          <Button asChild variant="default">
+          <Button asChild variant="default" size="sm">
             <Link href="/login">
-              <LogIn className="h-4 w-4 mr-2" />
-              {t('nav.login')}
+              <LogIn className="h-4 w-4 mr-1.5" />
+              <span className="hidden sm:inline">{t("nav.login")}</span>
             </Link>
           </Button>
         )}

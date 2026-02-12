@@ -12,6 +12,7 @@ interface AuthContextType {
   logout: () => void;
   setUser: (user: User | null) => void;
   isAuthenticated: boolean;
+  isAdmin: () => boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -37,6 +38,7 @@ export const useOptionalAuth = (): AuthContextType => {
       logout: () => {},
       setUser: () => {},
       isAuthenticated: false,
+      isAdmin: () => false,
     };
   }
   return context;
@@ -51,6 +53,13 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [token, setToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
+  const logout = () => {
+    localStorage.removeItem('auth_token');
+    localStorage.removeItem('auth_user');
+    setToken(null);
+    setUser(null);
+  };
+
   const refreshMe = async (bearerToken: string) => {
     try {
       const res = await fetch(getApiUrl(config.authMeEndpoint), {
@@ -59,13 +68,17 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         },
       });
       if (!res.ok) {
+        // Token invalid, logout
+        if (res.status === 401) {
+          logout();
+        }
         return;
       }
       const nextUser = (await res.json()) as User;
       localStorage.setItem('auth_user', JSON.stringify(nextUser));
       setUser(nextUser);
     } catch {
-      // ignore
+      // ignore network errors
     }
   };
   // Load token and user from localStorage on mount
@@ -141,11 +154,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       throw error;
     }
   };
-  const logout = () => {
-    localStorage.removeItem('auth_token');
-    localStorage.removeItem('auth_user');
-    setToken(null);
-    setUser(null);
+
+  const isAdmin = () => {
+    return user?.role?.roleName === 'ADMIN';
   };
 
   const isAuthenticated = !!user && !!token;
@@ -158,6 +169,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     logout,
     setUser,
     isAuthenticated,
+    isAdmin,
   };
 
   return (

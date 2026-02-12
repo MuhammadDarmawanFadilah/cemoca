@@ -112,9 +112,9 @@ public class AuthService {
         // Generate permanent token based on user data
         String token = generatePermanentToken(user);
         
-        // Return simple user data for koperasi system
+        // Return user data with permanent token (never expires until logout)
         log.info("Authentication successful for user: {}", username);
-        return new AuthResponse(token, user, Long.MAX_VALUE); // Never expires
+        return new AuthResponse(token, user, Long.MAX_VALUE); // Token persistent sampai logout
     }
       /**
      * Extract user ID from permanent token

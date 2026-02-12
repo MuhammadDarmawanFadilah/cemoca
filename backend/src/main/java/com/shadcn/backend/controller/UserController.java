@@ -4,6 +4,7 @@ import com.shadcn.backend.dto.UserRequest;
 import com.shadcn.backend.model.User;
 import com.shadcn.backend.service.AuthService;
 import com.shadcn.backend.service.UserService;
+import com.shadcn.backend.service.WhatsAppNotificationService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
@@ -24,6 +25,7 @@ public class UserController {
     
     private final UserService userService;
     private final AuthService authService;
+    private final WhatsAppNotificationService whatsAppNotificationService;
 
     private static class UnauthorizedException extends RuntimeException {
         UnauthorizedException(String message) {
@@ -149,6 +151,10 @@ public class UserController {
         try {
             User adminUser = requireAdmin(token);
             log.info("Creating user with username: {}", userRequest.getUsername());
+            
+            // Save plaintext password for WhatsApp notification
+            String plaintextPassword = userRequest.getPassword();
+            
             User createdUser = userService.createUser(userRequest);
 
             boolean needsCompanyCode = createdUser.getCompanyCode() == null || createdUser.getCompanyCode().isBlank();
@@ -165,6 +171,24 @@ public class UserController {
             }
 
             log.info("User created successfully: {}", createdUser.getUsername());
+            
+            // Send WhatsApp notification
+            try {
+                String roleName = createdUser.getRole() != null ? createdUser.getRole().getRoleName() : "User";
+                whatsAppNotificationService.sendWelcomeNotification(
+                    createdUser.getPhoneNumber(),
+                    createdUser.getFullName(),
+                    createdUser.getUsername(),
+                    plaintextPassword,
+                    roleName
+                );
+                log.info("WhatsApp notification sent to user: {}", createdUser.getUsername());
+            } catch (Exception e) {
+                log.warn("Failed to send WhatsApp notification for user {}: {}", 
+                    createdUser.getUsername(), e.getMessage());
+                // Don't fail user creation if notification fails
+            }
+            
             return ResponseEntity.ok(createdUser);
         } catch (RuntimeException e) {
             if (e instanceof UnauthorizedException) {

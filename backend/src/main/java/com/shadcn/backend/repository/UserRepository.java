@@ -130,6 +130,18 @@ public interface UserRepository extends JpaRepository<User, Long> {
     List<User> findByRoleName(@Param("roleName") String roleName);
     
     /**
+     * Find users by role name with pagination
+     */
+    @Query("SELECT u FROM User u LEFT JOIN FETCH u.role r WHERE r.name = :roleName")
+    Page<User> findByRole_RoleName(@Param("roleName") String roleName, Pageable pageable);
+    
+    /**
+     * Find users by role name (list)
+     */
+    @Query("SELECT u FROM User u LEFT JOIN FETCH u.role r WHERE r.name = :roleName")
+    List<User> findByRole_RoleName(@Param("roleName") String roleName);
+    
+    /**
      * Find karyawan users (users with KARYAWAN role)
      */
     @Query("SELECT u FROM User u LEFT JOIN FETCH u.role r WHERE r.name = 'KARYAWAN'")

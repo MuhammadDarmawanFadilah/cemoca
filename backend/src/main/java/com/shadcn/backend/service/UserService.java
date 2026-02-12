@@ -61,6 +61,14 @@ public class UserService {
             throw new RuntimeException("Email already exists");
         }
         
+        // Check if phone number already exists
+        if (userRequest.getPhoneNumber() != null && !userRequest.getPhoneNumber().trim().isEmpty()) {
+            Set<String> phoneCandidates = buildPhoneCandidates(userRequest.getPhoneNumber());
+            if (!phoneCandidates.isEmpty() && userRepository.existsByPhoneNumberIn(phoneCandidates)) {
+                throw new RuntimeException("Phone number already exists");
+            }
+        }
+        
         // Find role
         Role role = roleRepository.findById(userRequest.getRoleId())
             .orElseThrow(() -> new RuntimeException("Role not found with id: " + userRequest.getRoleId()));
@@ -81,6 +89,9 @@ public class UserService {
             .kodePos(userRequest.getKodePos())
             .latitude(userRequest.getLatitude())
             .longitude(userRequest.getLongitude())
+            .age(userRequest.getAge())
+            .medicationTime(userRequest.getMedicationTime())
+            .photoPath(userRequest.getPhotoPath())
             .build();
         
         User savedUser = userRepository.save(user);
@@ -241,6 +252,18 @@ public class UserService {
             throw new RuntimeException("Email already exists");
         }
         
+        // Check if phone number already exists (but not for this user)
+        if (userRequest.getPhoneNumber() != null && !userRequest.getPhoneNumber().trim().isEmpty()) {
+            String existingPhone = existingUser.getPhoneNumber();
+            String newPhone = userRequest.getPhoneNumber().trim();
+            if (!newPhone.equals(existingPhone)) {
+                Set<String> phoneCandidates = buildPhoneCandidates(newPhone);
+                if (!phoneCandidates.isEmpty() && userRepository.existsByPhoneNumberIn(phoneCandidates)) {
+                    throw new RuntimeException("Phone number already exists");
+                }
+            }
+        }
+        
         // Update fields
         existingUser.setUsername(userRequest.getUsername());
         existingUser.setFullName(userRequest.getFullName());
@@ -269,6 +292,17 @@ public class UserService {
         existingUser.setKodePos(userRequest.getKodePos());
         existingUser.setLatitude(userRequest.getLatitude());
         existingUser.setLongitude(userRequest.getLongitude());
+        
+        // Update patient-specific fields
+        if (userRequest.getAge() != null) {
+            existingUser.setAge(userRequest.getAge());
+        }
+        if (userRequest.getMedicationTime() != null) {
+            existingUser.setMedicationTime(userRequest.getMedicationTime());
+        }
+        if (userRequest.getPhotoPath() != null && !userRequest.getPhotoPath().trim().isEmpty()) {
+            existingUser.setPhotoPath(userRequest.getPhotoPath());
+        }
         
         User savedUser = userRepository.save(existingUser);
         log.info("User updated successfully: {}", savedUser.getUsername());

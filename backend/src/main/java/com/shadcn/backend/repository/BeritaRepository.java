@@ -65,28 +65,6 @@ public interface BeritaRepository extends JpaRepository<Berita, Long> {
     // Count by kategori and status
     long countByKategoriAndStatus(Berita.KategoriBerita kategori, Berita.StatusBerita status);
     
-    // Optimized query to get berita summary without comments to avoid N+1 problem
-    @Query("SELECT new com.shadcn.backend.dto.BeritaSummaryDto(" +
-           "b.id, b.judul, b.ringkasan, b.penulis, b.penulisBiografiId, b.ringkasanWordCount, " +
-           "b.gambarUrl, b.mediaLampiran, b.status, b.kategori, b.tags, " +
-           "b.jumlahView, b.jumlahLike, b.createdAt, b.updatedAt) " +
-           "FROM Berita b WHERE b.status = :status ORDER BY b.createdAt DESC")
-    Page<com.shadcn.backend.dto.BeritaSummaryDto> findBeritaSummaryByStatus(@Param("status") Berita.StatusBerita status, Pageable pageable);
-    
-    @Query("SELECT new com.shadcn.backend.dto.BeritaSummaryDto(" +
-           "b.id, b.judul, b.ringkasan, b.penulis, b.penulisBiografiId, b.ringkasanWordCount, " +
-           "b.gambarUrl, b.mediaLampiran, b.status, b.kategori, b.tags, " +
-           "b.jumlahView, b.jumlahLike, b.createdAt, b.updatedAt) " +
-           "FROM Berita b WHERE b.kategori = :kategori AND b.status = :status ORDER BY b.createdAt DESC")
-    Page<com.shadcn.backend.dto.BeritaSummaryDto> findBeritaSummaryByKategoriAndStatus(@Param("kategori") Berita.KategoriBerita kategori, @Param("status") Berita.StatusBerita status, Pageable pageable);
-      @Query("SELECT new com.shadcn.backend.dto.BeritaSummaryDto(" +
-           "b.id, b.judul, b.ringkasan, b.penulis, b.penulisBiografiId, b.ringkasanWordCount, " +
-           "b.gambarUrl, b.mediaLampiran, b.status, b.kategori, b.tags, " +
-           "b.jumlahView, b.jumlahLike, b.createdAt, b.updatedAt) " +
-           "FROM Berita b WHERE (b.judul LIKE %:search% OR " +
-           "b.konten LIKE %:search%) AND b.status = :status ORDER BY b.createdAt DESC")
-    Page<com.shadcn.backend.dto.BeritaSummaryDto> findBeritaSummaryBySearch(@Param("search") String search, @Param("status") Berita.StatusBerita status, Pageable pageable);
-    
     // Dashboard methods
     @Query("SELECT b FROM Berita b WHERE b.createdAt >= :startOfMonth ORDER BY b.createdAt DESC")
     List<Berita> findByCreatedAtAfter(@Param("startOfMonth") java.time.LocalDateTime startOfMonth);
@@ -101,12 +79,4 @@ public interface BeritaRepository extends JpaRepository<Berita, Long> {
     // Get berita detail without comments for optimization
     @Query("SELECT b FROM Berita b WHERE b.id = :id")
     Optional<Berita> findByIdWithoutComments(@Param("id") Long id);
-    
-    // Optimized query to get popular berita summary without comments to avoid N+1 problem
-    @Query("SELECT new com.shadcn.backend.dto.BeritaSummaryDto(" +
-           "b.id, b.judul, b.ringkasan, b.penulis, b.penulisBiografiId, b.ringkasanWordCount, " +
-           "b.gambarUrl, b.mediaLampiran, b.status, b.kategori, b.tags, " +
-           "b.jumlahView, b.jumlahLike, b.createdAt, b.updatedAt) " +
-           "FROM Berita b WHERE b.status = :status ORDER BY b.jumlahView DESC, b.createdAt DESC")
-    Page<com.shadcn.backend.dto.BeritaSummaryDto> findPopularBeritaSummaryByStatus(@Param("status") Berita.StatusBerita status, Pageable pageable);
 }

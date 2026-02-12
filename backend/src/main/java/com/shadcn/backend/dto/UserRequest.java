@@ -7,6 +7,8 @@ import jakarta.validation.constraints.Size;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import lombok.AllArgsConstructor;
+import java.time.LocalTime;
+import com.fasterxml.jackson.annotation.JsonFormat;
 
 @Data
 @NoArgsConstructor
@@ -44,4 +46,12 @@ public class UserRequest {
     private String kodePos;
     private Double latitude;
     private Double longitude;
+    
+    // Patient-specific fields
+    private Integer age;
+    
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "HH:mm:ss")
+    private LocalTime medicationTime;
+    
+    private String photoPath;
 }

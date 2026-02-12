@@ -1,16 +1,21 @@
 "use client";
 
-import { useState, useEffect, useCallback, type CSSProperties, type ReactNode } from "react";
+import { useCallback } from "react";
 import {
   Home,
   ChevronUp,
-  ChevronDown,
+  UserPlus,
+  Bell,
+  History,
+  MessageCircle,
+  Newspaper,
+  FileText,
+  User,
   Users,
-  UserCircle,
-  Building,
-  Shield,
+  Clock,
   LogOut,
   LogIn,
+<<<<<<< HEAD
   Key,
   Video,
   FileVideo,
@@ -21,33 +26,17 @@ import {
   FolderOpen,
   Music,
   Award,
+=======
+>>>>>>> d4d22aa (Redesign histori-minum-obat with professional UI and fix patient query to show all medication patients)
 } from "lucide-react";
-import {
-  DndContext,
-  PointerSensor,
-  closestCenter,
-  useSensor,
-  useSensors,
-  type DragEndEvent,
-} from "@dnd-kit/core";
-import { SortableContext, arrayMove, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
-import { CSS } from "@dnd-kit/utilities";
-import { restrictToParentElement, restrictToVerticalAxis } from "@dnd-kit/modifiers";
 import {
   Sidebar,
   SidebarContent,
   SidebarFooter,
-  SidebarGroup,
-  SidebarGroupContent,
-  SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
-  SidebarMenuBadge,
   SidebarMenuButton,
   SidebarMenuItem,
-  SidebarMenuSub,
-  SidebarMenuSubButton,
-  SidebarMenuSubItem,
   SidebarSeparator,
   useSidebar,
 } from "./ui/sidebar";
@@ -60,16 +49,11 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "./ui/dropdown-menu";
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "./ui/collapsible";
 import { useAuth } from "@/contexts/AuthContext";
-import { useLanguage } from "@/contexts/LanguageContext";
 import { useMobile } from "@/hooks/useMobile";
 import { imageAPI } from "@/lib/api";
 
+<<<<<<< HEAD
 type SectionId =
   | "main"
   | "admin"
@@ -131,12 +115,14 @@ function SortableSection({
   );
 }
 
+=======
+>>>>>>> d4d22aa (Redesign histori-minum-obat with professional UI and fix patient query to show all medication patients)
 const AppSidebar = () => {
   const { user, isAuthenticated, logout } = useAuth();
-  const { t } = useLanguage();
   const isMobile = useMobile();
   const { setOpenMobile } = useSidebar();
 
+<<<<<<< HEAD
   const SECTION_IDS: SectionId[] = [
     "main",
     "admin",
@@ -193,6 +179,8 @@ const AppSidebar = () => {
     }
   }, [sectionOrder, user?.id]);
 
+=======
+>>>>>>> d4d22aa (Redesign histori-minum-obat with professional UI and fix patient query to show all medication patients)
   // Helper function untuk menutup sidebar pada mobile ketika menu diklik
   const handleMenuClick = useCallback(() => {
     if (isMobile) {
@@ -200,49 +188,31 @@ const AppSidebar = () => {
     }
   }, [isMobile, setOpenMobile]);
 
-  // Main items (accessible when logged in) - Simple menu for CAMOCA
-  const mainItems = [
-    {
-      title: t('nav.dashboard'),
-      url: "/dashboard",
-      icon: Home,
-    },
+  // Check if user is admin
+  const isAdmin = () => user?.role?.roleName === 'ADMIN' || user?.role?.roleName === 'MODERATOR';
+
+  // Admin menu items (8 items)
+  const adminMenus = [
+    { name: "Dashboard", path: "/sehat/dashboard", icon: Home },
+    { name: "Manajemen Pengguna", path: "/sehat/administrasi-profil", icon: Users },
+    { name: "Histori Minum Obat", path: "/sehat/histori-minum-obat", icon: History },
+    { name: "Konsultasi", path: "/sehat/konsultasi", icon: MessageCircle },
+    { name: "Informasi Berita", path: "/sehat/berita", icon: Newspaper },
+    { name: "Informasi ESO", path: "/sehat/eso", icon: FileText },
+    { name: "Histori Pengingat", path: "/sehat/histori-pengingat", icon: Clock },
   ];
 
-  // Admin items (accessible to admin/moderator)
-  const adminItems = [
-    {
-      title: "Admin",
-      url: "/admin",
-      icon: Users,
-    },
-    {
-      title: "Audio Management",
-      url: "/admin/audio-management",
-      icon: Music,
-    },
-    {
-      title: "Consent Management",
-      url: "/admin/consent-management",
-      icon: Key,
-    },
-    {
-      title: "Background Management",
-      url: "/admin/background-management",
-      icon: ImageIcon,
-    },
-    {
-      title: "Company",
-      url: "/company",
-      icon: Building,
-    },
-    {
-      title: t('nav.roles'),
-      url: "/roles",
-      icon: Shield,
-    },
+  // User menu items (6 items)
+  const userMenus = [
+    { name: "Dashboard", path: "/sehat/dashboard", icon: Home },
+    { name: "Pengingat Minum Obat", path: "/sehat/pengingat-minum-obat", icon: Bell },
+    { name: "Konsultasi", path: "/sehat/konsultasi", icon: MessageCircle },
+    { name: "Informasi Berita", path: "/sehat/berita", icon: Newspaper },
+    { name: "Informasi ESO", path: "/sehat/eso", icon: FileText },
+    { name: "Profil Pasien", path: "/sehat/profil-pasien", icon: User },
   ];
 
+<<<<<<< HEAD
   const masterDataItems = [
     {
       title: t('nav.agencyList'),
@@ -649,19 +619,22 @@ const AppSidebar = () => {
   ];
 
   const visibleSectionIds = sectionOrder.filter((id) => sections.find((s) => s.id === id)?.visible);
+=======
+  const menus = isAdmin() ? adminMenus : userMenus;
+>>>>>>> d4d22aa (Redesign histori-minum-obat with professional UI and fix patient query to show all medication patients)
 
   return (
     <Sidebar 
       collapsible="icon" 
-      className="border-r bg-sidebar data-[state=collapsed]:w-14 md:data-[state=collapsed]:w-16 sidebar-mobile-optimized"
+      className="border-r bg-sidebar"
     >
-      <SidebarHeader className="py-3 md:py-4 px-2 md:px-4">
+      <SidebarHeader className="py-3 px-3">
         <SidebarMenu>
           <SidebarMenuItem>
-            <SidebarMenuButton asChild className="hover:bg-sidebar-accent hover:text-sidebar-accent-foreground rounded-md">
-              <Link href="/" onClick={handleMenuClick} className="flex items-center gap-2 md:gap-3">
-                <Image src="/logo.svg" alt="logo" width={24} height={24} className="md:w-8 md:h-8 flex-shrink-0" />
-                <span className="font-semibold text-sm md:text-base group-data-[collapsible=icon]:group-data-[state=collapsed]:hidden">CAMOCA</span>
+            <SidebarMenuButton asChild className="hover:bg-sidebar-accent hover:text-sidebar-accent-foreground rounded-md h-10">
+              <Link href="/" onClick={handleMenuClick} className="flex items-center gap-2.5">
+                <Image src="/logo.svg" alt="logo" width={24} height={24} className="flex-shrink-0" />
+                <span className="font-semibold text-sm group-data-[collapsible=icon]:hidden">Sehat Bersama</span>
               </Link>
             </SidebarMenuButton>
           </SidebarMenuItem>
@@ -669,91 +642,66 @@ const AppSidebar = () => {
       </SidebarHeader>
       <SidebarSeparator />
       
-      <SidebarContent>
+      <SidebarContent className="px-2">
         {isAuthenticated && (
-          <DndContext
-            sensors={sensors}
-            collisionDetection={closestCenter}
-            onDragEnd={onDragEnd}
-            modifiers={[restrictToVerticalAxis, restrictToParentElement]}
-          >
-            <SortableContext items={visibleSectionIds} strategy={verticalListSortingStrategy}>
-              {visibleSectionIds.map((id) => {
-                const sec = sections.find((s) => s.id === id);
-                if (!sec || !sec.visible) return null;
-
-                const Icon = sec.icon;
-                return (
-                  <SortableSection key={sec.id} id={sec.id}>
-                    {({ dragAttributes, dragListeners }) => (
-                      <Collapsible
-                        open={sectionOpen[sec.id]}
-                        onOpenChange={(open) => setSectionOpen((p) => ({ ...p, [sec.id]: open }))}
-                        className="group/collapsible"
-                      >
-                        <SidebarGroup>
-                          <SidebarGroupLabel asChild>
-                            <CollapsibleTrigger
-                              {...dragAttributes}
-                              {...dragListeners}
-                              className={sectionTriggerClass}
-                            >
-                              <span className="flex items-center gap-2">
-                                <Icon className="h-4 w-4" />
-                                <span className="hidden md:inline">{sec.label}</span>
-                                <span className="md:hidden">{sec.label}</span>
-                              </span>
-                              <ChevronDown className="h-4 w-4 transition-transform group-data-[state=open]/collapsible:rotate-180" />
-                            </CollapsibleTrigger>
-                          </SidebarGroupLabel>
-                          <CollapsibleContent>
-                            <SidebarGroupContent>{sec.content}</SidebarGroupContent>
-                          </CollapsibleContent>
-                        </SidebarGroup>
-                      </Collapsible>
-                    )}
-                  </SortableSection>
-                );
-              })}
-            </SortableContext>
-          </DndContext>
+          <SidebarMenu className="space-y-0.5">
+            {menus.map((menu) => (
+              <SidebarMenuItem key={menu.path}>
+                <SidebarMenuButton asChild>
+                  <Link
+                    href={menu.path}
+                    onClick={handleMenuClick}
+                    className="flex items-center gap-2.5 px-2.5 py-2 text-sm font-medium transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground rounded-md group-data-[collapsible=icon]:justify-center"
+                  >
+                    <menu.icon className="h-4 w-4 flex-shrink-0" />
+                    <span className="truncate group-data-[collapsible=icon]:hidden">{menu.name}</span>
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            ))}
+          </SidebarMenu>
         )}
-      </SidebarContent>      <SidebarFooter className="p-2 md:p-4">
+      </SidebarContent>
+
+      <SidebarFooter className="p-3">
         <SidebarMenu>
           <SidebarMenuItem>
             {isAuthenticated ? (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <SidebarMenuButton className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground p-2 rounded-md hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors">
-                    <div className="flex items-center space-x-2 min-w-0">                      <Avatar className="h-6 w-6 md:h-8 md:w-8 flex-shrink-0">
+                  <SidebarMenuButton className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground p-2 rounded-md hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors h-auto">
+                    <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                      <Avatar className="h-7 w-7 flex-shrink-0">
                         <AvatarImage 
-                          src={user?.avatarUrl || 
+                          src={(user?.photoPath || user?.avatarUrl) ? imageAPI.getImageUrl(user?.photoPath || user?.avatarUrl || '') :
                                (user?.biografi?.foto ? imageAPI.getImageUrl(user.biografi.foto) : 
                                 user?.biografi?.fotoProfil ? imageAPI.getImageUrl(user.biografi.fotoProfil) : undefined)} 
                           alt={user?.fullName}
                         />
-                        <AvatarFallback className="bg-blue-500 text-white text-xs md:text-sm">
+                        <AvatarFallback className="bg-blue-500 text-white text-xs">
                           {user?.fullName?.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
                         </AvatarFallback>
                       </Avatar>
-                      <div className="flex-1 text-left min-w-0 hidden group-data-[collapsible=icon]:group-data-[state=collapsed]:hidden">
-                        <div className="font-medium text-xs md:text-sm truncate">{user?.fullName}</div>
-                        <div className="text-xs text-muted-foreground hidden md:block">{user?.role?.roleName || 'USER'}</div>
+                      <div className="flex-1 text-left min-w-0 group-data-[collapsible=icon]:hidden">
+                        <div className="font-medium text-xs truncate">{user?.fullName}</div>
+                        <div className="text-[10px] text-muted-foreground truncate">{user?.role?.roleName || 'USER'}</div>
                       </div>
                     </div>
-                    <ChevronUp className="ml-auto h-3 w-3 md:h-4 md:w-4 hidden group-data-[collapsible=icon]:group-data-[state=collapsed]:hidden" />
+                    <ChevronUp className="h-3.5 w-3.5 flex-shrink-0 group-data-[collapsible=icon]:hidden" />
                   </SidebarMenuButton>
-                </DropdownMenuTrigger>                <DropdownMenuContent align="end" className="w-48 md:w-56">
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-48">
                   <DropdownMenuItem onClick={logout} className="text-red-600 focus:text-red-600 cursor-pointer">
                     <LogOut className="mr-2 h-4 w-4" />
-                    <span>{t('auth.logout')}</span>
+                    <span>Keluar</span>
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
-            ) : (              <SidebarMenuButton asChild className="p-2 rounded-md hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors">
-                <Link href="/login" onClick={handleMenuClick} className="flex items-center gap-2">
-                  <LogIn className="h-4 w-4" />
-                  <span className="hidden group-data-[collapsible=icon]:group-data-[state=collapsed]:hidden">{t('auth.login')}</span>
+            ) : (
+              <SidebarMenuButton asChild className="p-2 rounded-md hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors">
+                <Link href="/login" onClick={handleMenuClick} className="flex items-center gap-2.5">
+                  <LogIn className="h-4 w-4 flex-shrink-0" />
+                  <span className="group-data-[collapsible=icon]:hidden">Masuk</span>
                 </Link>
               </SidebarMenuButton>
             )}
